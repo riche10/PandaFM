@@ -1,0 +1,100 @@
+# PandaFM stack. First-run steps are in README.md.
+#
+# Every value comes from .env (copy .env.example). Variables written as
+# ${NAME:?message} are required: Compose refuses to start without them.
+
+name: pandafm
+
+services:
+  # ── Media server: scanning, metadata, artwork, streaming, transcoding ──
+  navidrome:
+    image: deluan/navidrome:${NAVIDROME_VERSION:-0.64.2}
+    container_name: navidrome
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      # Published so you can use Navidrome's own web UI for admin tasks.
+      # PandaFM reaches Navidrome over the internal network, not this port.
+      - "${NAVIDROME_PORT:-4533}:4533"
+    environment:
+      ND_MUSICFOLDER: /music
+      ND_DATAFOLDER: /data
+      # NAS mounts don't deliver file-change events, so scheduled scans are
+      # what keeps the library current.
+      ND_SCANSCHEDULE: ${NAVIDROME_SCAN_SCHEDULE:-@every 1h}
+      ND_LOGLEVEL: info
+    volumes:
+      - ${NAVIDROME_DATA_DIR:-./data/navidrome}:/data
+      - ${MUSIC_DIR:?Set MUSIC_DIR in .env}:/music:ro
+
+  # ── PandaFM database: listening history, preferences, radio state ──
+  pandafm-db:
+    image: postgres:17-alpine
+    container_name: pandafm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pandafm}
+      POSTGRES_USER: ${POSTGRES_USER:-pandafm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pandafm-db:/var/lib/postgresql/data
+    # Not published: only pandafm-api talks to the database.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ── PandaFM API: radio engine, events, Navidrome wrapper ──
+  pandafm-api:
+    build: ./api
+    container_name: pandafm-api
+    restart: unless-stopped
+    depends_on:
+      pandafm-db:
+        condition: service_healthy
+      navidrome:
+        condition: service_started
+    environment:
+      PANDAFM_DB_HOST: pandafm-db
+      PANDAFM_DB_NAME: ${POSTGRES_DB:-pandafm}
+      PANDAFM_DB_USER: ${POSTGRES_USER:-pandafm}
+      PANDAFM_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PANDAFM_NAVIDROME_URL: http://navidrome:4533
+      PANDAFM_NAVIDROME_USER: ${NAVIDROME_USER:?Set NAVIDROME_USER in .env}
+      PANDAFM_NAVIDROME_PASSWORD: ${NAVIDROME_PASSWORD:?Set NAVIDROME_PASSWORD in .env}
+      PANDAFM_LOG_LEVEL: ${PANDAFM_LOG_LEVEL:-info}
+    # /api/health answers 200 whenever the process is alive, so a Navidrome
+    # rescan or a database restart never makes Docker kill the API.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=8)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+  # ── PandaFM web: the built React app, served as static files ──
+  pandafm-web:
+    build: ./web
+    container_name: pandafm-web
+    restart: unless-stopped
+
+  # ── Edge proxy: the only thing your phone talks to ──
+  caddy:
+    image: caddy:2.11-alpine
+    container_name: caddy
+    restart: unless-stopped
+    depends_on:
+      - pandafm-api
+      - pandafm-web
+    ports:
+      - "${PANDAFM_HTTP_PORT:-80}:80"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  pandafm-db:
+  caddy-data:
+  caddy-config:
