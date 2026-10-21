@@ -1,0 +1,198 @@
+/* PandaFM design tokens. Panda black and white carry the brand; colour is
+   reserved for meaning (connected / not connected). System fonts only, so
+   the app loads instantly on the LAN and works offline as a PWA later. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #f3f5f2;
+  --ink: #000000;
+  --text: #262b27;
+  --muted: #5d6761;
+  --line: #d6ddd7;
+  --ok: #2e7d5b;
+  --problem: #b42318;
+  --waiting: #7d8781;
+  --font: ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --ink: #ffffff;
+    --text: #e6ebe7;
+    --muted: #9aa49e;
+    --line: #2a302b;
+    --ok: #6cc59a;
+    --problem: #ff8b7b;
+    --waiting: #77817b;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.page {
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 3.5rem) 1.25rem
+    calc(env(safe-area-inset-bottom, 0px) + 2.5rem);
+}
+
+/* The one bold element: the wordmark, with FM in a tilted panda eye-patch. */
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.14em;
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(3.25rem, 16vw, 5rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.wordmark-fm {
+  display: inline-block;
+  padding: 0.04em 0.2em 0.08em;
+  border-radius: 0.5em / 0.6em;
+  background: var(--ink);
+  color: var(--bg);
+  letter-spacing: -0.02em;
+  transform: rotate(-6deg);
+}
+
+.tagline {
+  margin: 0.9rem 0 0;
+  color: var(--muted);
+  font-size: 1.125rem;
+}
+
+.check {
+  margin-top: 3rem;
+}
+
+.check h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.check-summary {
+  margin: 0.25rem 0 1.25rem;
+  color: var(--muted);
+}
+
+.check-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.check-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 1rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.check-name {
+  font-weight: 600;
+}
+
+.check-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+}
+
+.check-row[data-status='ok'] .check-state {
+  color: var(--ok);
+}
+
+.check-row[data-status='problem'] .check-state {
+  color: var(--problem);
+}
+
+.check-row[data-status='waiting'] .check-state {
+  color: var(--waiting);
+}
+
+/* Shape differs per state too, so status never relies on colour alone. */
+.dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.check-row[data-status='problem'] .dot {
+  border-radius: 1px;
+}
+
+.check-row[data-status='waiting'] .dot {
+  border: 2px solid currentColor;
+  background: transparent;
+}
+
+.check-note {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.button {
+  min-height: 44px;
+  margin-top: 1.5rem;
+  padding: 0.7rem 1.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--ok);
+  outline-offset: 3px;
+}
+
+.footnote {
+  margin-top: 3rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.footnote a {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
