@@ -1,15 +1,20 @@
 # PandaFM - single Portainer stack
 #
-# Deploy this repository as ONE Git-based stack in Portainer. The stack
-# contains Navidrome, PandaFM API, PandaFM Web, PostgreSQL and Caddy.
+# Deploy this repository as ONE Git-based stack in Portainer.
+# Your existing reverse proxy sits OUTSIDE this stack and only needs to
+# forward PandaFM traffic to PANDAFM_WEB_PORT (default 8085).
 #
-# Configure the variables in Portainer's Stack > Environment variables.
-# Nothing in this file requires a local .env file when deployed by Portainer.
+# Stack contents:
+#   - Navidrome
+#   - PandaFM API
+#   - PandaFM Web
+#   - PostgreSQL
+#
+# Configure variables in Portainer > Stack > Environment variables.
 
 name: pandafm
 
 services:
-  # ── Navidrome: scans and streams the music library ──────────────────
   navidrome:
     image: deluan/navidrome:${NAVIDROME_VERSION:-0.64.2}
     container_name: pandafm-navidrome
@@ -23,14 +28,9 @@ services:
       ND_SCANSCHEDULE: ${NAVIDROME_SCAN_SCHEDULE:-@every 1h}
       ND_LOGLEVEL: info
     volumes:
-      # Docker-managed persistent Navidrome database/cache.
       - navidrome-data:/data
-
-      # Your UGREEN library is mounted read-only. Override MUSIC_DIR in
-      # Portainer if this host path ever changes.
       - ${MUSIC_DIR:-/mnt/ugreen/media/Music}:/music:ro
 
-  # ── PandaFM database ────────────────────────────────────────────────
   pandafm-db:
     image: postgres:17-alpine
     container_name: pandafm-db
@@ -47,7 +47,6 @@ services:
       timeout: 5s
       retries: 12
 
-  # ── PandaFM backend ─────────────────────────────────────────────────
   pandafm-api:
     build:
       context: ./api
@@ -63,12 +62,9 @@ services:
       PANDAFM_DB_NAME: ${POSTGRES_DB:-pandafm}
       PANDAFM_DB_USER: ${POSTGRES_USER:-pandafm}
       PANDAFM_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Portainer}
-
-      # Uses the service name over the private Docker network.
       PANDAFM_NAVIDROME_URL: http://navidrome:4533
       PANDAFM_NAVIDROME_USER: ${NAVIDROME_USER:?Set NAVIDROME_USER in Portainer}
       PANDAFM_NAVIDROME_PASSWORD: ${NAVIDROME_PASSWORD:?Set NAVIDROME_PASSWORD in Portainer}
-
       PANDAFM_LOG_LEVEL: ${PANDAFM_LOG_LEVEL:-info}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=8)"]
@@ -77,30 +73,16 @@ services:
       start_period: 15s
       retries: 3
 
-  # ── PandaFM frontend ────────────────────────────────────────────────
   pandafm-web:
     build:
       context: ./web
     container_name: pandafm-web
     restart: unless-stopped
-
-  # ── Single entry point for PandaFM ──────────────────────────────────
-  caddy:
-    image: caddy:2.11-alpine
-    container_name: pandafm-caddy
-    restart: unless-stopped
     depends_on:
       - pandafm-api
-      - pandafm-web
     ports:
-      - "${PANDAFM_HTTP_PORT:-8085}:80"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+      - "${PANDAFM_WEB_PORT:-8085}:80"
 
 volumes:
   navidrome-data:
   pandafm-db:
-  caddy-data:
-  caddy-config:
