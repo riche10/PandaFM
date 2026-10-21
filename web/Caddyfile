@@ -1,0 +1,19 @@
+# Static file server for the built React app (inside pandafm-web).
+# The edge proxy in ../caddy/Caddyfile sits in front of this.
+
+:80 {
+	root * /srv
+	encode zstd gzip
+
+	# Vite fingerprints every file in /assets, so browsers may keep them forever.
+	@fingerprinted path /assets/*
+	header @fingerprinted Cache-Control "public, max-age=31536000, immutable"
+
+	# index.html and other unhashed files are revalidated, so a rebuild shows up.
+	@unhashed not path /assets/*
+	header @unhashed Cache-Control "no-cache"
+
+	# Client-side routes such as /album/123 all load the app shell.
+	try_files {path} /index.html
+	file_server
+}
