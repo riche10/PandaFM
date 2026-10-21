@@ -2,53 +2,61 @@
 
 PandaFM is a self-hosted Spotify-like radio for your own music library.
 
-The entire application is designed to deploy as **one Portainer stack**:
+The application is packaged as one Portainer stack without its own public
+reverse proxy:
 
+```text
+Existing Nginx / Nginx Proxy Manager
+                 │
+                 ▼
+       Ubuntu host :8085
+                 │
+                 ▼
+         pandafm-web (Nginx)
+          ├── React files
+          └── /api/* ──► pandafm-api
+                          ├──► pandafm-db
+                          └──► pandafm-navidrome
+                                  │
+                                  ▼
+                         UGREEN music library
 ```
-UGREEN music library
-        │
-        ▼
-pandafm-navidrome
-        │
-        ▼
-pandafm-api ─── pandafm-db
-        │
-pandafm-web
-        │
-pandafm-caddy
-        │
-        ▼
-Phone / Walkman
-```
 
-## Services in the stack
+The small Nginx inside `pandafm-web` is only the application's static-file
+server and internal `/api` router. TLS, domains, certificates and public
+reverse-proxy duties remain with your existing Nginx installation.
 
-| Service | Purpose |
+## Containers
+
+| Container | Purpose |
 |---|---|
 | `pandafm-navidrome` | Scans, indexes and streams the music library |
-| `pandafm-db` | PostgreSQL listening history / preferences |
+| `pandafm-db` | PostgreSQL listening history and preferences |
 | `pandafm-api` | FastAPI backend and future Panda Radio engine |
-| `pandafm-web` | React frontend |
-| `pandafm-caddy` | Single HTTP entry point for PandaFM |
+| `pandafm-web` | React frontend plus internal /api routing |
 
-Navidrome stores its database/cache in a Docker named volume. Your music is
-never copied into the stack: the Ubuntu host mount
-`/mnt/ugreen/media/Music` is mounted into Navidrome **read-only**.
+Navidrome stores its database/cache in a Docker named volume. The actual
+music stays on the UGREEN mount and is passed to Navidrome read-only.
 
-## Deploy with Portainer
+## Deploy from Portainer
 
-In Portainer:
+Use:
 
-1. Open **Stacks → Add stack**.
-2. Choose **Repository**.
-3. Repository URL: `https://github.com/riche10/PandaFM.git`
-4. Repository reference: `refs/heads/main`
-5. Compose path: `docker-compose.yml`
-6. Because the repo is private, provide GitHub repository credentials/token to Portainer.
-7. Add the environment variables listed below.
-8. Deploy the stack.
+```text
+Repository:
+https://github.com/riche10/PandaFM.git
 
-### Required environment variables
+Reference:
+refs/heads/main
+
+Compose path:
+docker-compose.yml
+```
+
+Because the repository is private, Portainer needs GitHub repository
+credentials/token.
+
+Add these environment variables:
 
 ```text
 MUSIC_DIR=/mnt/ugreen/media/Music
@@ -56,50 +64,56 @@ PUID=1000
 PGID=1000
 
 NAVIDROME_PORT=4533
-NAVIDROME_USER=<choose a Navidrome username>
-NAVIDROME_PASSWORD=<choose a password>
+NAVIDROME_USER=<choose username>
+NAVIDROME_PASSWORD=<choose password>
 
 POSTGRES_DB=pandafm
 POSTGRES_USER=pandafm
 POSTGRES_PASSWORD=<strong random password>
 
-PANDAFM_HTTP_PORT=8085
+PANDAFM_WEB_PORT=8085
 PANDAFM_LOG_LEVEL=info
 ```
 
-The Compose file supplies sensible defaults for the non-secret values.
+Then deploy the stack.
 
-## First Navidrome startup
+## First Navidrome setup
 
-After deploying, open:
+Open:
 
 ```text
 http://<ubuntu-server-ip>:4533
 ```
 
-Create the first Navidrome account using the **same username and password**
-you entered as `NAVIDROME_USER` and `NAVIDROME_PASSWORD` in Portainer.
+Create the first Navidrome account with the same username/password configured
+as `NAVIDROME_USER` and `NAVIDROME_PASSWORD` in Portainer.
 
-Once Navidrome has scanned the library, PandaFM can authenticate against its
-Subsonic API.
+## PandaFM before adding your external proxy
 
-## PandaFM
-
-Open:
+The app itself is available at:
 
 ```text
 http://<ubuntu-server-ip>:8085
 ```
 
-Stage 1 currently shows a connection-check page for:
+The frontend container automatically forwards `/api/*` to the private
+`pandafm-api` container, so PandaFM works on that one port.
 
-- PandaFM Web
-- PandaFM API
-- PostgreSQL
-- Navidrome
+## Existing Nginx / Nginx Proxy Manager
 
-Later stages add library browsing, playback, listening events, Panda Radio,
-session learning and PWA/media controls.
+Your public reverse proxy only needs one upstream:
+
+```text
+http://<ubuntu-server-ip>:8085
+```
+
+For example, a hostname such as `pandafm.example.com` can point entirely to
+port 8085. Do not create a separate public route to FastAPI; the web container
+already handles `/api/*` internally.
+
+This keeps PandaFM portable: someone can deploy the Docker stack and use
+whatever edge proxy they already run (Nginx, Traefik, Caddy, Cloudflare
+Tunnel, etc.).
 
 ## Repository structure
 
@@ -108,9 +122,9 @@ PandaFM/
 ├── docker-compose.yml
 ├── .env.example
 ├── api/
-├── web/
-└── caddy/
+└── web/
+    ├── Dockerfile
+    └── nginx.conf
 ```
 
-Secrets should stay in Portainer environment variables and must never be
-committed to the repository.
+Secrets belong in Portainer environment variables and must not be committed.
