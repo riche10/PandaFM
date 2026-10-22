@@ -9,8 +9,9 @@ from fastapi import FastAPI
 from app import __version__
 from app.config import Settings, get_settings
 from app.db import create_engine
+from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
-from app.routers import health
+from app.routers import health, library
 
 log = logging.getLogger("pandafm")
 
@@ -47,12 +48,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="PandaFM API",
         version=__version__,
         lifespan=lifespan,
-        # Everything lives under /api so Caddy can route with one rule.
+        # Everything lives under /api so the web container's Nginx routes it with one rule.
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         redoc_url=None,
     )
     app.include_router(health.router, prefix="/api")
+    app.include_router(library.router, prefix="/api")
+    register_error_handlers(app)
     return app
 
 

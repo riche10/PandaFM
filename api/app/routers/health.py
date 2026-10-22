@@ -82,7 +82,8 @@ async def _check_navidrome(client: NavidromeClient) -> NavidromeStatus:
             ok=False,
             detail=(
                 f"Navidrome rejected PandaFM's login ({exc}). Check NAVIDROME_USER "
-                "and NAVIDROME_PASSWORD in .env match a Navidrome account."
+                "and NAVIDROME_PASSWORD in the stack's environment variables match "
+                "a Navidrome account."
             ),
         )
     except NavidromeError as exc:
