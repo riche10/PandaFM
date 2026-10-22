@@ -1,0 +1,72 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.64.2 (10114574)",
+  "openSubsonic": true,
+  "artists": {
+   "index": [
+    {
+     "name": "M",
+     "artist": [
+      {
+       "id": "2QnME7MXydDtNq5wWAuudn",
+       "name": "Mist Valley",
+       "coverArt": "ar-2QnME7MXydDtNq5wWAuudn",
+       "albumCount": 1,
+       "artistImageUrl": "http://localhost:4533/share/img/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFyLTJRbk1FN01YeWREdE5xNXdXQXV1ZG4iLCJpc3MiOiJORCJ9.MK5F1QcoBfYw555HZtH8MPGf3AVHLmpPh3bpSbsU8S4?size=600",
+       "musicBrainzId": "",
+       "sortName": "mist valley",
+       "roles": [
+        "artist",
+        "maincredit",
+        "albumartist"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "N",
+     "artist": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda",
+       "coverArt": "ar-5ZstAHqkcUcIBy4ynNFyHU",
+       "albumCount": 2,
+       "artistImageUrl": "http://localhost:4533/share/img/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFyLTVac3RBSHFrY1VjSUJ5NHluTkZ5SFUiLCJpc3MiOiJORCJ9.ms9EIr02jckaqwfsRgihRCCWd22LVnv1Mi0vLPHk8P8?size=600",
+       "musicBrainzId": "",
+       "sortName": "neon panda",
+       "roles": [
+        "artist",
+        "maincredit",
+        "albumartist"
+       ]
+      }
+     ]
+    },
+    {
+     "name": "S",
+     "artist": [
+      {
+       "id": "29w3Lho1XjOz4FJyvcLYfY",
+       "name": "The Static Hours",
+       "coverArt": "ar-29w3Lho1XjOz4FJyvcLYfY",
+       "albumCount": 1,
+       "artistImageUrl": "http://localhost:4533/share/img/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFyLTI5dzNMaG8xWGpPejRGSnl2Y0xZZlkiLCJpc3MiOiJORCJ9.NWTptL5-yeo9maISXW6S2SjEF9mWinQWYijhKuDF29o?size=600",
+       "musicBrainzId": "",
+       "sortName": "static hours",
+       "roles": [
+        "albumartist",
+        "artist",
+        "maincredit"
+       ]
+      }
+     ]
+    }
+   ],
+   "lastModified": 1792627130000,
+   "ignoredArticles": "The El La Los Las Le Les Os As O A"
+  }
+ }
+}
