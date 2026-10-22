@@ -47,3 +47,23 @@ export function toApiError(err: unknown): ApiError {
   if (err instanceof ApiError) return err
   return new ApiError(0, err instanceof Error ? err.message : 'Something went wrong.')
 }
+
+/** POST / PUT / PATCH / DELETE with an optional JSON body. Returns parsed JSON, or null for 204. */
+export async function apiSend<T = null>(
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(`/api${path}`, {
+      method,
+      headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch {
+    throw new ApiError(0, 'The PandaFM server could not be reached.')
+  }
+  if (!response.ok) throw await readApiError(response)
+  return (response.status === 204 ? null : await response.json()) as T
+}

@@ -1,4 +1,4 @@
-import { apiGet } from './client'
+import { apiGet, apiSend } from './client'
 
 // Mirrors api/app/schemas/library.py. Ids are Navidrome ids in Stage 2.
 
@@ -18,6 +18,7 @@ export interface Track {
   content_type: string | null
   suffix: string | null
   bitrate_kbps: number | null
+  favorite: boolean
 }
 
 export interface AlbumSummary {
@@ -30,6 +31,7 @@ export interface AlbumSummary {
   track_count: number | null
   duration_seconds: number | null
   genres: string[]
+  favorite: boolean
 }
 
 export interface Album extends AlbumSummary {
@@ -41,6 +43,7 @@ export interface ArtistSummary {
   name: string
   album_count: number | null
   cover_art_id: string | null
+  favorite: boolean
 }
 
 export interface Artist extends ArtistSummary {
@@ -81,6 +84,72 @@ export const getArtist = (artistId: string, signal?: AbortSignal) =>
 
 export const getTrack = (trackId: string, signal?: AbortSignal) =>
   apiGet<Track>(`/tracks/${id(trackId)}`, signal)
+
+export type TrackListOrder = 'all' | 'random'
+
+export interface TrackPage {
+  order: TrackListOrder
+  offset: number
+  tracks: Track[]
+}
+
+export const listTracks = (order: TrackListOrder, offset: number, size: number, signal?: AbortSignal) =>
+  apiGet<TrackPage>(`/tracks?${new URLSearchParams({ order, offset: String(offset), size: String(size) })}`, signal)
+
+export const listAlbumsPage = (kind: AlbumListKind, offset: number, size: number, signal?: AbortSignal) =>
+  apiGet<AlbumList>(`/albums?${new URLSearchParams({ list: kind, offset: String(offset), size: String(size) })}`, signal)
+
+export const getArtistTracks = (artistId: string, signal?: AbortSignal) =>
+  apiGet<{ tracks: Track[] }>(`/artists/${id(artistId)}/tracks`, signal)
+
+// ── Favorites (Navidrome's starred items) ──
+
+export type FavoriteKind = 'track' | 'album' | 'artist'
+
+export interface Favorites {
+  tracks: Track[]
+  albums: AlbumSummary[]
+  artists: ArtistSummary[]
+}
+
+export const getFavorites = (signal?: AbortSignal) => apiGet<Favorites>('/favorites', signal)
+
+const FAVORITE_COLLECTION: Record<FavoriteKind, string> = { track: 'tracks', album: 'albums', artist: 'artists' }
+
+export const setFavorite = (kind: FavoriteKind, itemId: string, favorite: boolean) =>
+  apiSend(favorite ? 'PUT' : 'DELETE', `/${FAVORITE_COLLECTION[kind]}/${id(itemId)}/favorite`)
+
+// ── Playlists (stored in Navidrome) ──
+
+export interface PlaylistSummary {
+  id: string
+  name: string
+  track_count: number
+  duration_seconds: number | null
+  cover_art_id: string | null
+  owner: string | null
+  readonly: boolean
+}
+
+export interface Playlist extends PlaylistSummary {
+  tracks: Track[]
+}
+
+export const listPlaylists = (signal?: AbortSignal) => apiGet<{ playlists: PlaylistSummary[] }>('/playlists', signal)
+
+export const getPlaylist = (playlistId: string, signal?: AbortSignal) =>
+  apiGet<Playlist>(`/playlists/${id(playlistId)}`, signal)
+
+export const playlistApi = {
+  create: (name: string, trackIds: string[] = []) =>
+    apiSend<Playlist>('POST', '/playlists', { name, track_ids: trackIds }),
+  rename: (playlistId: string, name: string) => apiSend<Playlist>('PATCH', `/playlists/${id(playlistId)}`, { name }),
+  remove: (playlistId: string) => apiSend('DELETE', `/playlists/${id(playlistId)}`),
+  addTracks: (playlistId: string, trackIds: string[]) =>
+    apiSend<Playlist>('POST', `/playlists/${id(playlistId)}/tracks`, { track_ids: trackIds }),
+  removeTrack: (playlistId: string, index: number, trackId: string) =>
+    apiSend<Playlist>('DELETE', `/playlists/${id(playlistId)}/tracks/${index}?${new URLSearchParams({ track_id: trackId })}`),
+}
 
 /** Artwork sizes the UI asks for. A few fixed sizes keep Navidrome's resize cache warm. */
 export type CoverSize = 96 | 300 | 600
