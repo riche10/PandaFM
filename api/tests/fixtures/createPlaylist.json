@@ -1,0 +1,139 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.64.2 (10114574)",
+  "openSubsonic": true,
+  "playlist": {
+   "id": "4f7TgxuLjHLJUgggE5O7CZ",
+   "name": "Test Mix",
+   "songCount": 2,
+   "duration": 190,
+   "owner": "panda",
+   "created": "2026-10-22T18:15:31.283502778Z",
+   "changed": "2026-10-22T18:15:31.286641992Z",
+   "coverArt": "pl-4f7TgxuLjHLJUgggE5O7CZ",
+   "readonly": false,
+   "entry": [
+    {
+     "id": "0k7XPcAw3hvHqVaM6tDgU3",
+     "parent": "0rtMZ6l7OaEJfGyeavQLSm",
+     "isDir": false,
+     "title": "Grid Lock",
+     "album": "Bamboo Grid",
+     "artist": "Neon Panda",
+     "track": 1,
+     "year": 1989,
+     "genre": "Synthwave",
+     "coverArt": "al-0rtMZ6l7OaEJfGyeavQLSm_f54244aae5e29a28",
+     "size": 1316513,
+     "contentType": "audio/flac",
+     "suffix": "flac",
+     "starred": "2026-10-22T18:15:31.24351924Z",
+     "duration": 95,
+     "bitRate": 110,
+     "path": "Neon Panda/Bamboo Grid/01 - Grid Lock.flac",
+     "created": "2026-10-21T23:58:50.842345051Z",
+     "albumId": "0rtMZ6l7OaEJfGyeavQLSm",
+     "artistId": "5ZstAHqkcUcIBy4ynNFyHU",
+     "type": "music",
+     "bpm": 0,
+     "comment": "",
+     "sortName": "grid lock",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Synthwave"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 1,
+     "samplingRate": 44100,
+     "bitDepth": 24,
+     "moods": [],
+     "artists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayArtist": "Neon Panda",
+     "albumArtists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayAlbumArtist": "Neon Panda",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    },
+    {
+     "id": "2b4ANOyiM3HcvneQJulaAR",
+     "parent": "0rtMZ6l7OaEJfGyeavQLSm",
+     "isDir": false,
+     "title": "Slow Lane",
+     "album": "Bamboo Grid",
+     "artist": "Neon Panda",
+     "track": 2,
+     "year": 1989,
+     "genre": "Synthwave",
+     "coverArt": "al-0rtMZ6l7OaEJfGyeavQLSm_f54244aae5e29a28",
+     "size": 1397845,
+     "contentType": "audio/flac",
+     "suffix": "flac",
+     "duration": 95,
+     "bitRate": 117,
+     "path": "Neon Panda/Bamboo Grid/02 - Slow Lane.flac",
+     "created": "2026-10-21T23:58:50.843321058Z",
+     "albumId": "0rtMZ6l7OaEJfGyeavQLSm",
+     "artistId": "5ZstAHqkcUcIBy4ynNFyHU",
+     "type": "music",
+     "bpm": 0,
+     "comment": "",
+     "sortName": "slow lane",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Synthwave"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 1,
+     "samplingRate": 44100,
+     "bitDepth": 24,
+     "moods": [],
+     "artists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayArtist": "Neon Panda",
+     "albumArtists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayAlbumArtist": "Neon Panda",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    }
+   ]
+  }
+ }
+}

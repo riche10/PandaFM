@@ -11,7 +11,7 @@ from app.config import Settings, get_settings
 from app.db import create_engine
 from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
-from app.routers import health, library, media
+from app.routers import favorites, health, library, media, playlists
 
 log = logging.getLogger("pandafm")
 
@@ -61,6 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(library.router, prefix="/api")
     app.include_router(media.router, prefix="/api")
+    app.include_router(favorites.router, prefix="/api")
+    app.include_router(playlists.router, prefix="/api")
     register_error_handlers(app)
     return app
 

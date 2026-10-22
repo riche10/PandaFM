@@ -12,6 +12,7 @@ the token, but nothing returned to PandaFM's callers does.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 from collections.abc import AsyncIterator, Callable
@@ -28,8 +29,13 @@ from app.schemas.library import (
     AlbumSummary,
     Artist,
     ArtistSummary,
+    FavoriteKind,
+    Favorites,
+    Playlist,
+    PlaylistSummary,
     SearchResults,
     Track,
+    TrackListOrder,
 )
 
 SUBSONIC_API_VERSION = "1.16.1"
@@ -37,7 +43,18 @@ CLIENT_NAME = "pandafm"
 
 # Subsonic error codes meaning the credentials or the auth method are wrong.
 _AUTH_ERROR_CODES = frozenset({40, 41, 42, 43, 44})
+_NOT_AUTHORIZED_CODE = 50
 _NOT_FOUND_CODE = 70
+
+# star/unstar take a differently named id parameter per kind.
+_FAVORITE_PARAMS = {
+    FavoriteKind.track: "id",
+    FavoriteKind.album: "albumId",
+    FavoriteKind.artist: "artistId",
+}
+
+# An artist page's song list is built from this many albums at most.
+ARTIST_TRACKS_MAX_ALBUMS = 20
 
 _ALBUM_LIST_TYPES = {
     AlbumListKind.newest: "newest",
@@ -81,7 +98,15 @@ class NavidromeAuthError(NavidromeError):
 
 
 class NavidromeNotFound(NavidromeError):
-    """The requested song, album, artist or artwork does not exist in Navidrome."""
+    """The requested song, album, artist, playlist or artwork does not exist in Navidrome."""
+
+
+class NavidromeForbidden(NavidromeError):
+    """Navidrome refused the change (e.g. a read-only or someone else's playlist)."""
+
+
+class PlaylistChanged(NavidromeError):
+    """The playlist no longer has the expected song at the given position."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +239,87 @@ class NavidromeClient:
             ]
         )
 
+    async def list_tracks(
+        self, order: TrackListOrder, *, size: int = 50, offset: int = 0
+    ) -> list[Track]:
+        """Every song, a page at a time (search3 with an empty query), or getRandomSongs."""
+        if order is TrackListOrder.random:
+            body = await self._call("getRandomSongs", size=size)
+            return _parsed(
+                lambda: [parse.track(item) for item in (body.get("randomSongs") or {}).get("song") or []]
+            )
+        # Navidrome documents empty-query search3 as "return everything";
+        # it is how Subsonic clients page through a whole library.
+        body = await self._call(
+            "search3", query="", songCount=size, songOffset=offset, albumCount=0, artistCount=0
+        )
+        return _parsed(lambda: parse.search_results("", body).tracks)
+
+    async def get_artist_tracks(self, artist_id: str) -> list[Track]:
+        """Songs on an artist's albums (Subsonic has no direct "songs by artist" call)."""
+        artist = await self.get_artist(artist_id)
+        limit = asyncio.Semaphore(4)  # be gentle with Navidrome
+
+        async def album_tracks(album_id: str) -> list[Track]:
+            async with limit:
+                return (await self.get_album(album_id)).tracks
+
+        albums = artist.albums[:ARTIST_TRACKS_MAX_ALBUMS]
+        per_album = await asyncio.gather(*(album_tracks(album.id) for album in albums))
+        return [track for tracks in per_album for track in tracks]
+
+    # ── Favorites (Navidrome's starred items) ─────────────────────────
+
+    async def get_favorites(self) -> Favorites:
+        """getStarred2."""
+        body = await self._call("getStarred2")
+        return _parsed(lambda: parse.favorites(body))
+
+    async def set_favorite(self, kind: FavoriteKind, item_id: str, favorite: bool) -> None:
+        """star / unstar."""
+        await self._call("star" if favorite else "unstar", **{_FAVORITE_PARAMS[kind]: item_id})
+
+    # ── Playlists ─────────────────────────────────────────────────────
+
+    async def get_playlists(self) -> list[PlaylistSummary]:
+        """getPlaylists."""
+        body = await self._call("getPlaylists")
+        return _parsed(lambda: parse.playlist_list(body))
+
+    async def get_playlist(self, playlist_id: str) -> Playlist:
+        """getPlaylist, with its songs in order."""
+        body = await self._call("getPlaylist", id=playlist_id)
+        return _parsed(lambda: parse.playlist(body["playlist"]))
+
+    async def create_playlist(self, name: str, track_ids: list[str]) -> Playlist:
+        """createPlaylist (Navidrome returns the new playlist)."""
+        body = await self._call("createPlaylist", name=name, songId=track_ids or None)
+        return _parsed(lambda: parse.playlist(body["playlist"]))
+
+    async def rename_playlist(self, playlist_id: str, name: str) -> None:
+        """updatePlaylist name=."""
+        await self._call("updatePlaylist", playlistId=playlist_id, name=name)
+
+    async def add_to_playlist(self, playlist_id: str, track_ids: list[str]) -> None:
+        """updatePlaylist songIdToAdd=, appended in order."""
+        await self._call("updatePlaylist", playlistId=playlist_id, songIdToAdd=track_ids)
+
+    async def remove_from_playlist(self, playlist_id: str, index: int, expected_track_id: str) -> None:
+        """updatePlaylist songIndexToRemove=, after checking the position still holds that song.
+
+        Subsonic removes by position only, and Navidrome silently ignores an
+        out-of-range one. If the playlist changed elsewhere since the caller
+        loaded it, removing blindly could delete the wrong song.
+        """
+        current = await self.get_playlist(playlist_id)
+        if index >= len(current.tracks) or current.tracks[index].id != expected_track_id:
+            raise PlaylistChanged("The playlist changed since it was loaded")
+        await self._call("updatePlaylist", playlistId=playlist_id, songIndexToRemove=index)
+
+    async def delete_playlist(self, playlist_id: str) -> None:
+        """deletePlaylist."""
+        await self._call("deletePlaylist", id=playlist_id)
+
     # ── Media (binary endpoints) ──────────────────────────────────────
 
     async def get_cover_art(self, cover_art_id: str, *, size: int | None = None) -> CoverArt:
@@ -339,6 +445,8 @@ class NavidromeClient:
             raise NavidromeAuthError(message, code)
         if code == _NOT_FOUND_CODE:
             raise NavidromeNotFound(message, code)
+        if code == _NOT_AUTHORIZED_CODE:
+            raise NavidromeForbidden(message, code)
         raise NavidromeError(message, code)
 
 

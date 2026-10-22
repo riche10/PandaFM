@@ -17,8 +17,10 @@ from fastapi.responses import JSONResponse
 from app.navidrome.client import (
     NavidromeAuthError,
     NavidromeError,
+    NavidromeForbidden,
     NavidromeNotFound,
     NavidromeUnavailable,
+    PlaylistChanged,
 )
 
 log = logging.getLogger(__name__)
@@ -31,6 +33,14 @@ def error_response(status_code: int, code: str, message: str) -> JSONResponse:
 async def navidrome_error_handler(request: Request, exc: Exception) -> JSONResponse:
     if isinstance(exc, NavidromeNotFound):
         return error_response(404, "not_found", "That isn’t in your music library.")
+
+    if isinstance(exc, PlaylistChanged):
+        return error_response(
+            409, "playlist_changed", "This playlist changed somewhere else. Reload it and try again."
+        )
+
+    if isinstance(exc, NavidromeForbidden):
+        return error_response(403, "forbidden", "Navidrome doesn’t allow changing that.")
 
     if isinstance(exc, NavidromeAuthError):
         log.error("Navidrome rejected PandaFM's credentials on %s: %s", request.url.path, exc)
