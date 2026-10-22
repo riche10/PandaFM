@@ -109,7 +109,7 @@ function FavoriteSongs() {
         )}
       </div>
       {tracks.length > 0 ? (
-        <TrackList tracks={tracks} onPlay={(i) => player.playTracks(data.tracks, i)} header={false} />
+        <TrackList tracks={tracks} onPlay={(i) => player.playCollection(data.tracks, { startIndex: i, source: { kind: 'favorites', name: 'Favorites' } })} header={false} />
       ) : (
         <p className="hint">Tap the heart on any song and it will wait for you here.</p>
       )}

@@ -1,15 +1,14 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { Track } from '../api/library'
+import * as Q from './queue.ts'
 import type { EngineEvent, PlaybackEngine, PlaybackErrorKind, PlaybackStatus } from './types'
 
 // The single source of truth for "what is playing". React components read it
 // through usePlayer() and call its actions; only the store talks to the
-// engine. Stage 2's queue is simply the list a song was picked from (an
-// album, or search results). Panda Radio will feed the same queue later.
+// engine. The queue itself (order, shuffle, repeat, hand-picked songs) is
+// plain data managed by ./queue; this store applies it and drives playback.
 
-export interface PlayerState {
-  queue: Track[]
-  index: number // -1 when nothing has been picked
+export interface PlayerState extends Q.QueueState {
   status: PlaybackStatus
   position: number
   duration: number
@@ -18,8 +17,24 @@ export interface PlayerState {
   muted: boolean
 }
 
+export interface PlayOptions {
+  /** Which song to start with; omitted with shuffle means a random one. */
+  startIndex?: number
+  source?: Q.QueueSource | null
+  shuffle?: boolean
+}
+
 export interface PlayerActions {
-  playTracks(tracks: Track[], startIndex?: number): void
+  /** Replace the queue with a collection (album, playlist, results…) and play it. */
+  playCollection(tracks: Track[], options?: PlayOptions): void
+  playNext(tracks: Track[]): void
+  addToQueue(tracks: Track[]): void
+  removeFromQueue(uid: string): void
+  clearQueue(which?: 'all' | 'manual'): void
+  jumpTo(uid: string): void
+  moveInQueue(uid: string, direction: -1 | 1): void
+  toggleShuffle(): void
+  cycleRepeat(): void
   togglePlay(): void
   play(): void
   pause(): void
@@ -39,6 +54,7 @@ export interface PlayerDeps {
   /** Find out why a track failed (e.g. ask the API), returning a readable message. */
   explainError: (trackId: string, kind: PlaybackErrorKind) => Promise<string>
   initialVolume?: number
+  random?: Q.Random
 }
 
 export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorKind, string> = {
@@ -51,12 +67,26 @@ export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorKind, string> = {
 /** Pressing "previous" this far into a song restarts it instead. */
 const RESTART_THRESHOLD_SECONDS = 3
 
-export function currentTrack(state: PlayerState): Track | null {
-  return state.queue[state.index] ?? null
+export function currentTrack(state: Pick<PlayerState, 'items' | 'index'>): Track | null {
+  return state.items[state.index]?.track ?? null
 }
 
-export function createPlayerStore({ engine, streamUrl, explainError, initialVolume = 1 }: PlayerDeps): PlayerStore {
+export const hasNext = (state: PlayerState) => Q.nextIndex(state) !== null
+
+function queueOf(state: PlayerState): Q.QueueState {
+  const { items, index, source, shuffle, ordered, repeat } = state
+  return { items, index, source, shuffle, ordered, repeat }
+}
+
+export function createPlayerStore({
+  engine,
+  streamUrl,
+  explainError,
+  initialVolume = 1,
+  random = Math.random,
+}: PlayerDeps): PlayerStore {
   engine.setVolume(initialVolume)
+
   const store = createStore<PlayerStoreState>()((set, get) => {
     const startPlayback = () => {
       engine.play().catch((err: unknown) => {
@@ -69,23 +99,30 @@ export function createPlayerStore({ engine, streamUrl, explainError, initialVolu
       })
     }
 
+    /** Make queue position `index` current and start it from the top. */
     const start = (index: number) => {
-      const track = get().queue[index]
-      if (!track) return
+      const item = get().items[index]
+      if (!item) return
       set({
         index,
         status: 'loading',
         position: 0,
-        duration: track.duration_seconds ?? 0,
+        duration: item.track.duration_seconds ?? 0,
         error: null,
       })
-      engine.load(streamUrl(track.id))
+      engine.load(streamUrl(item.track.id))
       startPlayback()
     }
 
+    const update = (change: (queue: Q.QueueState) => Q.QueueState) => set(change(queueOf(get())))
+
+    /** Hand-picked songs added with nothing loaded: show the first one, ready to play. */
+    const showFirstIfIdle = () => {
+      if (get().status === 'idle') set({ duration: currentTrack(get())?.duration_seconds ?? 0 })
+    }
+
     return {
-      queue: [],
-      index: -1,
+      ...Q.emptyQueue,
       status: 'idle',
       position: 0,
       duration: 0,
@@ -93,10 +130,31 @@ export function createPlayerStore({ engine, streamUrl, explainError, initialVolu
       volume: initialVolume,
       muted: false,
 
-      playTracks(tracks, startIndex = 0) {
+      playCollection(tracks, { startIndex, source = null, shuffle } = {}) {
         if (tracks.length === 0) return
-        set({ queue: tracks })
-        start(Math.min(Math.max(0, startIndex), tracks.length - 1))
+        update((q) => Q.load(q, tracks, { startIndex, source, shuffle, random }))
+        start(get().index)
+      },
+
+      playNext(tracks) {
+        update((q) => Q.playNext(q, tracks))
+        showFirstIfIdle()
+      },
+
+      addToQueue(tracks) {
+        update((q) => Q.addToQueue(q, tracks))
+        showFirstIfIdle()
+      },
+
+      removeFromQueue: (uid) => update((q) => Q.remove(q, uid)),
+      clearQueue: (which = 'all') => update((q) => Q.clearUpcoming(q, which)),
+      moveInQueue: (uid, direction) => update((q) => Q.move(q, uid, direction)),
+      toggleShuffle: () => update((q) => Q.setShuffle(q, !q.shuffle, random)),
+      cycleRepeat: () => update(Q.cycleRepeat),
+
+      jumpTo(uid) {
+        update((q) => Q.jumpTo(q, uid))
+        start(get().index)
       },
 
       togglePlay() {
@@ -108,8 +166,9 @@ export function createPlayerStore({ engine, streamUrl, explainError, initialVolu
       play() {
         const { status, index } = get()
         if (index < 0) return
-        if (status === 'error') {
-          start(index) // try again from the top
+        // Queued but never started, or failed: (re)load the current song.
+        if (status === 'error' || status === 'idle') {
+          start(index)
           return
         }
         if (status === 'ended') engine.seek(0)
@@ -131,15 +190,16 @@ export function createPlayerStore({ engine, streamUrl, explainError, initialVolu
       },
 
       next() {
-        const { index, queue } = get()
-        if (index + 1 < queue.length) start(index + 1)
+        const target = Q.nextIndex(get())
+        if (target !== null) start(target)
       },
 
       previous() {
-        const { index, position } = get()
-        if (index < 0) return
-        if (position > RESTART_THRESHOLD_SECONDS || index === 0) get().seek(0)
-        else start(index - 1)
+        const state = get()
+        if (state.index < 0) return
+        const target = Q.previousIndex(state)
+        if (state.position > RESTART_THRESHOLD_SECONDS || target === null) state.seek(0)
+        else start(target)
       },
 
       setVolume(volume) {
@@ -178,8 +238,14 @@ export function createPlayerStore({ engine, streamUrl, explainError, initialVolu
         })
         break
       case 'ended':
-        if (state.index + 1 < state.queue.length) state.next()
-        else store.setState({ status: 'ended', position: state.duration })
+        if (state.repeat === 'one') {
+          engine.seek(0)
+          startAgain(state)
+        } else if (Q.nextIndex(state) !== null) {
+          state.next()
+        } else {
+          store.setState({ status: 'ended', position: state.duration })
+        }
         break
       case 'error': {
         const track = currentTrack(state)
@@ -195,6 +261,12 @@ export function createPlayerStore({ engine, streamUrl, explainError, initialVolu
         break
       }
     }
+  }
+
+  /** Repeat-one: the song ended, so play it again from the top. */
+  const startAgain = (state: PlayerStoreState) => {
+    store.setState({ status: 'loading', position: 0 })
+    engine.play().catch(() => state.pause())
   }
 
   engine.subscribe(onEngineEvent)

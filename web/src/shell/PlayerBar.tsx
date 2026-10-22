@@ -4,13 +4,13 @@ import { Cover } from '../components/Cover'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { Icon } from '../components/Icon'
 import { SeekBar } from '../components/SeekBar'
-import { player, useCurrentTrack, usePlayer } from '../player'
+import { player, useCurrentTrack, useHasNext, usePlayer } from '../player'
 
 /** Desktop: the full-width bar along the bottom of the window. */
 export function PlayerBar() {
   const track = useCurrentTrack()
   const status = usePlayer((s) => s.status)
-  const hasNext = usePlayer((s) => s.index + 1 < s.queue.length)
+  const hasNext = useHasNext()
   const volume = usePlayer((s) => s.volume)
   const muted = usePlayer((s) => s.muted)
   const active = status === 'playing' || status === 'loading'

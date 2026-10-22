@@ -1,12 +1,12 @@
 import { getFavorites } from '../api/library'
-import { AlbumCard, ArtistCard, CardGrid, PlayCircle } from '../components/Cards'
+import { AlbumCard, ArtistCard, CardGrid, PlayCircle, ShuffleButton } from '../components/Cards'
 import { DetailHero } from '../components/DetailHero'
 import { Icon } from '../components/Icon'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { useApi } from '../hooks/useApi'
 import { useFavoritesVersion } from '../library'
-import { countOf, formatLength, player } from '../player'
+import { countOf, formatLength, player, type QueueSource } from '../player'
 
 export function FavoritesView() {
   const version = useFavoritesVersion()
@@ -14,6 +14,7 @@ export function FavoritesView() {
   const data = resource.state === 'ready' ? resource.data : resource.state === 'loading' ? resource.previous : undefined
 
   const tracks = data?.tracks ?? []
+  const source: QueueSource = { kind: 'favorites', name: 'Favorites' }
   const length = formatLength(tracks.reduce((sum, t) => sum + (t.duration_seconds ?? 0), 0))
   return (
     <div className="page page--detail">
@@ -27,7 +28,12 @@ export function FavoritesView() {
         kind="Collection"
         title="Favorites"
         meta={data ? [countOf(tracks.length, 'song', 'songs'), length].filter(Boolean).join(' · ') : ' '}
-        actions={<PlayCircle label="Play favorite songs" disabled={tracks.length === 0} onPlay={() => player.playTracks(tracks, 0)} />}
+        actions={
+          <>
+            <PlayCircle label="Play favorite songs" disabled={tracks.length === 0} onPlay={() => player.playCollection(tracks, { source })} />
+            <ShuffleButton label="Shuffle favorite songs" disabled={tracks.length < 2} onShuffle={() => player.playCollection(tracks, { source, shuffle: true })} />
+          </>
+        }
       />
       {resource.state === 'error' ? (
         <ErrorNotice error={resource.error} onRetry={retry} />
@@ -39,7 +45,7 @@ export function FavoritesView() {
         </EmptyState>
       ) : (
         <>
-          {tracks.length > 0 && <TrackList tracks={tracks} onPlay={(i) => player.playTracks(tracks, i)} />}
+          {tracks.length > 0 && <TrackList tracks={tracks} onPlay={(i) => player.playCollection(tracks, { startIndex: i, source })} />}
           {data.albums.length > 0 && (
             <section className="shelf" aria-label="Favorite albums">
               <h2 className="section-title">Albums</h2>

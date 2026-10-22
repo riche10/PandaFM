@@ -47,7 +47,7 @@ export function AlbumCard({ album, subtitle = 'artist' }: { album: AlbumSummary;
       art={<Cover coverArtId={album.cover_art_id} size={300} className="card-cover" />}
       title={album.name}
       subtitle={subtitle === 'year' ? (album.year ?? 'Album') : album.artist}
-      play={<CardPlay label={`Play ${album.name}`} onPlay={() => void playAlbum(album.id)} />}
+      play={<CardPlay label={`Play ${album.name}`} onPlay={() => void playAlbum(album.id, album.name)} />}
     />
   )
 }
@@ -60,7 +60,7 @@ export function ArtistCard({ artist }: { artist: ArtistSummary }) {
       art={<Cover coverArtId={artist.cover_art_id} size={300} className="card-cover" />}
       title={artist.name}
       subtitle={albums(artist.album_count)}
-      play={<CardPlay label={`Play ${artist.name}`} onPlay={() => void playArtist(artist.id)} />}
+      play={<CardPlay label={`Play ${artist.name}`} onPlay={() => void playArtist(artist.id, artist.name)} />}
     />
   )
 }
@@ -72,7 +72,7 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
       art={<Cover coverArtId={playlist.cover_art_id} size={300} className="card-cover" />}
       title={playlist.name}
       subtitle={songs(playlist.track_count)}
-      play={<CardPlay label={`Play ${playlist.name}`} onPlay={() => void playPlaylist(playlist.id)} />}
+      play={<CardPlay label={`Play ${playlist.name}`} onPlay={() => void playPlaylist(playlist.id, playlist.name)} />}
     />
   )
 }
@@ -111,6 +111,15 @@ export function QuickTile({ to, icon, label, tone }: { to: string; icon: IconNam
       </span>
       <span className="quick-tile-label">{label}</span>
     </Link>
+  )
+}
+
+/** Shuffle-play beside the big play disc in page headers. */
+export function ShuffleButton({ label, onShuffle, disabled }: { label: string; onShuffle: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" className="icon-button icon-button--large hero-shuffle" aria-label={label} onClick={onShuffle} disabled={disabled}>
+      <Icon name="shuffle" />
+    </button>
   )
 }
 

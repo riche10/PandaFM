@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router'
 import { type Album, getAlbum, getArtist } from '../api/library'
-import { AlbumCard, PlayCircle, Shelf } from '../components/Cards'
+import { AlbumCard, PlayCircle, Shelf, ShuffleButton } from '../components/Cards'
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
 import { FavoriteButton } from '../components/FavoriteButton'
@@ -10,7 +10,7 @@ import { TrackList } from '../components/TrackList'
 import { openDialog } from '../dialogs/store'
 import { useApi } from '../hooks/useApi'
 import { useArtworkColor } from '../hooks/useArtworkColor'
-import { countOf, formatLength, player } from '../player'
+import { countOf, formatLength, player, type QueueSource } from '../player'
 
 export function AlbumView() {
   const { albumId = '' } = useParams()
@@ -27,6 +27,7 @@ export function AlbumView() {
   }
   if (!album) return <div className="page"><Loading label="Loading album…" /></div>
 
+  const source: QueueSource = { kind: 'album', id: album.id, name: album.name }
   const facts = [album.year, album.genres[0], countOf(album.tracks.length, 'song', 'songs'), formatLength(album.duration_seconds)].filter(Boolean)
   return (
     <div className="page page--detail">
@@ -45,7 +46,8 @@ export function AlbumView() {
         }
         actions={
           <>
-            <PlayCircle label={`Play ${album.name}`} disabled={!album.tracks.length} onPlay={() => player.playTracks(album.tracks, 0)} />
+            <PlayCircle label={`Play ${album.name}`} disabled={!album.tracks.length} onPlay={() => player.playCollection(album.tracks, { source })} />
+            <ShuffleButton label={`Shuffle ${album.name}`} disabled={album.tracks.length < 2} onShuffle={() => player.playCollection(album.tracks, { source, shuffle: true })} />
             <FavoriteButton kind="album" id={album.id} fromServer={album.favorite} label={album.name} className="icon-button--large" />
             <MenuButton label={`More options for ${album.name}`} className="icon-button--large">
               {(close) => (
@@ -62,7 +64,7 @@ export function AlbumView() {
           </>
         }
       />
-      <TrackList tracks={album.tracks} variant="album" albumArtist={album.artist} onPlay={(i) => player.playTracks(album.tracks, i)} />
+      <TrackList tracks={album.tracks} variant="album" albumArtist={album.artist} onPlay={(i) => player.playCollection(album.tracks, { startIndex: i, source })} />
       {album.artist_id && <MoreByArtist album={album} artistId={album.artist_id} />}
     </div>
   )

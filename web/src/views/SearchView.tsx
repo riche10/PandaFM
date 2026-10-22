@@ -127,7 +127,7 @@ function SearchResults({ query }: { query: string }) {
               </button>
             )}
           </div>
-          <TrackList tracks={songs} onPlay={(i) => player.playTracks(results.tracks, i)} header={false} />
+          <TrackList tracks={songs} onPlay={(i) => player.playCollection(results.tracks, { startIndex: i, source: { kind: 'search', name: `“${query}”` } })} header={false} />
         </section>
       )}
       {results.artists.length > 0 && (

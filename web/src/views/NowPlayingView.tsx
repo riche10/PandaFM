@@ -7,7 +7,7 @@ import { SeekBar } from '../components/SeekBar'
 import { EmptyState, ErrorNotice } from '../components/States'
 import { TrackMenu } from '../components/TrackMenu'
 import { useArtworkColor } from '../hooks/useArtworkColor'
-import { player, useCurrentTrack, usePlayer } from '../player'
+import { player, useCurrentTrack, useHasNext, usePlayer } from '../player'
 
 export function NowPlayingView() {
   const navigate = useNavigate()
@@ -15,7 +15,7 @@ export function NowPlayingView() {
   const track = useCurrentTrack()
   const status = usePlayer((s) => s.status)
   const error = usePlayer((s) => s.error)
-  const hasNext = usePlayer((s) => s.index + 1 < s.queue.length)
+  const hasNext = useHasNext()
   const color = useArtworkColor(track?.cover_art_id ?? null)
   const close = () => (location.key === 'default' ? navigate('/') : navigate(-1))
 

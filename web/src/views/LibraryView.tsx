@@ -154,7 +154,7 @@ function SongsTab() {
         <EmptyState icon="music" title="No songs yet" />
       ) : (
         <>
-          <TrackList tracks={songs.items} onPlay={(i) => player.playTracks(songs.items, i)} />
+          <TrackList tracks={songs.items} onPlay={(i) => player.playCollection(songs.items, { startIndex: i, source: { kind: 'songs', name: order === 'random' ? 'Random songs' : 'All songs' } })} />
           <LoadMore visible={songs.hasMore && order === 'all'} busy={songs.loadingMore} onClick={songs.loadMore} />
         </>
       )}
