@@ -1,189 +1,130 @@
-import { type FormEvent, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
-import { type AlbumListKind, listAlbums, searchLibrary } from '../api/library'
-import { AlbumGrid } from '../components/AlbumGrid'
-import { ArtistList } from '../components/ArtistList'
-import { ErrorNotice } from '../components/ErrorNotice'
-import { Icon } from '../components/Icon'
+import type { ComponentType } from 'react'
+import { Link, Navigate, useSearchParams } from 'react-router'
+import { getFavorites, listAlbumsPage } from '../api/library'
+import { AlbumCard, PlaylistCard, QuickTile, Shelf } from '../components/Cards'
+import { ErrorNotice } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { Wordmark } from '../components/Wordmark'
 import { useApi } from '../hooks/useApi'
+import { useFavoritesVersion, usePlaylists } from '../library'
 import { player } from '../player'
 
-const BROWSE_LISTS: { kind: AlbumListKind; label: string }[] = [
-  { kind: 'newest', label: 'Recently added' },
-  { kind: 'random', label: 'Random' },
-  { kind: 'alphabetical', label: 'A–Z' },
+/**
+ * Home is a list of independent sections, each loading its own data. Future
+ * personal sections (Back in Rotation, Study Panda, Because You've Been
+ * Listening To…) slot into HOME_SECTIONS without touching the others.
+ */
+const HOME_SECTIONS: { id: string; Section: ComponentType }[] = [
+  { id: 'quick-access', Section: QuickAccess },
+  { id: 'recently-played', Section: RecentlyPlayed },
+  { id: 'recently-added', Section: RecentlyAdded },
+  { id: 'favorite-songs', Section: FavoriteSongs },
+  { id: 'playlists', Section: YourPlaylists },
+  { id: 'random-albums', Section: RandomAlbums },
 ]
 
-const SEARCH_DELAY_MS = 250
-
-function browseKind(value: string | null): AlbumListKind {
-  return BROWSE_LISTS.some((item) => item.kind === value) ? (value as AlbumListKind) : 'newest'
-}
-
 export function HomeView() {
-  // The query lives in the URL (?q=), so back, refresh and links keep it.
-  const [params, setParams] = useSearchParams()
-  const query = params.get('q') ?? ''
-  const list = browseKind(params.get('list'))
-  const [draft, setDraft] = useState(query)
-
-  // When the URL changes from outside (the back button), show that query.
-  const [shownQuery, setShownQuery] = useState(query)
-  if (query !== shownQuery) {
-    setShownQuery(query)
-    if (draft.trim() !== query) setDraft(query)
-  }
-
-  const applyQuery = (text: string) => {
-    const next = text.trim()
-    setParams(
-      (prev) => {
-        const updated = new URLSearchParams(prev)
-        if (next) updated.set('q', next)
-        else updated.delete('q')
-        return updated
-      },
-      // Refining a search replaces history; starting one adds an entry.
-      { replace: query !== '' },
-    )
-  }
-
-  useEffect(() => {
-    if (draft.trim() === query) return
-    const timer = setTimeout(() => applyQuery(draft), SEARCH_DELAY_MS)
-    return () => clearTimeout(timer)
-    // applyQuery only depends on `query`, already listed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, query])
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    applyQuery(draft)
-    ;(document.activeElement as HTMLElement | null)?.blur() // close the phone keyboard
-  }
-
-  const chooseList = (kind: AlbumListKind) =>
-    setParams(
-      (prev) => {
-        const updated = new URLSearchParams(prev)
-        updated.set('list', kind)
-        return updated
-      },
-      { replace: true },
-    )
+  // Stage 2 kept searches at /?q=…; send old links to the Search page.
+  const [params] = useSearchParams()
+  const legacyQuery = params.get('q')
+  if (legacyQuery) return <Navigate to={`/search?${new URLSearchParams({ q: legacyQuery })}`} replace />
 
   return (
-    <main className="page home">
-      <Wordmark size="small" />
-      <form role="search" className="search" onSubmit={submit}>
-        <Icon name="search" />
-        <input
-          type="search"
-          className="search-input"
-          placeholder="Songs, albums or artists"
-          aria-label="Search your library"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          enterKeyHint="search"
-          autoComplete="off"
-          autoCapitalize="off"
-          spellCheck={false}
-        />
-        {draft && (
-          <button type="button" className="icon-button" aria-label="Clear search" onClick={() => setDraft('')}>
-            <Icon name="close" />
-          </button>
-        )}
-      </form>
-
-      {query ? <SearchResultsView query={query} /> : <Browse list={list} onChoose={chooseList} />}
-    </main>
-  )
-}
-
-function SearchResultsView({ query }: { query: string }) {
-  const [resource, retry] = useApi(`search:${query}`, (signal) => searchLibrary(query, signal))
-
-  if (resource.state === 'error') return <ErrorNotice error={resource.error} onRetry={retry} />
-  const results = resource.state === 'ready' ? resource.data : resource.previous
-  if (!results) return <p className="hint">Searching…</p>
-
-  const nothing = !results.tracks.length && !results.albums.length && !results.artists.length
-  return (
-    <div className="results" aria-busy={resource.state === 'loading'}>
-      {nothing && resource.state === 'ready' && (
-        <p className="hint">
-          Nothing in your library matches “{query}”. Try fewer words, or part of a title or artist name.
-        </p>
-      )}
-      {results.tracks.length > 0 && (
-        <section aria-labelledby="songs-title">
-          <h2 id="songs-title" className="section-title">
-            Songs
-          </h2>
-          <TrackList tracks={results.tracks} variant="search" onPlay={(i) => player.playTracks(results.tracks, i)} />
-        </section>
-      )}
-      {results.albums.length > 0 && (
-        <section aria-labelledby="albums-title">
-          <h2 id="albums-title" className="section-title">
-            Albums
-          </h2>
-          <AlbumGrid albums={results.albums} />
-        </section>
-      )}
-      {results.artists.length > 0 && (
-        <section aria-labelledby="artists-title">
-          <h2 id="artists-title" className="section-title">
-            Artists
-          </h2>
-          <ArtistList artists={results.artists} />
-        </section>
-      )}
+    <div className="page page--home">
+      <header className="home-header">
+        <Wordmark size="small" />
+      </header>
+      {HOME_SECTIONS.map(({ id, Section }) => (
+        <Section key={id} />
+      ))}
     </div>
   )
 }
 
-function Browse({ list, onChoose }: { list: AlbumListKind; onChoose: (kind: AlbumListKind) => void }) {
-  const [resource, retry] = useApi(`albums:${list}`, (signal) => listAlbums(list, signal))
+function QuickAccess() {
+  return (
+    <nav className="quick-grid" aria-label="Quick access">
+      <QuickTile to="/favorites" icon="heart" label="Favorites" tone="linear-gradient(135deg, #4a2a3a, #23161d)" />
+      <QuickTile to="/library/albums?sort=newest" icon="clock" label="Recently added" tone="linear-gradient(135deg, #2c3a4a, #161c24)" />
+      <QuickTile to="/library/albums?sort=random" icon="shuffle" label="Random albums" tone="linear-gradient(135deg, #3d3a26, #1f1d14)" />
+      <QuickTile to="/library/artists" icon="artist" label="Artists" tone="linear-gradient(135deg, #2a3d33, #151f1a)" />
+      <QuickTile to="/library/songs" icon="music" label="Songs" tone="linear-gradient(135deg, #3a2f4a, #1c1725)" />
+      <QuickTile to="/library/playlists" icon="playlist" label="Playlists" tone="linear-gradient(135deg, #46332a, #221915)" />
+    </nav>
+  )
+}
+
+function AlbumShelf({ kind, title, to, hideWhenEmpty }: { kind: 'recent' | 'newest' | 'random'; title: string; to?: string; hideWhenEmpty?: boolean }) {
+  const [resource, retry] = useApi(`home:${kind}`, (signal) => listAlbumsPage(kind, 0, 12, signal))
+  if (resource.state === 'loading') return null
+  if (resource.state === 'error') {
+    return hideWhenEmpty ? null : (
+      <Shelf title={title}>
+        <ErrorNotice error={resource.error} onRetry={retry} />
+      </Shelf>
+    )
+  }
+  if (resource.data.albums.length === 0 && hideWhenEmpty) return null
+  return (
+    <Shelf title={title} to={to}>
+      {resource.data.albums.map((album) => (
+        <AlbumCard key={album.id} album={album} />
+      ))}
+    </Shelf>
+  )
+}
+
+// Navidrome's own play history. PandaFM doesn't report plays to Navidrome
+// yet, so this only fills from other Navidrome clients until listening
+// history arrives; with nothing to show, the section stays out of the way.
+function RecentlyPlayed() {
+  return <AlbumShelf kind="recent" title="Recently played" hideWhenEmpty />
+}
+
+function RecentlyAdded() {
+  return <AlbumShelf kind="newest" title="Recently added" to="/library/albums?sort=newest" />
+}
+
+function RandomAlbums() {
+  return <AlbumShelf kind="random" title="Something different" to="/library/albums?sort=random" />
+}
+
+function FavoriteSongs() {
+  const version = useFavoritesVersion()
+  const [resource] = useApi(`home:favorites:${version}`, (signal) => getFavorites(signal))
+  const data = resource.state === 'ready' ? resource.data : resource.state === 'loading' ? resource.previous : undefined
+  if (!data) return null
+  const tracks = data.tracks.slice(0, 5)
 
   return (
-    <section aria-labelledby="browse-title">
+    <section className="shelf" aria-label="Favorite songs">
       <div className="section-head">
-        <h2 id="browse-title" className="section-title">
-          Albums
+        <h2 className="section-title">
+          <Link to="/favorites">Favorite songs</Link>
         </h2>
-        <Link to="/artists" className="text-button">
-          All artists
-        </Link>
+        {data.tracks.length > 0 && (
+          <Link to="/favorites" className="show-all">
+            Show all
+          </Link>
+        )}
       </div>
-      <div className="chips" role="group" aria-label="Show albums">
-        {BROWSE_LISTS.map(({ kind, label }) => (
-          <button
-            key={kind}
-            type="button"
-            className="chip"
-            aria-pressed={kind === list}
-            // Tapping Random again deals a new set.
-            onClick={() => (kind === list ? kind === 'random' && retry() : onChoose(kind))}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {resource.state === 'error' ? (
-        <ErrorNotice error={resource.error} onRetry={retry} />
-      ) : resource.state === 'loading' ? (
-        <p className="hint">Loading albums…</p>
-      ) : resource.data.albums.length === 0 ? (
-        <p className="hint">
-          Navidrome hasn’t found any albums yet. If you just added music, wait for its next library scan.
-        </p>
+      {tracks.length > 0 ? (
+        <TrackList tracks={tracks} onPlay={(i) => player.playTracks(data.tracks, i)} header={false} />
       ) : (
-        <AlbumGrid albums={resource.data.albums} />
+        <p className="hint">Tap the heart on any song and it will wait for you here.</p>
       )}
     </section>
+  )
+}
+
+function YourPlaylists() {
+  const all = usePlaylists()
+  if (all.length === 0) return null
+  return (
+    <Shelf title="Your playlists" to="/library/playlists">
+      {all.slice(0, 12).map((playlist) => (
+        <PlaylistCard key={playlist.id} playlist={playlist} />
+      ))}
+    </Shelf>
   )
 }

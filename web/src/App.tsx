@@ -1,40 +1,33 @@
-import { useEffect } from 'react'
-import { Route, Routes, useLocation, useNavigationType } from 'react-router'
-import { ConnectionBanner } from './components/ConnectionBanner'
-import { MiniPlayer } from './components/MiniPlayer'
-import { usePlayer } from './player'
+import { Navigate, Route, Routes } from 'react-router'
+import { AppShell } from './shell/AppShell'
 import { AlbumView } from './views/AlbumView'
-import { ArtistsView } from './views/ArtistsView'
 import { ArtistView } from './views/ArtistView'
+import { FavoritesView } from './views/FavoritesView'
 import { HomeView } from './views/HomeView'
+import { LibraryView } from './views/LibraryView'
 import { NotFoundView } from './views/NotFoundView'
 import { NowPlayingView } from './views/NowPlayingView'
+import { PlaylistView } from './views/PlaylistView'
+import { SearchView } from './views/SearchView'
 import { StatusView } from './views/StatusView'
 
 export default function App() {
-  const location = useLocation()
-  const navigationType = useNavigationType()
-  const hasTrack = usePlayer((s) => s.index >= 0)
-  const showMiniPlayer = hasTrack && location.pathname !== '/now-playing'
-
-  // New pages start at the top; going back keeps the browser's scroll position.
-  useEffect(() => {
-    if (navigationType !== 'POP') window.scrollTo(0, 0)
-  }, [location.pathname, navigationType])
-
   return (
-    <div className="app" data-mini-player={showMiniPlayer ? '' : undefined}>
-      <ConnectionBanner />
+    <AppShell>
       <Routes>
         <Route path="/" element={<HomeView />} />
+        <Route path="/search" element={<SearchView />} />
+        <Route path="/library" element={<Navigate to="/library/albums" replace />} />
+        <Route path="/library/:tab" element={<LibraryView />} />
+        <Route path="/favorites" element={<FavoritesView />} />
+        <Route path="/playlists/:playlistId" element={<PlaylistView />} />
         <Route path="/albums/:albumId" element={<AlbumView />} />
-        <Route path="/artists" element={<ArtistsView />} />
+        <Route path="/artists" element={<Navigate to="/library/artists" replace />} />
         <Route path="/artists/:artistId" element={<ArtistView />} />
         <Route path="/now-playing" element={<NowPlayingView />} />
         <Route path="/status" element={<StatusView />} />
         <Route path="*" element={<NotFoundView />} />
       </Routes>
-      {showMiniPlayer && <MiniPlayer />}
-    </div>
+    </AppShell>
   )
 }
