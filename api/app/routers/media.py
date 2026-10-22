@@ -51,6 +51,9 @@ class ProxiedAudioResponse(StreamingResponse):
 @router.get(
     "/tracks/{track_id}/stream",
     response_class=ProxiedAudioResponse,
+    # Explicit, because FastAPI otherwise reads the default status from the
+    # response class's __init__, which ProxiedAudioResponse doesn't take.
+    status_code=200,
     responses={206: {"description": "Partial content (Range request)"}},
 )
 async def stream_track(

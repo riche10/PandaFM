@@ -52,3 +52,11 @@ def test_health_explains_bad_navidrome_credentials():
 
     assert body["navidrome"]["ok"] is False
     assert "NAVIDROME_USER" in body["navidrome"]["detail"]
+
+
+def test_api_docs_schema_builds():
+    # /api/docs renders from this schema; a route FastAPI can't describe breaks it.
+    with client_with_navidrome(PING_OK) as client:
+        response = client.get("/api/openapi.json")
+    assert response.status_code == 200
+    assert "/api/tracks/{track_id}/stream" in response.json()["paths"]
