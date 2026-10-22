@@ -115,6 +115,56 @@ This keeps PandaFM portable: someone can deploy the Docker stack and use
 whatever edge proxy they already run (Nginx, Traefik, Caddy, Cloudflare
 Tunnel, etc.).
 
+## Using PandaFM (Stage 2)
+
+Open PandaFM, search for a song, album or artist, and tap a song to play
+it. The bar at the bottom opens Now Playing, with artwork, a seek bar and
+play/pause. Albums can be browsed by recently added, random or A–Z.
+
+All music goes through PandaFM's API (`/api/tracks/{id}/stream` and
+`/api/covers/{id}`). The browser never talks to Navidrome and never sees
+its credentials.
+
+PandaFM streams your original files, so seeking always works. Phones play
+MP3, AAC/M4A, FLAC and Ogg/Opus; ALAC and WMA files won't play in the
+browser yet.
+
+If something is down, a banner explains it. The full connection check is
+at `/status`.
+
+### External Nginx / Nginx Proxy Manager settings for audio
+
+PandaFM works behind your proxy with one upstream (port 8085). For smooth
+audio, turn off response buffering so songs stream as they arrive and
+seeking starts quickly:
+
+```nginx
+location / {
+    proxy_pass http://<ubuntu-server-ip>:8085;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+In Nginx Proxy Manager, put `proxy_buffering off;` in the proxy host's
+Advanced tab. Range headers (used for seeking) pass through Nginx by
+default; don't enable response caching for `/api`.
+
+## Running the tests
+
+```bash
+# API (no Navidrome or database needed; Navidrome is faked)
+docker run --rm -v "$PWD/api:/app" -w /app python:3.12-slim \
+  sh -c "pip install -q -r requirements-dev.txt && pytest -q"
+
+# Web player logic (Node's built-in test runner)
+docker run --rm -v "$PWD/web:/app" -w /app node:22-alpine \
+  sh -c "npm install --no-audit --no-fund && npm test"
+```
+
 ## Repository structure
 
 ```text
@@ -122,9 +172,19 @@ PandaFM/
 ├── docker-compose.yml
 ├── .env.example
 ├── api/
+│   └── app/
+│       ├── navidrome/   # the only code that speaks Subsonic
+│       ├── routers/     # health, library, media (stream + covers)
+│       ├── schemas/     # PandaFM's library models
+│       └── errors.py    # user-safe error responses
 └── web/
     ├── Dockerfile
-    └── nginx.conf
+    ├── nginx.conf
+    └── src/
+        ├── api/         # typed calls to /api
+        ├── player/      # audio engine (two decks), player store
+        ├── components/
+        └── views/       # Home, Album, Artist(s), Now Playing, Status
 ```
 
 Secrets belong in Portainer environment variables and must not be committed.
