@@ -1,6 +1,9 @@
 """The /api library endpoints, through the real FastAPI app with a fake Navidrome."""
 
+import logging
+
 import httpx
+import pytest
 
 from tests.fakes import FakeNavidrome, api_client, assert_no_secrets, fixture, subsonic_error
 
@@ -102,3 +105,13 @@ def test_overlong_ids_are_rejected_before_reaching_navidrome():
         response = client.get("/api/tracks/" + "x" * 201)
     assert response.status_code == 422
     assert fake.requests == []
+
+
+def test_navidrome_credentials_never_reach_the_log(caplog: pytest.LogCaptureFixture):
+    caplog.set_level(logging.DEBUG)
+    fake = FakeNavidrome().json("search3", fixture("search3"))
+    with api_client(fake) as client:
+        client.get("/api/search", params={"q": "neon"})
+
+    for secret in fake.secrets_sent():
+        assert secret not in caplog.text, "a Navidrome credential was written to the log"

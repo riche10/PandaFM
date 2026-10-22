@@ -27,6 +27,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             level=cfg.log_level.upper(),
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         )
+        # httpx logs every request URL at INFO, and Navidrome URLs carry the
+        # Subsonic username, token and salt (a replayable login). Keep them
+        # out of the container log, whatever PANDAFM_LOG_LEVEL is.
+        for noisy in ("httpx", "httpcore"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
 
         # Long-lived shared resources, closed cleanly on shutdown.
         app.state.settings = cfg
