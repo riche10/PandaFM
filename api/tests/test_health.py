@@ -17,6 +17,7 @@ SETTINGS = Settings(
     navidrome_password=SecretStr("bamboo-test"),
     db_host="127.0.0.1",
     db_port=1,
+    background_sync=False,
 )
 
 

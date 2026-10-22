@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     navidrome_timeout_seconds: float = 10.0
 
     log_level: str = "info"
+    # Keep the track cache in step with Navidrome in the background.
+    background_sync: bool = True
 
     @property
     def database_url(self) -> URL:

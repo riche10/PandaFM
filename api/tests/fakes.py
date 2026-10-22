@@ -88,6 +88,7 @@ def api_client(fake: FakeNavidrome) -> TestClient:
         navidrome_password=SecretStr(PASSWORD),
         db_host="127.0.0.1",
         db_port=1,
+        background_sync=False,
     )
     app = create_app(settings)
     client = fake.client()
