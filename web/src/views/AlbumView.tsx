@@ -9,6 +9,7 @@ import { ErrorNotice, Loading } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { openDialog } from '../dialogs/store'
 import { toast } from '../library'
+import { startRadio } from '../library/play'
 import { useApi } from '../hooks/useApi'
 import { useArtworkColor } from '../hooks/useArtworkColor'
 import { countOf, formatLength, player, type QueueSource } from '../player'
@@ -56,6 +57,7 @@ export function AlbumView() {
                   <MenuItem icon="playNext" label="Play next" onSelect={() => { close(); player.playNext(album.tracks); toast(`${album.name} will play next`) }} />
                   <MenuItem icon="queue" label="Add to queue" onSelect={() => { close(); player.addToQueue(album.tracks); toast(`Added ${album.name} to the queue`) }} />
                   <MenuItem icon="playlist" label="Add album to playlist" onSelect={() => { close(); openDialog({ type: 'add-to-playlist', tracks: album.tracks }) }} />
+                  <MenuItem icon="radio" label="Start Panda Radio" onSelect={() => { close(); void startRadio('panda', { kind: 'album', id: album.id, name: album.name }) }} />
                 </>
               )}
             </MenuButton>

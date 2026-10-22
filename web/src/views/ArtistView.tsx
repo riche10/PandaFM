@@ -5,6 +5,8 @@ import { AlbumCard, CardGrid, PlayCircle, ShuffleButton } from '../components/Ca
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
 import { FavoriteButton } from '../components/FavoriteButton'
+import { MenuButton, MenuItem } from '../components/Menu'
+import { startRadio } from '../library/play'
 import { ErrorNotice, Loading } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { useApi } from '../hooks/useApi'
@@ -47,6 +49,11 @@ export function ArtistView() {
             <PlayCircle label={`Play ${artist.name}`} disabled={!tracks.length} onPlay={() => player.playCollection(tracks, { source })} />
             <ShuffleButton label={`Shuffle ${artist.name}`} disabled={tracks.length < 2} onShuffle={() => player.playCollection(tracks, { source, shuffle: true })} />
             <FavoriteButton kind="artist" id={artist.id} fromServer={artist.favorite} label={artist.name} className="icon-button--large" />
+            <MenuButton label={`More options for ${artist.name}`} className="icon-button--large">
+              {(close) => (
+                <MenuItem icon="radio" label="Start Panda Radio" onSelect={() => { close(); void startRadio('panda', { kind: 'artist', id: artist.id, name: artist.name }) }} />
+              )}
+            </MenuButton>
           </>
         }
       />

@@ -11,7 +11,8 @@ import { SeekBar } from '../components/SeekBar'
 import { EmptyState, ErrorNotice } from '../components/States'
 import { TrackMenu } from '../components/TrackMenu'
 import { useArtworkColor } from '../hooks/useArtworkColor'
-import { player, useCurrentTrack, useHasNext, usePlayer } from '../player'
+import { openDialog } from '../dialogs/store'
+import { player, radio, useCurrentTrack, useHasNext, usePlayer, useRadio } from '../player'
 
 const UP_NEXT = 5
 
@@ -24,6 +25,8 @@ export function NowPlayingView() {
   const source = usePlayer((s) => s.source)
   const upcoming = usePlayer((s) => Math.max(0, s.items.length - s.index - 1))
   const hasNext = useHasNext()
+  const activeRadio = useRadio()
+  const why = usePlayer((s) => s.items[s.index]?.radio?.reasons ?? null)
   const color = useArtworkColor(track?.cover_art_id ?? null)
   const close = () => (location.key === 'default' ? navigate('/') : navigate(-1))
 
@@ -34,7 +37,15 @@ export function NowPlayingView() {
       </button>
       <div className="np-header-text">
         <span className="np-header-title">Now playing</span>
-        {source && <span className="np-header-source">from {source.name}</span>}
+        {activeRadio ? (
+          <span className="np-header-source np-radio">
+            <Icon name="radio" />
+            {activeRadio.modeLabel}
+            {activeRadio.seedName ? ` · based on ${activeRadio.seedName}` : ''}
+          </span>
+        ) : (
+          source && <span className="np-header-source">from {source.name}</span>
+        )}
       </div>
       {track ? <TrackMenu track={track} onPlay={player.play} /> : <span className="icon-button" />}
     </div>
@@ -79,6 +90,12 @@ export function NowPlayingView() {
             </div>
             <FavoriteButton kind="track" id={track.id} fromServer={track.favorite} label={track.title} className="icon-button--large" />
           </div>
+          {why && (
+            <button type="button" className="why-button" onClick={() => openDialog({ type: 'why', track, reasons: why, modeLabel: activeRadio?.modeLabel ?? null })}>
+              <Icon name="sparkle" />
+              Why this song?
+            </button>
+          )}
 
           <SeekBar />
 
@@ -107,7 +124,12 @@ export function NowPlayingView() {
 
         <section className="np-upnext" aria-label="Up next">
           <div className="queue-heading-row">
-            <h2 className="np-upnext-title">Up next{upcoming > 0 ? ` · ${upcoming}` : ''}</h2>
+            <h2 className="np-upnext-title">Up next{upcoming > 0 && !activeRadio ? ` · ${upcoming}` : ''}</h2>
+            {activeRadio && (
+              <button type="button" className="text-button" onClick={() => void radio.end()}>
+                End radio
+              </button>
+            )}
             <QueueButton />
           </div>
           <QueueList limit={UP_NEXT} showCurrent={false} />

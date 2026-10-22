@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
-import type { AlbumSummary, ArtistSummary, PlaylistSummary } from '../api/library'
+import type { AlbumSummary, ArtistSummary, PlaylistSummary, Track } from '../api/library'
 import { playAlbum, playArtist, playPlaylist } from '../library/play'
 import { Cover } from './Cover'
 import { Icon, type IconName } from './Icon'
@@ -74,6 +74,24 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
       subtitle={songs(playlist.track_count)}
       play={<CardPlay label={`Play ${playlist.name}`} onPlay={() => void playPlaylist(playlist.id, playlist.name)} />}
     />
+  )
+}
+
+/** A song as a card (Home history shelves). The whole card plays it. */
+export function TrackCard({ track, onPlay }: { track: Track; onPlay: () => void }) {
+  return (
+    <div className="card card--track">
+      <div className="card-art">
+        <Cover coverArtId={track.cover_art_id} size={300} className="card-cover" />
+        <span className="card-play card-play--static" aria-hidden="true">
+          <Icon name="play" />
+        </span>
+      </div>
+      <button type="button" className="card-title card-title--button" onClick={onPlay} aria-label={`Play ${track.title} by ${track.artist}`}>
+        {track.title}
+      </button>
+      <span className="card-sub">{track.artist}</span>
+    </div>
   )
 }
 

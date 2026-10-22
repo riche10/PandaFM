@@ -2703,3 +2703,163 @@ button.quick-tile {
 .page--queue .section-head {
   align-items: center;
 }
+
+/* ── Panda Radio ───────────────────────────────────────────────────── */
+
+button.mode-tile {
+  width: 100%;
+  height: 100%;
+  border-style: solid;
+  border-color: var(--line);
+  background: var(--raised);
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s var(--ease);
+}
+
+button.mode-tile:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+button.mode-tile:active {
+  transform: scale(0.98);
+}
+
+button.mode-tile[aria-pressed='true'] {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.modes-row > li {
+  display: flex;
+}
+
+.np-radio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.np-radio .icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.why-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-self: start;
+  padding: 0.3rem 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.why-button .icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.why-button:hover {
+  background: rgb(255 255 255 / 0.18);
+}
+
+.why-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.why-list li {
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  background: var(--hover);
+}
+
+.queue-radio-mark {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-right: 0.3rem;
+  vertical-align: -0.1rem;
+}
+
+.card--track .card-title--button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.card-play--static {
+  display: none;
+}
+
+@media (hover: hover) {
+  .card--track:hover .card-play--static {
+    display: grid;
+    opacity: 1;
+    transform: none;
+    pointer-events: none;
+  }
+}
+
+/* ── Stats page ────────────────────────────────────────────────────── */
+
+.stats-block {
+  margin-top: 2rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  margin: 1.5rem 0 0;
+}
+
+.stats-grid div {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+
+.stats-grid dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.stats-grid dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.stats-table td {
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.stats-table td:not(:first-child) {
+  color: var(--muted);
+  white-space: nowrap;
+}

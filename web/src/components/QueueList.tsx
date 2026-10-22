@@ -1,5 +1,6 @@
 import { Link } from 'react-router'
-import { player, usePlayer, type QueueItem } from '../player'
+import { openDialog } from '../dialogs/store'
+import { player, radio, usePlayer, type QueueItem } from '../player'
 import { Cover } from './Cover'
 import { Equalizer } from './Equalizer'
 import { Icon } from './Icon'
@@ -64,12 +65,19 @@ export function QueueList({ limit, showCurrent = true }: { limit?: number; showC
       {shownContext.length > 0 && (
         <section className="queue-section" aria-label="Next from the collection">
           <div className="queue-heading-row">
-            <h3 className="queue-heading">Next from: {source?.name ?? 'your selection'}</h3>
-            {limit === undefined && (
-              <button type="button" className="text-button" onClick={() => player.clearQueue('all')}>
-                Clear
-              </button>
-            )}
+            <h3 className="queue-heading">
+              {source?.radio ? `Next from ${source.radio.modeLabel}${source.radio.seedName ? ` · based on ${source.radio.seedName}` : ''}` : `Next from: ${source?.name ?? 'your selection'}`}
+            </h3>
+            {limit === undefined &&
+              (source?.radio ? (
+                <button type="button" className="text-button" onClick={() => void radio.end()}>
+                  End radio
+                </button>
+              ) : (
+                <button type="button" className="text-button" onClick={() => player.clearQueue('all')}>
+                  Clear
+                </button>
+              ))}
           </div>
           <ol className="queue-rows">
             {shownContext.map((item) => (
@@ -99,6 +107,7 @@ function QueueRow({ item, current = false, playing = false }: { item: QueueItem;
           </button>
         )}
         <span className="queue-artist">
+          {item.radio && <Icon name="radio" className="icon queue-radio-mark" />}
           {track.artist_id ? <Link to={`/artists/${encodeURIComponent(track.artist_id)}`}>{track.artist}</Link> : track.artist}
         </span>
       </span>
@@ -116,6 +125,9 @@ function QueueRow({ item, current = false, playing = false }: { item: QueueItem;
                 <MenuItem icon="arrowUp" label="Move up" onSelect={() => { close(); player.moveInQueue(item.uid, -1) }} />
                 <MenuItem icon="arrowDown" label="Move down" onSelect={() => { close(); player.moveInQueue(item.uid, 1) }} />
                 <MenuItem icon="close" label="Remove from queue" onSelect={() => { close(); player.removeFromQueue(item.uid) }} />
+                {item.radio && (
+                  <MenuItem icon="sparkle" label="Why this song?" onSelect={() => { close(); openDialog({ type: 'why', track, reasons: item.radio!.reasons, modeLabel: null }) }} />
+                )}
               </>
             )}
           </MenuButton>
