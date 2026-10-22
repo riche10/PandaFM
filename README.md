@@ -134,7 +134,22 @@ tap it for Now Playing.
 - **Playlists**: create from the sidebar or Library, add songs from any
   song's ⋯ menu (or a whole album from its ⋯ menu), remove, rename or delete
   from the playlist page. They are stored in Navidrome.
-- Space plays and pauses. Playback keeps going while you move around.
+- **Queue**: one shared queue for everything you play. Use *Play next* or
+  *Add to queue* from any song's ⋯ menu (or an album's). Open it with the
+  queue button in the player (a panel on computers, its own page on
+  phones) to jump to a song, remove songs, move them up or down, or clear
+  what's coming. Hand-picked songs play before the rest of the album or
+  playlist.
+- **Shuffle and repeat**: Shuffle on any album, artist, playlist or
+  Favorites page, or toggle it in the player; the current song keeps
+  playing and turning shuffle off restores the original order. Repeat
+  cycles off → all → this song.
+- **Lock screen and notification**: over HTTPS (for example through your
+  reverse proxy), Android shows the song, artist and artwork with working
+  previous / play / next / seek. Over plain `http://<server-ip>`, browsers
+  don't offer this, and Chrome shows its basic media notification instead.
+- Space plays and pauses. Playback keeps going while you move around; a
+  full page refresh starts with an empty queue.
 
 All music and artwork go through PandaFM's API (`/api/...`). The browser
 never talks to Navidrome and never sees its credentials. The API reference
@@ -197,13 +212,14 @@ PandaFM/
     ├── nginx.conf
     └── src/
         ├── api/         # typed calls to /api
-        ├── player/      # audio engine (two decks), player store
+        ├── player/      # audio engine (two decks), shared queue, player store,
+        │                # Media Session
         ├── library/     # favorites, playlists and toast state
         ├── shell/       # sidebar, bottom nav, player bar, mini player
         ├── components/  # cards, track lists, menus, dialogs
         ├── dialogs/     # new / rename / delete playlist, add to playlist
         └── views/       # Home, Search, Library, Favorites, Playlist,
-                         # Album, Artist, Now Playing, Status
+                         # Album, Artist, Now Playing, Queue, Status
 ```
 
 Secrets belong in Portainer environment variables and must not be committed.
