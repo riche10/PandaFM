@@ -1,4 +1,4 @@
-import { apiGet, apiSend } from './client'
+import { apiGet, apiSend, apiUrl } from './client'
 
 // Mirrors api/app/schemas/library.py. Ids are Navidrome ids in Stage 2.
 
@@ -19,6 +19,23 @@ export interface Track {
   suffix: string | null
   bitrate_kbps: number | null
   favorite: boolean
+  album_artist?: string | null
+  sample_rate?: number | null
+  bit_depth?: number | null
+  channels?: number | null
+  size_bytes?: number | null
+  quality?: AudioQuality | null
+}
+
+/** What a file's audio really is (decided by the server; see api/app/audio/quality.py). */
+export interface AudioQuality {
+  codec: string
+  lossless: boolean | null
+  hi_res: boolean
+  badge: 'LOSSLESS' | 'HI-RES' | null
+  detail: string | null
+  short: string | null
+  bitrate_kbps: number | null
 }
 
 export interface AlbumSummary {
@@ -155,7 +172,7 @@ export const playlistApi = {
 export type CoverSize = 96 | 300 | 600
 
 export const coverUrl = (coverArtId: string, size: CoverSize) =>
-  `/api/covers/${id(coverArtId)}?size=${size}`
+  apiUrl(`/covers/${id(coverArtId)}?size=${size}`)
 
 /** Same-origin audio URL. Navidrome credentials are added server-side. */
-export const streamUrl = (trackId: string) => `/api/tracks/${id(trackId)}/stream`
+export const streamUrl = (trackId: string) => apiUrl(`/tracks/${id(trackId)}/stream`)
