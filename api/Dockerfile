@@ -18,6 +18,7 @@ USER pandafm
 
 EXPOSE 8000
 
-# Caddy is the only client, so trust its X-Forwarded-* headers.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Bring the database schema up to date (safe to repeat; see app/migrate.py),
+# then serve. The web container's Nginx is the only client, so trust its
+# X-Forwarded-* headers.
+CMD ["sh", "-c", "python -m app.migrate upgrade && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"]

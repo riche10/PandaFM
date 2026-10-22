@@ -10,6 +10,7 @@ export type DialogRequest =
   | { type: 'new-playlist'; tracks: Track[] }
   | { type: 'rename-playlist'; playlist: PlaylistSummary }
   | { type: 'delete-playlist'; playlist: PlaylistSummary; onDeleted?: () => void }
+  | { type: 'why'; track: Track; reasons: string[]; modeLabel: string | null }
 
 const dialogStore = createStore<{ current: DialogRequest | null }>()(() => ({ current: null }))
 

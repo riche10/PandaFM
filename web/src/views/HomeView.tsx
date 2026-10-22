@@ -1,7 +1,8 @@
 import { type ComponentType, useMemo } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
-import { getFavorites, listAlbumsPage, listArtists, listTracks } from '../api/library'
-import { AlbumCard, ArtistCard, PlaylistCard, QuickTile, Shelf } from '../components/Cards'
+import { getFavorites, listAlbumsPage, listArtists, listTracks, type Track } from '../api/library'
+import { getHomeSections } from '../api/radio'
+import { AlbumCard, ArtistCard, PlaylistCard, QuickTile, Shelf, TrackCard } from '../components/Cards'
 import { Cover } from '../components/Cover'
 import { Icon, type IconName } from '../components/Icon'
 import { ErrorNotice } from '../components/States'
@@ -9,7 +10,8 @@ import { TrackList } from '../components/TrackList'
 import { Wordmark } from '../components/Wordmark'
 import { useApi } from '../hooks/useApi'
 import { toast, useFavoritesVersion, usePlaylists } from '../library'
-import { player } from '../player'
+import { startRadio } from '../library/play'
+import { player, useRadio } from '../player'
 
 /**
  * Home is a list of independent sections, each loading its own data. Future
@@ -19,7 +21,7 @@ import { player } from '../player'
 const HOME_SECTIONS: { id: string; Section: ComponentType }[] = [
   { id: 'quick-access', Section: QuickAccess },
   { id: 'panda-modes', Section: PandaModes },
-  { id: 'recently-played', Section: RecentlyPlayed },
+  { id: 'history', Section: HistorySections },
   { id: 'recently-added', Section: RecentlyAdded },
   { id: 'favorites', Section: FavoriteSections },
   { id: 'playlists', Section: YourPlaylists },
@@ -103,29 +105,37 @@ function QuickAccess() {
   )
 }
 
-const MODES: { label: string; icon: IconName; hint: string }[] = [
-  { label: 'Panda Radio', icon: 'radio', hint: 'Endless radio from any song' },
-  { label: 'Study', icon: 'book', hint: 'Smooth, steady listening' },
-  { label: 'Familiar', icon: 'heart', hint: 'Your favourites, on rotation' },
-  { label: 'Discovery', icon: 'compass', hint: 'Corners of your library you skip' },
+const MODES: { id: string; label: string; icon: IconName; hint: string }[] = [
+  { id: 'panda', label: 'Panda Radio', icon: 'radio', hint: 'Your taste, with a few surprises' },
+  { id: 'study', label: 'Study', icon: 'book', hint: 'Steady, uninterrupted listening' },
+  { id: 'familiar', label: 'Familiar', icon: 'heart', hint: 'Favourites and songs you finish' },
+  { id: 'discovery', label: 'Discovery', icon: 'compass', hint: 'Corners of your library you rarely play' },
+  { id: 'chaos', label: 'Chaos', icon: 'sparkle', hint: 'Anything goes, no repeats' },
 ]
 
-/** Space reserved for PandaFM's listening modes. Not interactive until they exist. */
+/** Panda Radio modes: one engine, different weightings. Starts from your long-term taste. */
 function PandaModes() {
+  const active = useRadio()
   return (
     <section className="shelf modes" aria-labelledby="modes-title">
       <div className="section-head">
         <h2 id="modes-title" className="section-title">
-          PandaFM modes
+          Panda Radio
         </h2>
-        <span className="soon">Coming soon</span>
       </div>
       <ul className="modes-row">
         {MODES.map((mode) => (
-          <li key={mode.label} className="mode-tile" aria-disabled="true">
-            <Icon name={mode.icon} />
-            <span className="mode-name">{mode.label}</span>
-            <span className="mode-hint">{mode.hint}</span>
+          <li key={mode.id}>
+            <button
+              type="button"
+              className="mode-tile"
+              aria-pressed={active?.mode === mode.id}
+              onClick={() => void startRadio(mode.id, null)}
+            >
+              <Icon name={mode.icon} />
+              <span className="mode-name">{mode.label}</span>
+              <span className="mode-hint">{mode.hint}</span>
+            </button>
           </li>
         ))}
       </ul>
@@ -133,7 +143,32 @@ function PandaModes() {
   )
 }
 
-function AlbumShelf({ kind, title, to, hideWhenEmpty }: { kind: 'recent' | 'newest' | 'random'; title: string; to?: string; hideWhenEmpty?: boolean }) {
+/** From PandaFM's own listening history; each shelf hides itself until it has something real. */
+function HistorySections() {
+  const [resource] = useApi('home:history', (signal) => getHomeSections(signal))
+  if (resource.state !== 'ready') return null
+  const { recently_played, back_in_rotation, rediscover } = resource.data
+  return (
+    <>
+      <TrackShelf title="Recently played" tracks={recently_played} source="Recently played" />
+      <TrackShelf title="Back in rotation" tracks={back_in_rotation} source="Back in rotation" />
+      <TrackShelf title="Rediscover your favorites" tracks={rediscover} source="Rediscover" />
+    </>
+  )
+}
+
+function TrackShelf({ title, tracks, source }: { title: string; tracks: Track[]; source: string }) {
+  if (tracks.length === 0) return null
+  return (
+    <Shelf title={title}>
+      {tracks.map((track, i) => (
+        <TrackCard key={track.id} track={track} onPlay={() => player.playCollection(tracks, { startIndex: i, source: { kind: 'tracks', name: source } })} />
+      ))}
+    </Shelf>
+  )
+}
+
+function AlbumShelf({ kind, title, to, hideWhenEmpty }: { kind: 'newest' | 'random'; title: string; to?: string; hideWhenEmpty?: boolean }) {
   const [resource, retry] = useApi(`home:${kind}`, (signal) => listAlbumsPage(kind, 0, 16, signal))
   if (resource.state === 'loading') return null
   if (resource.state === 'error') {
@@ -151,13 +186,6 @@ function AlbumShelf({ kind, title, to, hideWhenEmpty }: { kind: 'recent' | 'newe
       ))}
     </Shelf>
   )
-}
-
-// Navidrome's own play history. PandaFM doesn't report plays to Navidrome
-// yet, so this only fills from other Navidrome clients until listening
-// history arrives; with nothing to show, the section stays out of the way.
-function RecentlyPlayed() {
-  return <AlbumShelf kind="recent" title="Recently played" hideWhenEmpty />
 }
 
 function RecentlyAdded() {

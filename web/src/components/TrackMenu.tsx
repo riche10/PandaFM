@@ -2,7 +2,8 @@ import { useNavigate } from 'react-router'
 import type { PlaylistSummary, Track } from '../api/library'
 import { openDialog } from '../dialogs/store'
 import { playlists, toast, toggleFavorite, useFavorite } from '../library'
-import { player } from '../player'
+import { startRadio } from '../library/play'
+import { player, playerStore } from '../player'
 import { Cover } from './Cover'
 import { MenuButton, MenuItem } from './Menu'
 
@@ -54,6 +55,16 @@ export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay:
               onSelect={run(() => void toggleFavorite('track', track.id, favorite))}
             />
             <MenuItem icon="playlist" label="Add to playlist" onSelect={run(() => openDialog({ type: 'add-to-playlist', tracks: [track] }))} />
+            <MenuItem
+              icon="radio"
+              label="Start Panda Radio"
+              onSelect={run(() => {
+                // From the song that's playing: keep it going and let radio follow.
+                const s = playerStore.getState()
+                const keepCurrent = s.items[s.index]?.track.id === track.id
+                void startRadio('panda', { kind: 'track', id: track.id, name: track.title }, { keepCurrent })
+              })}
+            />
             {inPlaylist && !inPlaylist.playlist.readonly && (
               <MenuItem icon="trash" label="Remove from this playlist" onSelect={run(() => void removeFromPlaylist(inPlaylist))} />
             )}

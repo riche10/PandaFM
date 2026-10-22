@@ -17,6 +17,7 @@ import hashlib
 import secrets
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, TypeVar
 
 import httpx
@@ -118,6 +119,13 @@ class ServerInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class ScanStatus:
+    scanning: bool
+    last_scan: datetime | None
+    count: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class CoverArt:
     content: bytes
     content_type: str
@@ -189,6 +197,21 @@ class NavidromeClient:
             server_version=body.get("serverVersion"),
             open_subsonic=bool(body.get("openSubsonic", False)),
         )
+
+    async def get_scan_status(self) -> ScanStatus:
+        """getScanStatus: whether Navidrome is scanning and when it last finished."""
+        body = await self._call("getScanStatus")
+        status = body.get("scanStatus") or {}
+        last = status.get("lastScan")
+        try:
+            last_scan = datetime.fromisoformat(last) if isinstance(last, str) and last else None
+        except ValueError:
+            last_scan = None
+        return ScanStatus(bool(status.get("scanning")), last_scan, status.get("count"))
+
+    async def scrobble(self, track_id: str, played_at: datetime) -> None:
+        """scrobble (submission): record a real listen in Navidrome's play history."""
+        await self._call("scrobble", id=track_id, time=int(played_at.timestamp() * 1000), submission="true")
 
     # ── Library (JSON endpoints) ──────────────────────────────────────
 

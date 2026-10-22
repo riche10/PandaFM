@@ -1,11 +1,11 @@
-"""Database engine.
+"""Database engine and sessions.
 
-Stage 1 only needs a connectivity check. ORM models, the per-request
-session dependency and Alembic migrations arrive in Stage 3.
+Tables are defined in app.models and created by Alembic migrations
+(app.migrate), never by create_all().
 """
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import Settings
 
@@ -25,3 +25,7 @@ async def ping_database(engine: AsyncEngine) -> str:
     async with engine.connect() as conn:
         result = await conn.execute(text("SHOW server_version"))
         return str(result.scalar_one())
+
+
+def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine, expire_on_commit=False)

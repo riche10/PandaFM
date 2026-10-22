@@ -1,5 +1,5 @@
 import { getAlbum, getArtistTracks, getPlaylist, type Track } from '../api/library'
-import { player, type QueueSource } from '../player'
+import { player, radio, type QueueSource } from '../player'
 import { toast } from './toasts'
 
 // "Play" buttons on cards and headers: fetch the songs, then hand them to the
@@ -21,3 +21,17 @@ export const playArtist = (id: string, name: string, shuffle = false) =>
   playFrom(() => getArtistTracks(id), 'No songs found for this artist.', { kind: 'artist', id, name }, shuffle)
 export const playPlaylist = (id: string, name: string, shuffle = false) =>
   playFrom(() => getPlaylist(id), 'This playlist is empty.', { kind: 'playlist', id, name }, shuffle)
+
+/** Start Panda Radio (optionally from a song, album or artist) with a short confirmation. */
+export async function startRadio(
+  mode: string,
+  seed: { kind: 'track' | 'album' | 'artist'; id: string; name: string } | null,
+  options: { keepCurrent?: boolean } = {},
+) {
+  try {
+    await radio.start(mode, seed ? { kind: seed.kind, id: seed.id } : null, options)
+    toast(seed ? `Panda Radio based on ${seed.name}` : 'Panda Radio started')
+  } catch (err) {
+    toast(err instanceof Error ? err.message : 'Couldn’t start Panda Radio.', 'error')
+  }
+}

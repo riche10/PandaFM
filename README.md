@@ -183,12 +183,66 @@ In Nginx Proxy Manager, put `proxy_buffering off;` in the proxy host's
 Advanced tab. Range headers (used for seeking) pass through Nginx by
 default; don't enable response caching for `/api`.
 
+## Panda Radio and listening history (Stage 3)
+
+PandaFM now remembers how you listen (plays, songs you finish, early and
+late skips, pauses and seeks) in its own PostgreSQL database, and uses
+that, plus your Navidrome favorites, for **Panda Radio**:
+
+- Start it from any song's ⋯ menu, an album or artist page, or the mode
+  cards on Home: **Panda Radio** (balanced), **Study** (steady),
+  **Familiar** (favorites and songs you finish), **Discovery** (rarely
+  played corners of your library) and **Chaos** (anything goes).
+- Radio fills the normal queue and keeps it topped up. *Play next* and
+  *Add to queue* still work and are never removed by radio.
+- Skip two or three radio songs in a row and the session changes direction
+  straight away; one session's skips barely move your long-term taste.
+- *Why this song?* explains any radio pick. `/stats` shows what PandaFM has
+  learned and lets you re-sync the library.
+- Real listens (a finished song, or half a song / 4 minutes) are also
+  scrobbled to Navidrome, so its own history stays useful.
+
+### Database migrations (automatic, safe on your existing volume)
+
+The API container runs `python -m app.migrate upgrade` before it starts.
+Migrations only add tables (the first one, `0001`, creates PandaFM's
+schema in the existing, so far empty, `pandafm` database); nothing is
+dropped and the PostgreSQL and Navidrome volumes are never touched. A
+PostgreSQL advisory lock stops two API containers from migrating at once.
+
+To deploy: in Portainer, point the stack at the branch (or `main` after
+merging) and **Pull and redeploy**. Do **not** tick anything that removes
+volumes. Then check:
+
+```bash
+docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0001
+docker exec pandafm-api python -m app.migrate check           # database: 0001, code expects: 0001
+```
+
+About 20 seconds after start-up, PandaFM copies Navidrome's song list into
+its cache (and again after each Navidrome rescan, or every 6 hours).
+Starting Panda Radio before that simply waits for the first copy. You can
+also run it from `/stats`, or with `curl -X POST http://<server>:8085/api/library/sync`.
+
+If a migration ever fails, the API container stops (it won't run on a
+half-updated schema): `docker logs pandafm-api` shows why, and your data
+is untouched.
+
 ## Running the tests
 
 ```bash
-# API (no Navidrome or database needed; Navidrome is faked)
+# API (no Navidrome or database needed; Navidrome is faked; database tests skip)
 docker run --rm -v "$PWD/api:/app" -w /app python:3.12-slim \
   sh -c "pip install -q -r requirements-dev.txt && pytest -q"
+
+# Including the database tests, against a throwaway PostgreSQL (never your real one)
+docker network create pandafm-test
+docker run -d --rm --name pandafm-testdb --network pandafm-test \
+  -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test postgres:17-alpine
+docker run --rm --network pandafm-test -v "$PWD/api:/app" -w /app \
+  -e PANDAFM_TEST_DATABASE_URL=postgresql+psycopg://test:test@pandafm-testdb/test \
+  python:3.12-slim sh -c "pip install -q -r requirements-dev.txt && sleep 3 && pytest -q"
+docker stop pandafm-testdb && docker network rm pandafm-test
 
 # Web player logic (Node's built-in test runner)
 docker run --rm -v "$PWD/web:/app" -w /app node:22-alpine \
@@ -204,7 +258,13 @@ PandaFM/
 ├── api/
 │   └── app/
 │       ├── navidrome/   # the only code that speaks Subsonic
-│       ├── routers/     # health, library, media, favorites, playlists
+│       ├── routers/     # health, library, media, favorites, playlists,
+│       │                # events, sync, radio, me (home + stats)
+│       ├── radio/       # Panda Radio engine: config (all weights), signals,
+│       │                # session, scoring, selection, explain (no database)
+│       ├── services/    # library sync, events, radio sessions, insights
+│       ├── migrations/  # Alembic migrations (run by app/migrate.py)
+│       ├── models.py    # PandaFM's tables
 │       ├── schemas/     # PandaFM's library models
 │       └── errors.py    # user-safe error responses
 └── web/

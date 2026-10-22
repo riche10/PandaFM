@@ -17,6 +17,7 @@ export function DialogHost() {
       {request?.type === 'add-to-playlist' && <AddToPlaylist tracks={request.tracks} />}
       {request?.type === 'new-playlist' && <PlaylistNameForm mode="create" tracks={request.tracks} />}
       {request?.type === 'rename-playlist' && <PlaylistNameForm mode="rename" playlist={request.playlist} />}
+      {request?.type === 'why' && <WhyThisSong track={request.track} reasons={request.reasons} modeLabel={request.modeLabel} />}
       {request?.type === 'delete-playlist' && (
         <DeletePlaylist playlist={request.playlist} onDeleted={request.onDeleted} />
       )}
@@ -34,6 +35,8 @@ function labelFor(request: DialogRequest): string {
       return 'Rename playlist'
     case 'delete-playlist':
       return 'Delete playlist'
+    case 'why':
+      return 'Why this song?'
   }
 }
 
@@ -163,6 +166,28 @@ function PlaylistNameForm(props: NameFormProps) {
         </button>
       </div>
     </form>
+  )
+}
+
+function WhyThisSong({ track, reasons, modeLabel }: { track: Track; reasons: string[]; modeLabel: string | null }) {
+  return (
+    <>
+      <h2 className="modal-title">Why this song?</h2>
+      <p className="modal-subtitle">
+        {track.title} · {track.artist}
+        {modeLabel ? ` · chosen by ${modeLabel}` : ''}
+      </p>
+      <ul className="why-list">
+        {reasons.map((reason) => (
+          <li key={reason}>{reason}</li>
+        ))}
+      </ul>
+      <div className="modal-actions">
+        <button type="button" className="button" onClick={closeDialog} autoFocus>
+          Got it
+        </button>
+      </div>
+    </>
   )
 }
 

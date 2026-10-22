@@ -133,6 +133,9 @@ export function StatusView() {
         </button>
       </section>
 
+      <p className="footnote">
+        <a href="/stats">Listening statistics and library sync</a>
+      </p>
       <footer className="footnote">
         Navidrome’s own admin pages are at <a href={navidromeUrl}>{navidromeUrl}</a> (unless
         you changed NAVIDROME_PORT).

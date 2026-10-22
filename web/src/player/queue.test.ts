@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { Track } from '../api/library'
 import {
+  addRadio,
   addToQueue,
+  endRadio,
+  radioUpcoming,
+  startRadio,
   clearUpcoming,
   contextUpcoming,
   current,
@@ -193,5 +197,41 @@ describe('next, previous and repeat', () => {
     assert.equal(previousIndex(q), null)
     assert.equal(previousIndex({ ...q, repeat: 'all' }), 5)
     assert.equal(previousIndex(load(emptyQueue, album, { startIndex: 3 })), 2)
+  })
+})
+
+describe('Panda Radio in the shared queue', () => {
+  const tag = (n: number) => ({ sessionId: 'r1', selectionId: n, reasons: ['Similar genre'] })
+  const picks = (...ids: string[]) => ids.map((id, i) => ({ track: track(id), radio: tag(i + 1) }))
+  const radioSource = { kind: 'radio' as const, name: 'Panda Radio', radio: { sessionId: 'r1', mode: 'panda', modeLabel: 'Panda Radio', seedName: 'a' } }
+
+  it('plays the seed song first, then the radio picks', () => {
+    const q = startRadio(emptyQueue, picks('r', 's'), radioSource, { seedTrack: track('a') })
+    assert.deepEqual(ids(q), ['a', 'r', 's'])
+    assert.equal(now(q), 'a')
+    assert.equal(radioUpcoming(q, 'r1').length, 2)
+  })
+
+  it('can start from the song already playing, keeping hand-picked songs next', () => {
+    let q = addToQueue(load(emptyQueue, album, { startIndex: 2 }), [track('x')])
+    q = startRadio(q, picks('r', 's'), radioSource, { keepCurrent: true })
+    assert.deepEqual(ids(q), ['c', 'x', 'r', 's'])
+    assert.equal(manualUpcoming(q)[0].track.id, 'x')
+  })
+
+  it('steering replaces only unplayed radio picks; manual songs and the current song stay', () => {
+    let q = startRadio(emptyQueue, picks('r1', 'r2', 'r3', 'r4'), radioSource)
+    q = playNext(q, [track('mine')]) // the listener's own pick during radio
+    q = addRadio(q, [1, 3, 4], [{ track: track('n1'), radio: tag(9) }])
+    // r1 is playing (selection 1) so it stays; r3 and r4 go; 'mine' stays next.
+    assert.deepEqual(ids(q), ['r1', 'mine', 'r2', 'n1'])
+  })
+
+  it('shuffle does not apply to radio, and ending radio keeps the queue', () => {
+    let q = startRadio(emptyQueue, picks('r', 's', 't'), radioSource)
+    assert.equal(setShuffle(q, true), q)
+    q = endRadio(q)
+    assert.equal(q.source?.kind, 'tracks')
+    assert.deepEqual(ids(q), ['r', 's', 't'])
   })
 })
