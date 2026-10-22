@@ -5,7 +5,7 @@ import { formatTime, player, usePlayer } from '../player'
  * Progress and seeking. While the thumb is being dragged the bar follows the
  * finger, not the audio; the seek is sent once, when it's released.
  */
-export function SeekBar() {
+export function SeekBar({ compact = false }: { compact?: boolean }) {
   const position = usePlayer((s) => s.position)
   const duration = usePlayer((s) => s.duration)
   const [scrub, setScrub] = useState<number | null>(null)
@@ -18,10 +18,11 @@ export function SeekBar() {
   }
 
   return (
-    <div className="seek">
+    <div className={compact ? 'seek seek--compact' : 'seek'}>
+      {compact && <span className="seek-time">{formatTime(shown)}</span>}
       <input
         type="range"
-        className="seek-input"
+        className="range seek-input"
         min={0}
         max={Math.max(duration, 1)}
         step={1}
@@ -36,10 +37,14 @@ export function SeekBar() {
         onKeyUp={commit}
         onBlur={commit}
       />
-      <div className="seek-times">
-        <span>{formatTime(shown)}</span>
-        <span>{formatTime(duration)}</span>
-      </div>
+      {compact ? (
+        <span className="seek-time">{formatTime(duration)}</span>
+      ) : (
+        <div className="seek-times">
+          <span>{formatTime(shown)}</span>
+          <span>{formatTime(duration)}</span>
+        </div>
+      )}
     </div>
   )
 }

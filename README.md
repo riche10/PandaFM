@@ -115,15 +115,30 @@ This keeps PandaFM portable: someone can deploy the Docker stack and use
 whatever edge proxy they already run (Nginx, Traefik, Caddy, Cloudflare
 Tunnel, etc.).
 
-## Using PandaFM (Stage 2)
+## Using PandaFM
 
-Open PandaFM, search for a song, album or artist, and tap a song to play
-it. The bar at the bottom opens Now Playing, with artwork, a seek bar and
-play/pause. Albums can be browsed by recently added, random or A–Z.
+On a computer, the sidebar has Home, Search, Library, Favorites and your
+playlists, and the player bar along the bottom has artwork, favorite,
+previous / play / next, progress and volume. On a phone (or the Walkman),
+Home, Search and Library sit along the bottom with a mini player just above;
+tap it for Now Playing.
 
-All music goes through PandaFM's API (`/api/tracks/{id}/stream` and
-`/api/covers/{id}`). The browser never talks to Navidrome and never sees
-its credentials.
+- **Home**: quick access, Recently added, Favorite songs, your playlists
+  and a random selection. *Recently played* appears only when Navidrome has
+  play history (PandaFM doesn't report plays yet).
+- **Search**: results grouped into Songs, Artists and Albums.
+- **Library**: Albums (recently added, A–Z, random), Artists, Songs (all,
+  in Navidrome's order, or random) and Playlists.
+- **Favorites**: tap a heart on any song, album or artist. Favorites are
+  Navidrome's "starred" items, so other Subsonic apps see them too.
+- **Playlists**: create from the sidebar or Library, add songs from any
+  song's ⋯ menu (or a whole album from its ⋯ menu), remove, rename or delete
+  from the playlist page. They are stored in Navidrome.
+- Space plays and pauses. Playback keeps going while you move around.
+
+All music and artwork go through PandaFM's API (`/api/...`). The browser
+never talks to Navidrome and never sees its credentials. The API reference
+is at `/api/docs`.
 
 PandaFM streams your original files, so seeking always works. Phones play
 MP3, AAC/M4A, FLAC and Ogg/Opus; ALAC and WMA files won't play in the
@@ -174,7 +189,7 @@ PandaFM/
 ├── api/
 │   └── app/
 │       ├── navidrome/   # the only code that speaks Subsonic
-│       ├── routers/     # health, library, media (stream + covers)
+│       ├── routers/     # health, library, media, favorites, playlists
 │       ├── schemas/     # PandaFM's library models
 │       └── errors.py    # user-safe error responses
 └── web/
@@ -183,8 +198,12 @@ PandaFM/
     └── src/
         ├── api/         # typed calls to /api
         ├── player/      # audio engine (two decks), player store
-        ├── components/
-        └── views/       # Home, Album, Artist(s), Now Playing, Status
+        ├── library/     # favorites, playlists and toast state
+        ├── shell/       # sidebar, bottom nav, player bar, mini player
+        ├── components/  # cards, track lists, menus, dialogs
+        ├── dialogs/     # new / rename / delete playlist, add to playlist
+        └── views/       # Home, Search, Library, Favorites, Playlist,
+                         # Album, Artist, Now Playing, Status
 ```
 
 Secrets belong in Portainer environment variables and must not be committed.

@@ -50,6 +50,11 @@ export class AudioEngine implements PlaybackEngine {
     this.deck.unload()
   }
 
+  setVolume(volume: number): void {
+    // Master volume for every deck; a future crossfade scales within it.
+    for (const deck of Object.values(this.decks)) deck.element.volume = volume
+  }
+
   subscribe(listener: (event: EngineEvent) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)

@@ -1,0 +1,196 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.64.2 (10114574)",
+  "openSubsonic": true,
+  "playlist": {
+   "id": "4f7TgxuLjHLJUgggE5O7CZ",
+   "name": "Renamed Mix",
+   "songCount": 3,
+   "duration": 285,
+   "owner": "panda",
+   "created": "2026-10-22T18:15:31.283502778Z",
+   "changed": "2026-10-22T18:15:31.314422137Z",
+   "coverArt": "pl-4f7TgxuLjHLJUgggE5O7CZ",
+   "readonly": false,
+   "entry": [
+    {
+     "id": "2b4ANOyiM3HcvneQJulaAR",
+     "parent": "0rtMZ6l7OaEJfGyeavQLSm",
+     "isDir": false,
+     "title": "Slow Lane",
+     "album": "Bamboo Grid",
+     "artist": "Neon Panda",
+     "track": 2,
+     "year": 1989,
+     "genre": "Synthwave",
+     "coverArt": "al-0rtMZ6l7OaEJfGyeavQLSm_f54244aae5e29a28",
+     "size": 1397845,
+     "contentType": "audio/flac",
+     "suffix": "flac",
+     "duration": 95,
+     "bitRate": 117,
+     "path": "Neon Panda/Bamboo Grid/02 - Slow Lane.flac",
+     "created": "2026-10-21T23:58:50.843321058Z",
+     "albumId": "0rtMZ6l7OaEJfGyeavQLSm",
+     "artistId": "5ZstAHqkcUcIBy4ynNFyHU",
+     "type": "music",
+     "bpm": 0,
+     "comment": "",
+     "sortName": "slow lane",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Synthwave"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 1,
+     "samplingRate": 44100,
+     "bitDepth": 24,
+     "moods": [],
+     "artists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayArtist": "Neon Panda",
+     "albumArtists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayAlbumArtist": "Neon Panda",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    },
+    {
+     "id": "43WjCyk1kYqjL3Zdtzx7Se",
+     "parent": "5Uv4PbQy3lvu8Pjsu3ZSvk",
+     "isDir": false,
+     "title": "Fog Bank",
+     "album": "Low Clouds",
+     "artist": "Mist Valley",
+     "track": 2,
+     "year": 2003,
+     "genre": "Ambient",
+     "coverArt": "al-5Uv4PbQy3lvu8Pjsu3ZSvk_c63d5152c0189394",
+     "size": 2281610,
+     "contentType": "audio/mpeg",
+     "suffix": "mp3",
+     "duration": 95,
+     "bitRate": 192,
+     "path": "Mist Valley/Low Clouds/02 - Fog Bank.mp3",
+     "created": "2026-10-21T23:58:50.846616981Z",
+     "albumId": "5Uv4PbQy3lvu8Pjsu3ZSvk",
+     "artistId": "2QnME7MXydDtNq5wWAuudn",
+     "type": "music",
+     "bpm": 0,
+     "comment": "",
+     "sortName": "fog bank",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Ambient"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 1,
+     "samplingRate": 44100,
+     "bitDepth": 0,
+     "moods": [],
+     "artists": [
+      {
+       "id": "2QnME7MXydDtNq5wWAuudn",
+       "name": "Mist Valley"
+      }
+     ],
+     "displayArtist": "Mist Valley",
+     "albumArtists": [
+      {
+       "id": "2QnME7MXydDtNq5wWAuudn",
+       "name": "Mist Valley"
+      }
+     ],
+     "displayAlbumArtist": "Mist Valley",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    },
+    {
+     "id": "6JjUC0h81UuHsebftkrxa5",
+     "parent": "5Uv4PbQy3lvu8Pjsu3ZSvk",
+     "isDir": false,
+     "title": "Morning Frost",
+     "album": "Low Clouds",
+     "artist": "Mist Valley",
+     "track": 3,
+     "year": 2003,
+     "genre": "Ambient",
+     "coverArt": "al-5Uv4PbQy3lvu8Pjsu3ZSvk_c63d5152c0189394",
+     "size": 2281615,
+     "contentType": "audio/mpeg",
+     "suffix": "mp3",
+     "duration": 95,
+     "bitRate": 192,
+     "path": "Mist Valley/Low Clouds/03 - Morning Frost.mp3",
+     "created": "2026-10-21T23:58:50.84756282Z",
+     "albumId": "5Uv4PbQy3lvu8Pjsu3ZSvk",
+     "artistId": "2QnME7MXydDtNq5wWAuudn",
+     "type": "music",
+     "bpm": 0,
+     "comment": "",
+     "sortName": "morning frost",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Ambient"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 1,
+     "samplingRate": 44100,
+     "bitDepth": 0,
+     "moods": [],
+     "artists": [
+      {
+       "id": "2QnME7MXydDtNq5wWAuudn",
+       "name": "Mist Valley"
+      }
+     ],
+     "displayArtist": "Mist Valley",
+     "albumArtists": [
+      {
+       "id": "2QnME7MXydDtNq5wWAuudn",
+       "name": "Mist Valley"
+      }
+     ],
+     "displayAlbumArtist": "Mist Valley",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    }
+   ]
+  }
+ }
+}

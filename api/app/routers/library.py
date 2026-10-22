@@ -18,6 +18,9 @@ from app.schemas.library import (
     ArtistList,
     SearchResults,
     Track,
+    TrackList,
+    TrackListOrder,
+    TrackPage,
 )
 
 router = APIRouter(tags=["library"])
@@ -57,9 +60,25 @@ async def list_artists(navidrome: NavidromeDep) -> ArtistList:
     return ArtistList(artists=await navidrome.get_artists())
 
 
+@router.get("/artists/{artist_id}/tracks", response_model=TrackList)
+async def get_artist_tracks(artist_id: ItemId, navidrome: NavidromeDep) -> TrackList:
+    return TrackList(tracks=await navidrome.get_artist_tracks(artist_id))
+
+
 @router.get("/artists/{artist_id}", response_model=Artist)
 async def get_artist(artist_id: ItemId, navidrome: NavidromeDep) -> Artist:
     return await navidrome.get_artist(artist_id)
+
+
+@router.get("/tracks", response_model=TrackPage)
+async def list_tracks(
+    navidrome: NavidromeDep,
+    order: TrackListOrder = TrackListOrder.all,
+    size: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
+) -> TrackPage:
+    tracks = await navidrome.list_tracks(order, size=size, offset=offset)
+    return TrackPage(order=order, offset=offset, tracks=tracks)
 
 
 @router.get("/tracks/{track_id}", response_model=Track)

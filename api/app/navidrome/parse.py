@@ -18,6 +18,9 @@ from app.schemas.library import (
     AlbumSummary,
     Artist,
     ArtistSummary,
+    Favorites,
+    Playlist,
+    PlaylistSummary,
     SearchResults,
     Track,
 )
@@ -45,6 +48,7 @@ def track(raw: Raw) -> Track:
         content_type=_text(raw.get("contentType")),
         suffix=_text(raw.get("suffix")),
         bitrate_kbps=_positive_int(raw.get("bitRate")),
+        favorite=_starred(raw),
     )
 
 
@@ -62,6 +66,7 @@ def artist_summary(raw: Raw) -> ArtistSummary:
         name=_text(raw.get("name")) or UNKNOWN_ARTIST,
         album_count=_non_negative_int(raw.get("albumCount")),
         cover_art_id=_text(raw.get("coverArt")),
+        favorite=_starred(raw),
     )
 
 
@@ -89,6 +94,27 @@ def search_results(query: str, body: Raw) -> SearchResults:
     )
 
 
+def favorites(body: Raw) -> Favorites:
+    starred = body.get("starred2") or {}
+    return Favorites(
+        tracks=[track(item) for item in starred.get("song") or []],
+        albums=[album_summary(item) for item in starred.get("album") or []],
+        artists=[artist_summary(item) for item in starred.get("artist") or []],
+    )
+
+
+def playlist_summary(raw: Raw) -> PlaylistSummary:
+    return PlaylistSummary(**_playlist_fields(raw))
+
+
+def playlist(raw: Raw) -> Playlist:
+    return Playlist(**_playlist_fields(raw), tracks=[track(entry) for entry in raw.get("entry") or []])
+
+
+def playlist_list(body: Raw) -> list[PlaylistSummary]:
+    return [playlist_summary(item) for item in (body.get("playlists") or {}).get("playlist") or []]
+
+
 # ── helpers ───────────────────────────────────────────────────────────
 
 
@@ -104,7 +130,25 @@ def _album_fields(raw: Raw) -> dict[str, Any]:
         "track_count": _non_negative_int(raw.get("songCount")),
         "duration_seconds": _positive_int(raw.get("duration")),
         "genres": _genres(raw),
+        "favorite": _starred(raw),
     }
+
+
+def _playlist_fields(raw: Raw) -> dict[str, Any]:
+    return {
+        "id": str(raw["id"]),
+        "name": _text(raw.get("name")) or UNTITLED,
+        "track_count": _non_negative_int(raw.get("songCount")) or 0,
+        "duration_seconds": _positive_int(raw.get("duration")),
+        "cover_art_id": _text(raw.get("coverArt")),
+        "owner": _text(raw.get("owner")),
+        "readonly": bool(raw.get("readonly", False)),
+    }
+
+
+def _starred(raw: Raw) -> bool:
+    """Navidrome marks favorites with a "starred" timestamp; absent means not starred."""
+    return bool(raw.get("starred"))
 
 
 def _text(value: Any) -> str | None:

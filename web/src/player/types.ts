@@ -24,5 +24,7 @@ export interface PlaybackEngine {
   seek(seconds: number): void
   /** Release the current source entirely. */
   stop(): void
+  /** Master volume, 0–1, applied to every deck. */
+  setVolume(volume: number): void
   subscribe(listener: (event: EngineEvent) => void): () => void
 }

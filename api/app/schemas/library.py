@@ -6,8 +6,9 @@ know nothing about Subsonic. In Stage 2 every id is a Navidrome id.
 """
 
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 
 class Track(BaseModel):
@@ -26,6 +27,7 @@ class Track(BaseModel):
     content_type: str | None = None
     suffix: str | None = None
     bitrate_kbps: int | None = None
+    favorite: bool = False
 
 
 class AlbumSummary(BaseModel):
@@ -38,6 +40,7 @@ class AlbumSummary(BaseModel):
     track_count: int | None = None
     duration_seconds: int | None = None
     genres: list[str] = Field(default_factory=list)
+    favorite: bool = False
 
 
 class Album(AlbumSummary):
@@ -49,6 +52,7 @@ class ArtistSummary(BaseModel):
     name: str
     album_count: int | None = None
     cover_art_id: str | None = None
+    favorite: bool = False
 
 
 class Artist(ArtistSummary):
@@ -78,3 +82,72 @@ class SearchResults(BaseModel):
     tracks: list[Track] = Field(default_factory=list)
     albums: list[AlbumSummary] = Field(default_factory=list)
     artists: list[ArtistSummary] = Field(default_factory=list)
+
+
+class TrackListOrder(StrEnum):
+    all = "all"  # Navidrome's library order (not alphabetical)
+    random = "random"
+
+
+class TrackPage(BaseModel):
+    order: TrackListOrder
+    offset: int
+    tracks: list[Track]
+
+
+class TrackList(BaseModel):
+    tracks: list[Track]
+
+
+# ── Favorites (Navidrome "starred" items) ──
+
+
+class Favorites(BaseModel):
+    tracks: list[Track] = Field(default_factory=list)
+    albums: list[AlbumSummary] = Field(default_factory=list)
+    artists: list[ArtistSummary] = Field(default_factory=list)
+
+
+class FavoriteKind(StrEnum):
+    track = "track"
+    album = "album"
+    artist = "artist"
+
+
+# ── Playlists (stored in Navidrome) ──
+
+
+class PlaylistSummary(BaseModel):
+    id: str
+    name: str
+    track_count: int = 0
+    duration_seconds: int | None = None
+    cover_art_id: str | None = None
+    owner: str | None = None
+    readonly: bool = False
+
+
+class Playlist(PlaylistSummary):
+    # Order matters: a track's index here is its position in the playlist.
+    tracks: list[Track] = Field(default_factory=list)
+
+
+class PlaylistList(BaseModel):
+    playlists: list[PlaylistSummary]
+
+
+PlaylistName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+TrackIds = Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=200)]], Field(max_length=500)]
+
+
+class PlaylistCreate(BaseModel):
+    name: PlaylistName
+    track_ids: TrackIds = Field(default_factory=list)
+
+
+class PlaylistRename(BaseModel):
+    name: PlaylistName
+
+
+class PlaylistAddTracks(BaseModel):
+    track_ids: Annotated[TrackIds, Field(min_length=1)]

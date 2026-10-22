@@ -16,7 +16,7 @@ export function Cover({ coverArtId, size, className = '' }: CoverProps) {
   if (!coverArtId || failedId === coverArtId) {
     return (
       <span className={`${classes} cover--empty`} aria-hidden="true">
-        <Icon name="note" />
+        <Icon name="music" />
       </span>
     )
   }

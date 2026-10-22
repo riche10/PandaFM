@@ -8,6 +8,7 @@ class FakeEngine implements PlaybackEngine {
   loaded: string[] = []
   seeks: number[] = []
   playCalls = 0
+  volumes: number[] = []
   playResult: () => Promise<void> = () => Promise.resolve()
   private listeners = new Set<(event: EngineEvent) => void>()
 
@@ -26,6 +27,9 @@ class FakeEngine implements PlaybackEngine {
     this.seeks.push(seconds)
   }
   stop() {}
+  setVolume(volume: number) {
+    this.volumes.push(volume)
+  }
   subscribe(listener: (event: EngineEvent) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -51,6 +55,7 @@ const track = (id: string, duration = 200): Track => ({
   content_type: 'audio/mpeg',
   suffix: 'mp3',
   bitrate_kbps: 192,
+  favorite: false,
 })
 
 function setup(explain = async () => 'explained') {
@@ -184,5 +189,16 @@ describe('player store', () => {
     await flush()
     assert.equal(store.getState().status, 'paused')
     assert.equal(store.getState().error, null)
+  })
+
+  it('sets, mutes and restores the volume', () => {
+    const { engine, store, actions } = setup()
+    actions.setVolume(0.4)
+    actions.toggleMute()
+    assert.equal(store.getState().muted, true)
+    actions.toggleMute()
+    assert.equal(store.getState().volume, 0.4)
+    actions.setVolume(7)
+    assert.deepEqual(engine.volumes, [1, 0.4, 0, 0.4, 1])
   })
 })

@@ -14,6 +14,8 @@ export interface PlayerState {
   position: number
   duration: number
   error: string | null
+  volume: number // 0–1, kept while muted
+  muted: boolean
 }
 
 export interface PlayerActions {
@@ -24,6 +26,8 @@ export interface PlayerActions {
   seek(seconds: number): void
   next(): void
   previous(): void
+  setVolume(volume: number): void
+  toggleMute(): void
 }
 
 export type PlayerStoreState = PlayerState & PlayerActions
@@ -34,6 +38,7 @@ export interface PlayerDeps {
   streamUrl: (trackId: string) => string
   /** Find out why a track failed (e.g. ask the API), returning a readable message. */
   explainError: (trackId: string, kind: PlaybackErrorKind) => Promise<string>
+  initialVolume?: number
 }
 
 export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorKind, string> = {
@@ -50,7 +55,8 @@ export function currentTrack(state: PlayerState): Track | null {
   return state.queue[state.index] ?? null
 }
 
-export function createPlayerStore({ engine, streamUrl, explainError }: PlayerDeps): PlayerStore {
+export function createPlayerStore({ engine, streamUrl, explainError, initialVolume = 1 }: PlayerDeps): PlayerStore {
+  engine.setVolume(initialVolume)
   const store = createStore<PlayerStoreState>()((set, get) => {
     const startPlayback = () => {
       engine.play().catch((err: unknown) => {
@@ -84,6 +90,8 @@ export function createPlayerStore({ engine, streamUrl, explainError }: PlayerDep
       position: 0,
       duration: 0,
       error: null,
+      volume: initialVolume,
+      muted: false,
 
       playTracks(tracks, startIndex = 0) {
         if (tracks.length === 0) return
@@ -132,6 +140,20 @@ export function createPlayerStore({ engine, streamUrl, explainError }: PlayerDep
         if (index < 0) return
         if (position > RESTART_THRESHOLD_SECONDS || index === 0) get().seek(0)
         else start(index - 1)
+      },
+
+      setVolume(volume) {
+        const clamped = Math.min(Math.max(0, volume), 1)
+        set({ volume: clamped, muted: clamped === 0 })
+        engine.setVolume(clamped)
+      },
+
+      toggleMute() {
+        const { muted, volume } = get()
+        // Unmuting from zero restores a sensible level instead of silence.
+        const restored = volume > 0 ? volume : 0.5
+        set(muted ? { muted: false, volume: restored } : { muted: true })
+        engine.setVolume(muted ? restored : 0)
       },
     }
   })
