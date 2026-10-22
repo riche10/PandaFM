@@ -8,7 +8,7 @@ from fastapi import FastAPI
 
 from app import __version__
 from app.config import Settings, get_settings
-from app.db import create_engine
+from app.db import create_engine, create_session_factory
 from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
 from app.routers import favorites, health, library, media, playlists
@@ -36,6 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Long-lived shared resources, closed cleanly on shutdown.
         app.state.settings = cfg
         app.state.db_engine = create_engine(cfg)
+        app.state.session_factory = create_session_factory(app.state.db_engine)
         app.state.navidrome = NavidromeClient(
             cfg.navidrome_url,
             cfg.navidrome_user,
