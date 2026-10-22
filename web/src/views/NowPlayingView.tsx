@@ -1,13 +1,19 @@
 import type { CSSProperties } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
+import { coverUrl } from '../api/library'
 import { Cover } from '../components/Cover'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { Icon } from '../components/Icon'
+import { RepeatToggle, ShuffleToggle } from '../components/PlaybackModes'
+import { QueueButton } from '../components/QueueButton'
+import { QueueList } from '../components/QueueList'
 import { SeekBar } from '../components/SeekBar'
 import { EmptyState, ErrorNotice } from '../components/States'
 import { TrackMenu } from '../components/TrackMenu'
 import { useArtworkColor } from '../hooks/useArtworkColor'
-import { player, useCurrentTrack, usePlayer } from '../player'
+import { player, useCurrentTrack, useHasNext, usePlayer } from '../player'
+
+const UP_NEXT = 5
 
 export function NowPlayingView() {
   const navigate = useNavigate()
@@ -15,7 +21,9 @@ export function NowPlayingView() {
   const track = useCurrentTrack()
   const status = usePlayer((s) => s.status)
   const error = usePlayer((s) => s.error)
-  const hasNext = usePlayer((s) => s.index + 1 < s.queue.length)
+  const source = usePlayer((s) => s.source)
+  const upcoming = usePlayer((s) => Math.max(0, s.items.length - s.index - 1))
+  const hasNext = useHasNext()
   const color = useArtworkColor(track?.cover_art_id ?? null)
   const close = () => (location.key === 'default' ? navigate('/') : navigate(-1))
 
@@ -24,7 +32,10 @@ export function NowPlayingView() {
       <button type="button" className="icon-button" onClick={close} aria-label="Close Now Playing">
         <Icon name="chevronDown" />
       </button>
-      <span className="np-header-title">Now playing</span>
+      <div className="np-header-text">
+        <span className="np-header-title">Now playing</span>
+        {source && <span className="np-header-source">from {source.name}</span>}
+      </div>
       {track ? <TrackMenu track={track} onPlay={player.play} /> : <span className="icon-button" />}
     </div>
   )
@@ -45,42 +56,62 @@ export function NowPlayingView() {
   const active = status === 'playing' || status === 'loading'
   return (
     <div className="now-playing" style={color ? ({ '--art': color } as CSSProperties) : undefined}>
+      {track.cover_art_id && (
+        // The artwork, blurred and dimmed, as a quiet backdrop.
+        <div className="np-backdrop" aria-hidden="true" style={{ backgroundImage: `url(${coverUrl(track.cover_art_id, 300)})` }} />
+      )}
       {header}
       <div className="np-body">
         <Cover coverArtId={track.cover_art_id} size={600} className="np-cover" />
-        <div className="np-meta">
-          <div className="np-text">
-            <h1 className="np-title">{track.title}</h1>
-            <p className="np-artist">
-              {track.artist_id ? <Link to={`/artists/${encodeURIComponent(track.artist_id)}`}>{track.artist}</Link> : track.artist}
-            </p>
-            {track.album && (
-              <p className="np-album">
-                {track.album_id ? <Link to={`/albums/${encodeURIComponent(track.album_id)}`}>{track.album}</Link> : track.album}
+
+        <div className="np-panel">
+          <div className="np-meta">
+            <div className="np-text">
+              <h1 className="np-title">{track.title}</h1>
+              <p className="np-artist">
+                {track.artist_id ? <Link to={`/artists/${encodeURIComponent(track.artist_id)}`}>{track.artist}</Link> : track.artist}
               </p>
-            )}
+              {track.album && (
+                <p className="np-album">
+                  {track.album_id ? <Link to={`/albums/${encodeURIComponent(track.album_id)}`}>{track.album}</Link> : track.album}
+                </p>
+              )}
+            </div>
+            <FavoriteButton kind="track" id={track.id} fromServer={track.favorite} label={track.title} className="icon-button--large" />
           </div>
-          <FavoriteButton kind="track" id={track.id} fromServer={track.favorite} label={track.title} className="icon-button--large" />
+
+          <SeekBar />
+
+          <div className="np-controls">
+            <ShuffleToggle />
+            <button type="button" className="icon-button icon-button--large" onClick={player.previous} aria-label="Previous">
+              <Icon name="previous" />
+            </button>
+            <button
+              type="button"
+              className="np-play"
+              onClick={player.togglePlay}
+              aria-label={active ? 'Pause' : 'Play'}
+              data-loading={status === 'loading' ? '' : undefined}
+            >
+              <Icon name={active ? 'pause' : 'play'} />
+            </button>
+            <button type="button" className="icon-button icon-button--large" onClick={player.next} aria-label="Next" disabled={!hasNext}>
+              <Icon name="next" />
+            </button>
+            <RepeatToggle />
+          </div>
+
+          {status === 'error' && error && <ErrorNotice error={error} onRetry={player.play} />}
         </div>
-        <SeekBar />
-        <div className="np-controls">
-          <button type="button" className="icon-button icon-button--large" onClick={player.previous} aria-label="Previous">
-            <Icon name="previous" />
-          </button>
-          <button
-            type="button"
-            className="np-play"
-            onClick={player.togglePlay}
-            aria-label={active ? 'Pause' : 'Play'}
-            data-loading={status === 'loading' ? '' : undefined}
-          >
-            <Icon name={active ? 'pause' : 'play'} />
-          </button>
-          <button type="button" className="icon-button icon-button--large" onClick={player.next} aria-label="Next" disabled={!hasNext}>
-            <Icon name="next" />
-          </button>
-        </div>
-        {status === 'error' && error && <ErrorNotice error={error} onRetry={player.play} />}
+
+        <section className="np-upnext" aria-label="Up next">
+          <div className="queue-heading-row">
+            <h2 className="np-upnext-title">Up next{upcoming > 0 ? ` · ${upcoming}` : ''}</h2>
+            <QueueButton />
+          </div>
+          <QueueList limit={UP_NEXT} showCurrent={false} />
+        </section>
       </div>
     </div>
   )

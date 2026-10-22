@@ -1,12 +1,14 @@
-import type { ComponentType } from 'react'
-import { Link, Navigate, useSearchParams } from 'react-router'
-import { getFavorites, listAlbumsPage } from '../api/library'
-import { AlbumCard, PlaylistCard, QuickTile, Shelf } from '../components/Cards'
+import { type ComponentType, useMemo } from 'react'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
+import { getFavorites, listAlbumsPage, listArtists, listTracks } from '../api/library'
+import { AlbumCard, ArtistCard, PlaylistCard, QuickTile, Shelf } from '../components/Cards'
+import { Cover } from '../components/Cover'
+import { Icon, type IconName } from '../components/Icon'
 import { ErrorNotice } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { Wordmark } from '../components/Wordmark'
 import { useApi } from '../hooks/useApi'
-import { useFavoritesVersion, usePlaylists } from '../library'
+import { toast, useFavoritesVersion, usePlaylists } from '../library'
 import { player } from '../player'
 
 /**
@@ -16,12 +18,21 @@ import { player } from '../player'
  */
 const HOME_SECTIONS: { id: string; Section: ComponentType }[] = [
   { id: 'quick-access', Section: QuickAccess },
+  { id: 'panda-modes', Section: PandaModes },
   { id: 'recently-played', Section: RecentlyPlayed },
   { id: 'recently-added', Section: RecentlyAdded },
-  { id: 'favorite-songs', Section: FavoriteSongs },
+  { id: 'favorites', Section: FavoriteSections },
   { id: 'playlists', Section: YourPlaylists },
+  { id: 'artists', Section: ArtistsShelf },
   { id: 'random-albums', Section: RandomAlbums },
 ]
+
+function greeting(hour = new Date().getHours()): string {
+  if (hour < 5) return 'Good night'
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  return 'Good evening'
+}
 
 export function HomeView() {
   // Stage 2 kept searches at /?q=…; send old links to the Search page.
@@ -32,8 +43,9 @@ export function HomeView() {
   return (
     <div className="page page--home">
       <header className="home-header">
-        <Wordmark size="small" />
+        <Wordmark size="small" heading={false} />
       </header>
+      <h1 className="greeting">{greeting()}</h1>
       {HOME_SECTIONS.map(({ id, Section }) => (
         <Section key={id} />
       ))}
@@ -41,21 +53,88 @@ export function HomeView() {
   )
 }
 
+const TONES = {
+  favorites: 'linear-gradient(135deg, #8a3a5a, #2a1620)',
+  playlists: 'linear-gradient(135deg, #6b4a32, #241912)',
+  random: 'linear-gradient(135deg, #5c5531, #1f1d14)',
+  artists: 'linear-gradient(135deg, #2f5a45, #151f1a)',
+  shuffle: 'linear-gradient(135deg, #4a3a6b, #1c1725)',
+  newest: 'linear-gradient(135deg, #2c4a6b, #161c24)',
+}
+
 function QuickAccess() {
+  const navigate = useNavigate()
+  const [newest] = useApi('home:newest-one', (signal) => listAlbumsPage('newest', 0, 1, signal))
+  const latest = newest.state === 'ready' ? newest.data.albums[0] : undefined
+
+  const randomAlbum = async () => {
+    try {
+      const { albums } = await listAlbumsPage('random', 0, 1)
+      if (albums[0]) navigate(`/albums/${encodeURIComponent(albums[0].id)}`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Couldn’t pick an album.', 'error')
+    }
+  }
+
+  const shuffleLibrary = async () => {
+    try {
+      const { tracks } = await listTracks('random', 0, 200)
+      player.playCollection(tracks, { source: { kind: 'songs', name: 'Your library, shuffled' } })
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Couldn’t shuffle your library.', 'error')
+    }
+  }
+
   return (
     <nav className="quick-grid" aria-label="Quick access">
-      <QuickTile to="/favorites" icon="heart" label="Favorites" tone="linear-gradient(135deg, #4a2a3a, #23161d)" />
-      <QuickTile to="/library/albums?sort=newest" icon="clock" label="Recently added" tone="linear-gradient(135deg, #2c3a4a, #161c24)" />
-      <QuickTile to="/library/albums?sort=random" icon="shuffle" label="Random albums" tone="linear-gradient(135deg, #3d3a26, #1f1d14)" />
-      <QuickTile to="/library/artists" icon="artist" label="Artists" tone="linear-gradient(135deg, #2a3d33, #151f1a)" />
-      <QuickTile to="/library/songs" icon="music" label="Songs" tone="linear-gradient(135deg, #3a2f4a, #1c1725)" />
-      <QuickTile to="/library/playlists" icon="playlist" label="Playlists" tone="linear-gradient(135deg, #46332a, #221915)" />
+      <QuickTile to="/favorites" icon="heart" label="Favorites" tone={TONES.favorites} />
+      <QuickTile to="/library/playlists" icon="playlist" label="Playlists" tone={TONES.playlists} />
+      <QuickTile
+        to="/library/albums?sort=newest"
+        icon="clock"
+        label="Recently added"
+        tone={TONES.newest}
+        art={latest?.cover_art_id ? <Cover coverArtId={latest.cover_art_id} size={96} className="quick-tile-cover" /> : undefined}
+      />
+      <QuickTile onSelect={() => void randomAlbum()} icon="album" label="Random album" tone={TONES.random} />
+      <QuickTile to="/library/artists" icon="artist" label="Artists" tone={TONES.artists} />
+      <QuickTile onSelect={() => void shuffleLibrary()} icon="shuffle" label="Shuffle my library" tone={TONES.shuffle} />
     </nav>
   )
 }
 
+const MODES: { label: string; icon: IconName; hint: string }[] = [
+  { label: 'Panda Radio', icon: 'radio', hint: 'Endless radio from any song' },
+  { label: 'Study', icon: 'book', hint: 'Smooth, steady listening' },
+  { label: 'Familiar', icon: 'heart', hint: 'Your favourites, on rotation' },
+  { label: 'Discovery', icon: 'compass', hint: 'Corners of your library you skip' },
+]
+
+/** Space reserved for PandaFM's listening modes. Not interactive until they exist. */
+function PandaModes() {
+  return (
+    <section className="shelf modes" aria-labelledby="modes-title">
+      <div className="section-head">
+        <h2 id="modes-title" className="section-title">
+          PandaFM modes
+        </h2>
+        <span className="soon">Coming soon</span>
+      </div>
+      <ul className="modes-row">
+        {MODES.map((mode) => (
+          <li key={mode.label} className="mode-tile" aria-disabled="true">
+            <Icon name={mode.icon} />
+            <span className="mode-name">{mode.label}</span>
+            <span className="mode-hint">{mode.hint}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 function AlbumShelf({ kind, title, to, hideWhenEmpty }: { kind: 'recent' | 'newest' | 'random'; title: string; to?: string; hideWhenEmpty?: boolean }) {
-  const [resource, retry] = useApi(`home:${kind}`, (signal) => listAlbumsPage(kind, 0, 12, signal))
+  const [resource, retry] = useApi(`home:${kind}`, (signal) => listAlbumsPage(kind, 0, 16, signal))
   if (resource.state === 'loading') return null
   if (resource.state === 'error') {
     return hideWhenEmpty ? null : (
@@ -89,31 +168,46 @@ function RandomAlbums() {
   return <AlbumShelf kind="random" title="Something different" to="/library/albums?sort=random" />
 }
 
-function FavoriteSongs() {
+function FavoriteSections() {
   const version = useFavoritesVersion()
   const [resource] = useApi(`home:favorites:${version}`, (signal) => getFavorites(signal))
   const data = resource.state === 'ready' ? resource.data : resource.state === 'loading' ? resource.previous : undefined
   if (!data) return null
-  const tracks = data.tracks.slice(0, 5)
+  const tracks = data.tracks.slice(0, 6)
 
   return (
-    <section className="shelf" aria-label="Favorite songs">
-      <div className="section-head">
-        <h2 className="section-title">
-          <Link to="/favorites">Favorite songs</Link>
-        </h2>
-        {data.tracks.length > 0 && (
-          <Link to="/favorites" className="show-all">
-            Show all
-          </Link>
+    <>
+      <section className="shelf" aria-label="Favorite songs">
+        <div className="section-head">
+          <h2 className="section-title">
+            <Link to="/favorites">Favorite songs</Link>
+          </h2>
+          {data.tracks.length > 0 && (
+            <Link to="/favorites" className="show-all">
+              Show all
+            </Link>
+          )}
+        </div>
+        {tracks.length > 0 ? (
+          <div className="home-tracks">
+            <TrackList
+              tracks={tracks}
+              header={false}
+              onPlay={(i) => player.playCollection(data.tracks, { startIndex: i, source: { kind: 'favorites', name: 'Favorites' } })}
+            />
+          </div>
+        ) : (
+          <p className="hint">Tap the heart on any song and it will wait for you here.</p>
         )}
-      </div>
-      {tracks.length > 0 ? (
-        <TrackList tracks={tracks} onPlay={(i) => player.playTracks(data.tracks, i)} header={false} />
-      ) : (
-        <p className="hint">Tap the heart on any song and it will wait for you here.</p>
+      </section>
+      {data.albums.length > 0 && (
+        <Shelf title="Favorite albums" to="/favorites">
+          {data.albums.map((album) => (
+            <AlbumCard key={album.id} album={album} />
+          ))}
+        </Shelf>
       )}
-    </section>
+    </>
   )
 }
 
@@ -122,8 +216,23 @@ function YourPlaylists() {
   if (all.length === 0) return null
   return (
     <Shelf title="Your playlists" to="/library/playlists">
-      {all.slice(0, 12).map((playlist) => (
+      {all.slice(0, 16).map((playlist) => (
         <PlaylistCard key={playlist.id} playlist={playlist} />
+      ))}
+    </Shelf>
+  )
+}
+
+function ArtistsShelf() {
+  const [resource] = useApi('home:artists', (signal) => listArtists(signal))
+  const all = resource.state === 'ready' ? resource.data.artists : []
+  // A different handful of artists each visit.
+  const picks = useMemo(() => [...all].sort(() => Math.random() - 0.5).slice(0, 16), [all])
+  if (picks.length === 0) return null
+  return (
+    <Shelf title="Artists" to="/library/artists">
+      {picks.map((artist) => (
+        <ArtistCard key={artist.id} artist={artist} />
       ))}
     </Shelf>
   )

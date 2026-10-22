@@ -1,8 +1,10 @@
 import { useStore } from 'zustand'
-import { streamUrl } from '../api/library'
+import { coverUrl, type CoverSize, streamUrl } from '../api/library'
 import { AudioEngine } from './engine'
 import { explainPlaybackError } from './explain'
-import { createPlayerStore, currentTrack, type PlayerStoreState } from './store'
+import { connectMediaSession } from './mediaSession'
+import * as Q from './queue'
+import { createPlayerStore, currentTrack, hasNext, type PlayerStoreState } from './store'
 
 // The app's one player: one engine, one store, created once.
 export const audioEngine = new AudioEngine()
@@ -41,10 +43,29 @@ export function usePlayer<T>(selector: (state: PlayerStoreState) => T): T {
 }
 
 export const useCurrentTrack = () => usePlayer(currentTrack)
+export const useHasNext = () => usePlayer(hasNext)
+
+// Lock screen, notification and media keys, where the browser supports them.
+if (typeof navigator !== 'undefined' && 'mediaSession' in navigator && typeof MediaMetadata !== 'undefined') {
+  connectMediaSession(
+    playerStore,
+    navigator.mediaSession,
+    (init) => new MediaMetadata(init),
+    (id, size) => new URL(coverUrl(id, size as CoverSize), window.location.href).href,
+  )
+}
 
 /** Player actions for event handlers. Stable functions, safe to call anywhere. */
 export const player = {
-  playTracks: (...args: Parameters<PlayerStoreState['playTracks']>) => playerStore.getState().playTracks(...args),
+  playCollection: (...args: Parameters<PlayerStoreState['playCollection']>) => playerStore.getState().playCollection(...args),
+  playNext: (...args: Parameters<PlayerStoreState['playNext']>) => playerStore.getState().playNext(...args),
+  addToQueue: (...args: Parameters<PlayerStoreState['addToQueue']>) => playerStore.getState().addToQueue(...args),
+  removeFromQueue: (uid: string) => playerStore.getState().removeFromQueue(uid),
+  clearQueue: (which?: 'all' | 'manual') => playerStore.getState().clearQueue(which),
+  jumpTo: (uid: string) => playerStore.getState().jumpTo(uid),
+  moveInQueue: (uid: string, direction: -1 | 1) => playerStore.getState().moveInQueue(uid, direction),
+  toggleShuffle: () => playerStore.getState().toggleShuffle(),
+  cycleRepeat: () => playerStore.getState().cycleRepeat(),
   togglePlay: () => playerStore.getState().togglePlay(),
   play: () => playerStore.getState().play(),
   pause: () => playerStore.getState().pause(),
@@ -56,3 +77,6 @@ export const player = {
 }
 
 export { countOf, formatLength, formatTime } from './format'
+
+export { Q as queue }
+export type { QueueItem, QueueSource, RepeatMode } from './queue'

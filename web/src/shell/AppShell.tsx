@@ -8,7 +8,9 @@ import { player, useCurrentTrack } from '../player'
 import { BottomNav } from './BottomNav'
 import { MiniPlayer } from './MiniPlayer'
 import { PlayerBar } from './PlayerBar'
+import { QueuePanel } from './QueuePanel'
 import { Sidebar } from './Sidebar'
+import { useQueueOpen } from './ui'
 
 /**
  * The frame around every page. The player lives in a store outside React,
@@ -17,6 +19,7 @@ import { Sidebar } from './Sidebar'
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const isDesktop = useIsDesktop()
+  const queueOpen = useQueueOpen()
   const track = useCurrentTrack()
   const main = useMainScroll()
 
@@ -26,12 +29,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [track])
 
   return (
-    <div className="shell" data-layout={isDesktop ? 'desktop' : 'mobile'} data-has-track={track ? '' : undefined}>
+    <div
+      className="shell"
+      data-layout={isDesktop ? 'desktop' : 'mobile'}
+      data-has-track={track ? '' : undefined}
+      data-queue={isDesktop && queueOpen ? '' : undefined}
+    >
       {isDesktop && <Sidebar />}
       <main className="shell-main" ref={main} id="main">
         <ConnectionBanner />
         {children}
       </main>
+      {isDesktop && queueOpen && <QueuePanel />}
       {isDesktop ? (
         <PlayerBar />
       ) : (

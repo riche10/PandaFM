@@ -8,6 +8,7 @@ import { LibraryView } from './views/LibraryView'
 import { NotFoundView } from './views/NotFoundView'
 import { NowPlayingView } from './views/NowPlayingView'
 import { PlaylistView } from './views/PlaylistView'
+import { QueueView } from './views/QueueView'
 import { SearchView } from './views/SearchView'
 import { StatusView } from './views/StatusView'
 
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/artists" element={<Navigate to="/library/artists" replace />} />
         <Route path="/artists/:artistId" element={<ArtistView />} />
         <Route path="/now-playing" element={<NowPlayingView />} />
+        <Route path="/queue" element={<QueueView />} />
         <Route path="/status" element={<StatusView />} />
         <Route path="*" element={<NotFoundView />} />
       </Routes>

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router'
 import type { PlaylistSummary, Track } from '../api/library'
 import { openDialog } from '../dialogs/store'
 import { playlists, toast, toggleFavorite, useFavorite } from '../library'
+import { player } from '../player'
 import { Cover } from './Cover'
 import { MenuButton, MenuItem } from './Menu'
 
@@ -45,6 +46,8 @@ export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay:
         return (
           <>
             <MenuItem icon="play" label="Play" onSelect={run(onPlay)} />
+            <MenuItem icon="playNext" label="Play next" onSelect={run(() => { player.playNext([track]); toast(`“${track.title}” will play next`) })} />
+            <MenuItem icon="queue" label="Add to queue" onSelect={run(() => { player.addToQueue([track]); toast(`Added “${track.title}” to the queue`) })} />
             <MenuItem
               icon={favorite ? 'heart' : 'heartOutline'}
               label={favorite ? 'Remove from Favorites' : 'Add to Favorites'}
@@ -55,10 +58,10 @@ export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay:
               <MenuItem icon="trash" label="Remove from this playlist" onSelect={run(() => void removeFromPlaylist(inPlaylist))} />
             )}
             {track.album_id && (
-              <MenuItem icon="album" label="Go to album" onSelect={run(() => navigate(`/albums/${encodeURIComponent(track.album_id!)}`))} />
+              <MenuItem icon="album" label="View album" onSelect={run(() => navigate(`/albums/${encodeURIComponent(track.album_id!)}`))} />
             )}
             {track.artist_id && (
-              <MenuItem icon="artist" label="Go to artist" onSelect={run(() => navigate(`/artists/${encodeURIComponent(track.artist_id!)}`))} />
+              <MenuItem icon="artist" label="View artist" onSelect={run(() => navigate(`/artists/${encodeURIComponent(track.artist_id!)}`))} />
             )}
           </>
         )

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router'
 import { getArtist, getArtistTracks } from '../api/library'
-import { AlbumCard, CardGrid, PlayCircle } from '../components/Cards'
+import { AlbumCard, CardGrid, PlayCircle, ShuffleButton } from '../components/Cards'
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
 import { FavoriteButton } from '../components/FavoriteButton'
@@ -9,7 +9,7 @@ import { ErrorNotice, Loading } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { useApi } from '../hooks/useApi'
 import { useArtworkColor } from '../hooks/useArtworkColor'
-import { countOf, player } from '../player'
+import { countOf, player, type QueueSource } from '../player'
 
 const SONGS_PREVIEW = 5
 
@@ -32,6 +32,7 @@ export function ArtistView() {
   if (!artist) return <div className="page"><Loading label="Loading artist…" /></div>
 
   const tracks = songs.state === 'ready' ? songs.data.tracks : []
+  const source: QueueSource = { kind: 'artist', id: artist.id, name: artist.name }
   return (
     <div className="page page--detail">
       <DetailHero
@@ -43,7 +44,8 @@ export function ArtistView() {
         meta={[countOf(artist.albums.length, 'album', 'albums'), tracks.length ? countOf(tracks.length, 'song', 'songs') : null].filter(Boolean).join(' · ')}
         actions={
           <>
-            <PlayCircle label={`Play ${artist.name}`} disabled={!tracks.length} onPlay={() => player.playTracks(tracks, 0)} />
+            <PlayCircle label={`Play ${artist.name}`} disabled={!tracks.length} onPlay={() => player.playCollection(tracks, { source })} />
+            <ShuffleButton label={`Shuffle ${artist.name}`} disabled={tracks.length < 2} onShuffle={() => player.playCollection(tracks, { source, shuffle: true })} />
             <FavoriteButton kind="artist" id={artist.id} fromServer={artist.favorite} label={artist.name} className="icon-button--large" />
           </>
         }
@@ -58,7 +60,7 @@ export function ArtistView() {
               </button>
             )}
           </div>
-          <TrackList tracks={allSongs ? tracks : tracks.slice(0, SONGS_PREVIEW)} onPlay={(i) => player.playTracks(tracks, i)} header={false} />
+          <TrackList tracks={allSongs ? tracks : tracks.slice(0, SONGS_PREVIEW)} onPlay={(i) => player.playCollection(tracks, { startIndex: i, source })} header={false} />
         </section>
       )}
       <section className="shelf" aria-label="Albums">

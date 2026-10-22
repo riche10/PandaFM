@@ -73,7 +73,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 describe('player store', () => {
   it('loads the picked song from the PandaFM stream URL and plays it', () => {
     const { engine, store, actions } = setup()
-    actions.playTracks([track('a'), track('b'), track('c')], 1)
+    actions.playCollection([track('a'), track('b'), track('c')], { startIndex: 1 })
 
     assert.deepEqual(engine.loaded, ['/api/tracks/b/stream'])
     assert.equal(engine.playCalls, 1)
@@ -86,7 +86,7 @@ describe('player store', () => {
 
   it('pauses and resumes', () => {
     const { engine, store, actions } = setup()
-    actions.playTracks([track('a')])
+    actions.playCollection([track('a')])
     engine.emit({ type: 'playing' })
 
     actions.togglePlay()
@@ -100,7 +100,7 @@ describe('player store', () => {
 
   it('seeks within the song, clamped to its length', () => {
     const { engine, store, actions } = setup()
-    actions.playTracks([track('a', 200)])
+    actions.playCollection([track('a', 200)])
 
     actions.seek(120)
     actions.seek(999)
@@ -111,7 +111,7 @@ describe('player store', () => {
 
   it('moves through the queue with next and previous', () => {
     const { engine, actions } = setup()
-    actions.playTracks([track('a'), track('b')])
+    actions.playCollection([track('a'), track('b')])
 
     actions.next()
     actions.next() // already at the end: nothing happens
@@ -125,7 +125,7 @@ describe('player store', () => {
 
   it('restarts the song when previous is pressed a few seconds in', () => {
     const { engine, actions } = setup()
-    actions.playTracks([track('a'), track('b')], 1)
+    actions.playCollection([track('a'), track('b')], { startIndex: 1 })
     engine.emit({ type: 'time', position: 42, duration: 200 })
 
     actions.previous()
@@ -135,7 +135,7 @@ describe('player store', () => {
 
   it('advances when a song ends and stops at the end of the queue', () => {
     const { engine, store, actions } = setup()
-    actions.playTracks([track('a'), track('b')])
+    actions.playCollection([track('a'), track('b')])
 
     engine.emit({ type: 'ended' })
     assert.equal(currentTrack(store.getState())?.id, 'b')
@@ -149,7 +149,7 @@ describe('player store', () => {
 
   it('ignores a stray pause from the old source while a new song loads', () => {
     const { engine, store, actions } = setup()
-    actions.playTracks([track('a'), track('b')])
+    actions.playCollection([track('a'), track('b')])
     engine.emit({ type: 'playing' })
 
     actions.next()
@@ -159,7 +159,7 @@ describe('player store', () => {
 
   it('shows a generic error, then the explanation for the same song', async () => {
     const { engine, store, actions } = setup(async () => 'That isn’t in your music library.')
-    actions.playTracks([track('a')])
+    actions.playCollection([track('a')])
 
     engine.emit({ type: 'error', kind: 'unsupported' })
     assert.equal(store.getState().status, 'error')
@@ -172,7 +172,7 @@ describe('player store', () => {
   it('drops a late explanation once the user has moved on', async () => {
     let finish: (message: string) => void = () => {}
     const { engine, store, actions } = setup(() => new Promise((resolve) => (finish = resolve)))
-    actions.playTracks([track('a'), track('b')])
+    actions.playCollection([track('a'), track('b')])
     engine.emit({ type: 'error', kind: 'network' })
 
     actions.next()
@@ -184,7 +184,7 @@ describe('player store', () => {
   it('treats a blocked autoplay as paused rather than an error', async () => {
     const { engine, store, actions } = setup()
     engine.playResult = () => Promise.reject(new DOMException('needs a tap', 'NotAllowedError'))
-    actions.playTracks([track('a')])
+    actions.playCollection([track('a')])
 
     await flush()
     assert.equal(store.getState().status, 'paused')
@@ -200,5 +200,53 @@ describe('player store', () => {
     assert.equal(store.getState().volume, 0.4)
     actions.setVolume(7)
     assert.deepEqual(engine.volumes, [1, 0.4, 0, 0.4, 1])
+  })
+
+  it('plays a hand-picked song next, then carries on with the album', () => {
+    const { engine, actions } = setup()
+    actions.playCollection([track('a'), track('b')])
+    actions.playNext([track('x')])
+    engine.emit({ type: 'ended' })
+    engine.emit({ type: 'ended' })
+    assert.deepEqual(engine.loaded, ['/api/tracks/a/stream', '/api/tracks/x/stream', '/api/tracks/b/stream'])
+  })
+
+  it('queued songs wait until Play when nothing was playing', () => {
+    const { engine, store, actions } = setup()
+    actions.addToQueue([track('a'), track('b')])
+    assert.equal(engine.loaded.length, 0)
+    assert.equal(currentTrack(store.getState())?.id, 'a')
+    actions.play()
+    assert.deepEqual(engine.loaded, ['/api/tracks/a/stream'])
+  })
+
+  it('jumping to a queued song plays it', () => {
+    const { engine, store, actions } = setup()
+    actions.playCollection([track('a'), track('b'), track('c')])
+    actions.jumpTo(store.getState().items[2].uid)
+    assert.equal(engine.loaded.at(-1), '/api/tracks/c/stream')
+  })
+
+  it('toggling shuffle keeps the current song playing without reloading it', () => {
+    const { engine, store, actions } = setup()
+    actions.playCollection([track('a'), track('b'), track('c'), track('d')], { startIndex: 1 })
+    actions.toggleShuffle()
+    assert.equal(currentTrack(store.getState())?.id, 'b')
+    assert.equal(store.getState().shuffle, true)
+    actions.toggleShuffle()
+    assert.deepEqual(store.getState().items.map((i) => i.track.id), ['a', 'b', 'c', 'd'])
+    assert.equal(engine.loaded.length, 1)
+  })
+
+  it('repeat-one replays the song; repeat-all wraps to the start', () => {
+    const { engine, actions } = setup()
+    actions.playCollection([track('a'), track('b')], { startIndex: 1 })
+    actions.cycleRepeat() // all
+    engine.emit({ type: 'ended' })
+    assert.equal(engine.loaded.at(-1), '/api/tracks/a/stream')
+    actions.cycleRepeat() // one
+    engine.emit({ type: 'ended' })
+    assert.equal(engine.loaded.at(-1), '/api/tracks/a/stream')
+    assert.deepEqual(engine.seeks.at(-1), 0)
   })
 })
