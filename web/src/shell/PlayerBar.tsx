@@ -3,6 +3,8 @@ import { Link } from 'react-router'
 import { Cover } from '../components/Cover'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { Icon } from '../components/Icon'
+import { RepeatToggle, ShuffleToggle } from '../components/PlaybackModes'
+import { QueueButton } from '../components/QueueButton'
 import { SeekBar } from '../components/SeekBar'
 import { player, useCurrentTrack, useHasNext, usePlayer } from '../player'
 
@@ -40,6 +42,7 @@ export function PlayerBar() {
 
       <div className="player-bar-center">
         <div className="transport">
+          <ShuffleToggle />
           <button type="button" className="icon-button" onClick={player.previous} aria-label="Previous" disabled={!track}>
             <Icon name="previous" />
           </button>
@@ -56,11 +59,13 @@ export function PlayerBar() {
           <button type="button" className="icon-button" onClick={player.next} aria-label="Next" disabled={!hasNext}>
             <Icon name="next" />
           </button>
+          <RepeatToggle />
         </div>
         <SeekBar compact />
       </div>
 
       <div className="player-bar-extras">
+        <QueueButton />
         <Link to="/now-playing" className="icon-button" aria-label="Open Now Playing">
           <Icon name="expand" />
         </Link>

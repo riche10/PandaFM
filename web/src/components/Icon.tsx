@@ -45,6 +45,16 @@ const ICONS = {
   },
   clock: { d: 'M12 2.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zm-1 4.5v6l5 3 1-1.6-4-2.4V7z', evenOdd: true },
   check: { d: 'M9.6 16.2 4.9 11.5l-1.4 1.4 6.1 6.1L20.5 8.1l-1.4-1.4z' },
+  repeat: { d: 'M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z' },
+  repeatOne: { d: 'M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2zM11.2 9.5h1.6V15h-1.6v-3.6l-1 .4v-1.4z' },
+  queue: { d: 'M3 5.5h13v2H3zm0 4.5h13v2H3zm0 4.5h8v2H3zm11 .3v5.4l4.5-2.7z' },
+  arrowUp: { d: 'M11 19V8.8l-4.6 4.6L5 12l7-7 7 7-1.4 1.4L13 8.8V19z' },
+  arrowDown: { d: 'M13 5v10.2l4.6-4.6L19 12l-7 7-7-7 1.4-1.4 4.6 4.6V5z' },
+  playNext: { d: 'M3 5.5h12v2H3zm0 4.5h12v2H3zm0 4.5h7v2H3zm10-1v7l6-3.5z' },
+  radio: { d: 'M4 8.5 17.5 3l.8 1.8L9.6 8.5H20a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1zm4 3.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm6 .5v1.5h5v-1.5zm0 3v1.5h5V15.5z' },
+  book: { d: 'M5 4.5A2.5 2.5 0 0 1 7.5 2H19v16H7.5a.5.5 0 0 0 0 1H19v2H7.5A2.5 2.5 0 0 1 5 18.5zM9 6v2h7V6z' },
+  compass: { d: 'M12 2.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zm3.8 5.7-5.5 2.1-2.1 5.5 5.5-2.1zM12 10.8a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z', evenOdd: true },
+  sparkle: { d: 'M12 2.5 13.9 9l6.6 2-6.6 2L12 19.5 10.1 13 3.5 11l6.6-2zm7 12.5.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z' },
 } satisfies Record<string, IconDef>
 
 export type IconName = keyof typeof ICONS

@@ -102,15 +102,38 @@ export function Shelf({ title, to, children }: { title: string; to?: string; chi
   )
 }
 
-/** Large shortcut tiles at the top of Home. */
-export function QuickTile({ to, icon, label, tone }: { to: string; icon: IconName; label: string; tone: string }) {
-  return (
-    <Link to={to} className="quick-tile">
+/** Large shortcut tiles at the top of Home: a link, or an action (e.g. shuffle everything). */
+export function QuickTile({
+  to,
+  onSelect,
+  icon,
+  label,
+  tone,
+  art,
+}: {
+  to?: string
+  onSelect?: () => void
+  icon: IconName
+  label: string
+  tone: string
+  art?: ReactNode
+}) {
+  const content = (
+    <>
       <span className="quick-tile-art" style={{ background: tone }}>
-        <Icon name={icon} />
+        {art ?? <Icon name={icon} />}
       </span>
       <span className="quick-tile-label">{label}</span>
+    </>
+  )
+  return to ? (
+    <Link to={to} className="quick-tile">
+      {content}
     </Link>
+  ) : (
+    <button type="button" className="quick-tile" onClick={onSelect}>
+      {content}
+    </button>
   )
 }
 

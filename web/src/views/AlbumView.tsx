@@ -8,6 +8,7 @@ import { MenuButton, MenuItem } from '../components/Menu'
 import { ErrorNotice, Loading } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { openDialog } from '../dialogs/store'
+import { toast } from '../library'
 import { useApi } from '../hooks/useApi'
 import { useArtworkColor } from '../hooks/useArtworkColor'
 import { countOf, formatLength, player, type QueueSource } from '../player'
@@ -51,14 +52,11 @@ export function AlbumView() {
             <FavoriteButton kind="album" id={album.id} fromServer={album.favorite} label={album.name} className="icon-button--large" />
             <MenuButton label={`More options for ${album.name}`} className="icon-button--large">
               {(close) => (
-                <MenuItem
-                  icon="playlist"
-                  label="Add album to playlist"
-                  onSelect={() => {
-                    close()
-                    openDialog({ type: 'add-to-playlist', tracks: album.tracks })
-                  }}
-                />
+                <>
+                  <MenuItem icon="playNext" label="Play next" onSelect={() => { close(); player.playNext(album.tracks); toast(`${album.name} will play next`) }} />
+                  <MenuItem icon="queue" label="Add to queue" onSelect={() => { close(); player.addToQueue(album.tracks); toast(`Added ${album.name} to the queue`) }} />
+                  <MenuItem icon="playlist" label="Add album to playlist" onSelect={() => { close(); openDialog({ type: 'add-to-playlist', tracks: album.tracks }) }} />
+                </>
               )}
             </MenuButton>
           </>
