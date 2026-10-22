@@ -1,10 +1,14 @@
 import { useStore } from 'zustand'
 import { coverUrl, type CoverSize, streamUrl } from '../api/library'
+import { radioApi } from '../api/radio'
+import { createReporter, type ListeningEvent, snapshot } from './events'
+import { createRadioController } from './radio'
+import { uuid } from './uuid'
 import { AudioEngine } from './engine'
 import { explainPlaybackError } from './explain'
 import { connectMediaSession } from './mediaSession'
 import * as Q from './queue'
-import { createPlayerStore, currentTrack, hasNext, type PlayerStoreState } from './store'
+import { createPlayerStore, currentTrack, hasNext, type PlaybackReport, type PlayerStoreState } from './store'
 
 // The app's one player: one engine, one store, created once.
 export const audioEngine = new AudioEngine()
@@ -20,12 +24,64 @@ function savedVolume(): number {
   }
 }
 
+const EVENTS_KEY = 'pandafm.pending-events'
+
+/** Listening events go to the API in batches; unsent ones survive a closed tab. */
+export const reporter = createReporter({
+  send: async (events) => {
+    const response = await fetch('/api/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events }),
+      keepalive: true, // let a batch finish even if the page is closing
+    })
+    if (!response.ok) throw new Error(`events rejected: ${response.status}`)
+  },
+  storage: {
+    load: () => localStorage.getItem(EVENTS_KEY),
+    save: (value) => localStorage.setItem(EVENTS_KEY, value),
+  },
+})
+
+function toEvent(report: PlaybackReport): ListeningEvent {
+  const { item, source } = report
+  return {
+    event_id: uuid(),
+    type: report.type,
+    track: snapshot(item.track),
+    play_id: report.playId,
+    occurred_at: new Date().toISOString(),
+    position_s: Math.round(report.position * 10) / 10,
+    duration_s: report.duration || null,
+    source: item.radio ? 'radio' : item.origin === 'manual' ? 'queue' : (source?.kind ?? 'library'),
+    mode: item.radio ? (source?.radio?.mode ?? null) : null,
+    radio_session_id: item.radio?.sessionId ?? null,
+    radio_selection_id: item.radio?.selectionId ?? null,
+    details: report.details ?? {},
+  }
+}
+
 export const playerStore = createPlayerStore({
   engine: audioEngine,
   streamUrl,
   explainError: explainPlaybackError,
   initialVolume: savedVolume(),
+  report: (event) => reporter.report(toEvent(event)),
+  newId: uuid,
 })
+
+if (typeof document !== 'undefined') {
+  // Send what's buffered when the app goes to the background (phones may kill it there).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void reporter.flush()
+  })
+}
+
+/** Panda Radio, feeding the shared queue above. */
+export const radio = createRadioController({ api: radioApi, store: playerStore, reporter })
+
+/** The active radio session, or null. */
+export const useRadio = () => usePlayer((s) => (s.source?.kind === 'radio' ? (s.source.radio ?? null) : null))
 
 // Remember the volume between visits (this browser only).
 playerStore.subscribe((state, previous) => {
@@ -79,4 +135,4 @@ export const player = {
 export { countOf, formatLength, formatTime } from './format'
 
 export { Q as queue }
-export type { QueueItem, QueueSource, RepeatMode } from './queue'
+export type { QueueItem, QueueSource, RadioInfo, RepeatMode } from './queue'

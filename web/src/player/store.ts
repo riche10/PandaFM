@@ -24,6 +24,17 @@ export interface PlayOptions {
   shuffle?: boolean
 }
 
+/** What the store reports as playback happens; player/index.ts turns these into API events. */
+export interface PlaybackReport {
+  type: 'play_started' | 'play_completed' | 'skip' | 'pause' | 'resume' | 'seek'
+  item: Q.QueueItem
+  playId: string
+  position: number
+  duration: number
+  source: Q.QueueSource | null
+  details?: Record<string, unknown>
+}
+
 export interface PlayerActions {
   /** Replace the queue with a collection (album, playlist, results…) and play it. */
   playCollection(tracks: Track[], options?: PlayOptions): void
@@ -43,6 +54,11 @@ export interface PlayerActions {
   previous(): void
   setVolume(volume: number): void
   toggleMute(): void
+  /** Panda Radio: replace the queue with radio picks (or follow the current song). */
+  startRadio(picks: Q.RadioPickInput[], source: Q.QueueSource, options?: { seedTrack?: Track | null; keepCurrent?: boolean }): void
+  /** Panda Radio: drop replaced upcoming picks and add new ones. */
+  addRadio(replaced: number[], picks: Q.RadioPickInput[]): void
+  endRadio(): void
 }
 
 export type PlayerStoreState = PlayerState & PlayerActions
@@ -55,6 +71,9 @@ export interface PlayerDeps {
   explainError: (trackId: string, kind: PlaybackErrorKind) => Promise<string>
   initialVolume?: number
   random?: Q.Random
+  /** Listening behaviour, reported centrally from here (see player/events.ts). */
+  report?: (event: PlaybackReport) => void
+  newId?: () => string
 }
 
 export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorKind, string> = {
@@ -84,8 +103,13 @@ export function createPlayerStore({
   explainError,
   initialVolume = 1,
   random = Math.random,
+  report,
+  newId = () => Math.random().toString(36).slice(2),
 }: PlayerDeps): PlayerStore {
   engine.setVolume(initialVolume)
+
+  // The listen in progress: one play_id ties together its events.
+  let listen: { playId: string; uid: string; started: boolean; completed: boolean; paused: boolean } | null = null
 
   const store = createStore<PlayerStoreState>()((set, get) => {
     const startPlayback = () => {
@@ -99,10 +123,28 @@ export function createPlayerStore({
       })
     }
 
+    const emit = (type: PlaybackReport['type'], details?: Record<string, unknown>, position?: number) => {
+      const state = get()
+      const item = state.items.find((i) => i.uid === listen?.uid)
+      if (!listen || !item || !report) return
+      report({
+        type,
+        item,
+        playId: listen.playId,
+        position: position ?? state.position,
+        duration: state.duration || item.track.duration_seconds || 0,
+        source: state.source,
+        details,
+      })
+    }
+
     /** Make queue position `index` current and start it from the top. */
     const start = (index: number) => {
       const item = get().items[index]
       if (!item) return
+      // Leaving a song that started but didn't finish is a skip (early or late is decided by the server).
+      if (listen?.started && !listen.completed) emit('skip')
+      listen = { playId: newId(), uid: item.uid, started: false, completed: false, paused: false }
       set({
         index,
         status: 'loading',
@@ -177,6 +219,11 @@ export function createPlayerStore({
       },
 
       pause() {
+        const { status } = get()
+        if (listen?.started && !listen.paused && (status === 'playing' || status === 'loading')) {
+          emit('pause')
+          listen.paused = true
+        }
         engine.pause()
         set({ status: 'paused' })
       },
@@ -185,8 +232,10 @@ export function createPlayerStore({
         const { duration, index } = get()
         if (index < 0) return
         const target = Math.min(Math.max(0, seconds), duration > 0 ? duration : seconds)
+        const from = get().position
         set({ position: target })
         engine.seek(target)
+        if (listen?.started) emit('seek', { from: Math.round(from * 10) / 10 }, target)
       },
 
       next() {
@@ -215,6 +264,15 @@ export function createPlayerStore({
         set(muted ? { muted: false, volume: restored } : { muted: true })
         engine.setVolume(muted ? restored : 0)
       },
+
+      startRadio(picks, source, options = {}) {
+        const keepCurrent = Boolean(options.keepCurrent && get().index >= 0)
+        update((q) => Q.startRadio(q, picks, source, { ...options, keepCurrent }))
+        if (!keepCurrent) start(0)
+      },
+
+      addRadio: (replaced, picks) => update((q) => Q.addRadio(q, replaced, picks)),
+      endRadio: () => update(Q.endRadio),
     }
   })
 
@@ -225,7 +283,17 @@ export function createPlayerStore({
         if (state.status !== 'paused') store.setState({ status: 'loading' })
         break
       case 'playing':
-        store.setState({ status: 'playing', error: null })
+        if (listen && !listen.started) {
+          listen.started = true
+          store.setState({ status: 'playing', error: null })
+          reportFrom('play_started', 0)
+        } else {
+          store.setState({ status: 'playing', error: null })
+          if (listen?.paused) {
+            listen.paused = false
+            reportFrom('resume')
+          }
+        }
         break
       case 'paused':
         // While a new song loads the old source can report a pause; ignore it.
@@ -238,6 +306,10 @@ export function createPlayerStore({
         })
         break
       case 'ended':
+        if (listen?.started && !listen.completed) {
+          reportFrom('play_completed', state.duration)
+          listen.completed = true
+        }
         if (state.repeat === 'one') {
           engine.seek(0)
           startAgain(state)
@@ -263,8 +335,23 @@ export function createPlayerStore({
     }
   }
 
-  /** Repeat-one: the song ended, so play it again from the top. */
+  function reportFrom(type: PlaybackReport['type'], position?: number) {
+    const state = store.getState()
+    const item = state.items.find((i) => i.uid === listen?.uid)
+    if (!listen || !item || !report) return
+    report({
+      type,
+      item,
+      playId: listen.playId,
+      position: position ?? state.position,
+      duration: state.duration || item.track.duration_seconds || 0,
+      source: state.source,
+    })
+  }
+
+  /** Repeat-one: the song ended, so play it again from the top (a new listen). */
   const startAgain = (state: PlayerStoreState) => {
+    if (listen) listen = { ...listen, playId: newId(), started: false, completed: false, paused: false }
     store.setState({ status: 'loading', position: 0 })
     engine.play().catch(() => state.pause())
   }

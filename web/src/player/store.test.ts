@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { Track } from '../api/library'
-import { createPlayerStore, currentTrack, PLAYBACK_ERROR_MESSAGES } from './store.ts'
+import { createPlayerStore, currentTrack, PLAYBACK_ERROR_MESSAGES, type PlaybackReport } from './store.ts'
 import type { EngineEvent, PlaybackEngine } from './types'
 
 class FakeEngine implements PlaybackEngine {
@@ -60,12 +60,16 @@ const track = (id: string, duration = 200): Track => ({
 
 function setup(explain = async () => 'explained') {
   const engine = new FakeEngine()
+  const reports: PlaybackReport[] = []
+  let n = 0
   const store = createPlayerStore({
     engine,
     streamUrl: (id) => `/api/tracks/${id}/stream`,
     explainError: explain,
+    report: (r) => void reports.push(r),
+    newId: () => `play${++n}`,
   })
-  return { engine, store, actions: store.getState() }
+  return { engine, store, actions: store.getState(), reports }
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -248,5 +252,36 @@ describe('player store', () => {
     engine.emit({ type: 'ended' })
     assert.equal(engine.loaded.at(-1), '/api/tracks/a/stream')
     assert.deepEqual(engine.seeks.at(-1), 0)
+  })
+
+  it('reports a listen: started, paused, resumed, seeked, then skipped when leaving early', () => {
+    const { engine, actions, reports } = setup()
+    actions.playCollection([track('a'), track('b')])
+    engine.emit({ type: 'playing' })
+    engine.emit({ type: 'time', position: 12, duration: 200 })
+    actions.pause()
+    actions.play()
+    engine.emit({ type: 'playing' })
+    actions.seek(40)
+    actions.next()
+    const summary = reports.map((r) => `${r.type}:${r.item.track.id}:${Math.round(r.position)}:${r.playId}`)
+    assert.deepEqual(summary, ['play_started:a:0:play1', 'pause:a:12:play1', 'resume:a:12:play1', 'seek:a:40:play1', 'skip:a:40:play1'])
+    assert.deepEqual(reports[3].details, { from: 12 })
+  })
+
+  it('a song that plays to the end is completed, not skipped', () => {
+    const { engine, actions, reports } = setup()
+    actions.playCollection([track('a'), track('b')])
+    engine.emit({ type: 'playing' })
+    engine.emit({ type: 'ended' })
+    engine.emit({ type: 'playing' })
+    assert.deepEqual(reports.map((r) => `${r.type}:${r.item.track.id}:${r.playId}`), ['play_started:a:play1', 'play_completed:a:play1', 'play_started:b:play2'])
+  })
+
+  it('a song that never started is not reported as skipped', () => {
+    const { actions, reports } = setup()
+    actions.playCollection([track('a'), track('b')])
+    actions.next() // before any audio played
+    assert.equal(reports.length, 0)
   })
 })

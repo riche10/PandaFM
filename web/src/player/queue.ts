@@ -15,16 +15,38 @@ import type { Track } from '../api/library'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 
+export interface RadioInfo {
+  sessionId: string
+  mode: string
+  modeLabel: string
+  seedName: string | null
+}
+
 export interface QueueSource {
-  kind: 'album' | 'playlist' | 'artist' | 'favorites' | 'search' | 'songs' | 'tracks'
+  kind: 'album' | 'playlist' | 'artist' | 'favorites' | 'search' | 'songs' | 'tracks' | 'radio'
   name: string
   id?: string
+  /** Set while Panda Radio is feeding this queue. */
+  radio?: RadioInfo
+}
+
+/** Marks a song chosen by Panda Radio, so steering can replace it and "Why this song?" can explain it. */
+export interface RadioTag {
+  sessionId: string
+  selectionId: number
+  reasons: string[]
 }
 
 export interface QueueItem {
   uid: string
   track: Track
   origin: 'context' | 'manual'
+  radio?: RadioTag
+}
+
+export interface RadioPickInput {
+  track: Track
+  radio: RadioTag
 }
 
 export interface QueueState {
@@ -172,6 +194,7 @@ export function move(state: QueueState, itemUid: string, direction: -1 | 1): Que
  * the current song.
  */
 export function setShuffle(state: QueueState, on: boolean, random: Random = Math.random): QueueState {
+  if (state.source?.kind === 'radio') return state // radio chooses its own order
   if (on === state.shuffle || state.index < 0) return { ...state, shuffle: on && state.index >= 0 }
   const now = state.items[state.index]
   const manual = manualUpcoming(state)
@@ -221,4 +244,48 @@ export function nextIndex(state: QueueState): number | null {
 export function previousIndex(state: QueueState): number | null {
   if (state.index > 0) return state.index - 1
   return state.repeat === 'all' && state.items.length > 1 ? state.items.length - 1 : null
+}
+
+// ── Panda Radio ───────────────────────────────────────────────────────
+// Radio picks are ordinary collection items carrying a RadioTag. Hand-picked
+// songs keep their place ahead of them, and steering only ever touches
+// radio picks that haven't played yet.
+
+const wrapRadio = (picks: RadioPickInput[]): QueueItem[] =>
+  picks.map((pick) => ({ uid: uid(), track: pick.track, origin: 'context', radio: pick.radio }))
+
+/**
+ * Start radio. With `keepCurrent`, the song playing now carries on (with any
+ * hand-picked songs) and radio follows; otherwise the seed song (if any)
+ * plays first, then the radio picks.
+ */
+export function startRadio(
+  state: QueueState,
+  picks: RadioPickInput[],
+  source: QueueSource,
+  { seedTrack, keepCurrent = false }: { seedTrack?: Track | null; keepCurrent?: boolean } = {},
+): QueueState {
+  const base = { ...state, source, shuffle: false, ordered: null }
+  if (keepCurrent && state.index >= 0) {
+    return { ...base, items: [state.items[state.index], ...manualUpcoming(state), ...wrapRadio(picks)], index: 0 }
+  }
+  const seed = seedTrack ? wrap([seedTrack], 'context') : []
+  return { ...base, items: [...seed, ...wrapRadio(picks)], index: 0 }
+}
+
+/** Add radio picks at the end, first dropping the upcoming picks radio replaced. */
+export function addRadio(state: QueueState, replaced: number[], picks: RadioPickInput[]): QueueState {
+  const drop = new Set(replaced)
+  const items = state.items.filter((item, i) => i <= state.index || !item.radio || !drop.has(item.radio.selectionId))
+  return { ...state, items: [...items, ...wrapRadio(picks)] }
+}
+
+/** Upcoming songs chosen by a radio session (what the app keeps topped up). */
+export const radioUpcoming = (state: QueueState, sessionId: string): QueueItem[] =>
+  upcoming(state).filter((item) => item.radio?.sessionId === sessionId)
+
+/** Stop radio: the queue stays as it is, it just stops growing. */
+export function endRadio(state: QueueState): QueueState {
+  if (state.source?.kind !== 'radio') return state
+  return { ...state, source: { kind: 'tracks', name: state.source.name } }
 }
