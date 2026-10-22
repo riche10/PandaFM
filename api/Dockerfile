@@ -7,13 +7,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# ffmpeg converts songs for portable downloads (Stage 4). Library files are
+# read through Navidrome and never modified.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies first so code changes don't reinstall them.
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
 
-RUN useradd --system --uid 10001 --no-create-home pandafm
+RUN useradd --system --uid 10001 --no-create-home pandafm \
+    && mkdir -p /cache && chown pandafm /cache
+# A new named volume mounted here starts with this folder's ownership.
+VOLUME /cache
 USER pandafm
 
 EXPOSE 8000

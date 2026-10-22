@@ -66,6 +66,14 @@ class Track(Base):
     year: Mapped[int | None] = mapped_column(Integer)
     duration_s: Mapped[int | None] = mapped_column(Integer)
     cover_art_id: Mapped[str | None] = mapped_column(String(200))
+    # Technical facts from Navidrome (Stage 4); nullable for songs cached before.
+    suffix: Mapped[str | None] = mapped_column(String(16))
+    bitrate_kbps: Mapped[int | None] = mapped_column(Integer)
+    sample_rate: Mapped[int | None] = mapped_column(Integer)
+    bit_depth: Mapped[int | None] = mapped_column(Integer)
+    channels: Mapped[int | None] = mapped_column(Integer)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    source_revision: Mapped[str | None] = mapped_column(String(32))
     is_available: Mapped[bool] = mapped_column(server_default=text("true"))
     first_seen_at: Mapped[datetime] = _now()
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -189,3 +197,26 @@ class LibrarySync(Base):
     tracks_updated: Mapped[int] = mapped_column(server_default=text("0"))
     tracks_missing: Mapped[int] = mapped_column(server_default=text("0"))
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class Conversion(Base):
+    """A portable copy of one song made for downloads, kept in the conversion cache."""
+
+    __tablename__ = "conversions"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id"))
+    profile: Mapped[str] = mapped_column(String(32))
+    source_revision: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16))  # ready | failed
+    file_name: Mapped[str | None] = mapped_column(String(200))  # inside the cache directory, never a library path
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _now()
+    last_accessed_at: Mapped[datetime] = _now()
+
+    __table_args__ = (
+        UniqueConstraint("track_id", "profile", "source_revision", name="uq_conversions_track_profile_revision"),
+        Index("ix_conversions_last_accessed", "last_accessed_at"),
+    )
