@@ -19,7 +19,7 @@ from sqlalchemy.engine import make_url
 from app.config import Settings
 from app.deps import get_navidrome
 from app.main import create_app
-from app.migrate import upgrade
+from app.migrate import head, upgrade
 from tests.fakes import FakeNavidrome
 
 TEST_DB = os.environ.get("PANDAFM_TEST_DATABASE_URL")
@@ -136,7 +136,7 @@ def prefs(engine, navidrome_id: str) -> dict:
 
 
 def test_migrations_are_repeatable_and_create_the_default_user(db):
-    assert upgrade(settings()) == "0001"  # second run: nothing to do
+    assert upgrade(settings()) == head()  # second run: nothing to do
     with db.connect() as conn:
         tables = set(conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")).scalars())
         users = conn.execute(text("SELECT username FROM users")).scalars().all()
