@@ -10,6 +10,7 @@ import { useApi } from '../hooks/useApi'
 import { usePaged } from '../hooks/usePaged'
 import { playlists, usePlaylists, usePlaylistsStatus } from '../library'
 import { player } from '../player'
+import { isNative } from '../platform/state'
 
 const TABS = [
   { id: 'albums', label: 'Albums' },
@@ -31,6 +32,11 @@ export function LibraryView() {
             {t.label}
           </NavLink>
         ))}
+        {isNative() && (
+          <NavLink to="/offline" className="tab">
+            Downloaded
+          </NavLink>
+        )}
       </nav>
       {tab === 'albums' && <AlbumsTab />}
       {tab === 'artists' && <ArtistsTab />}

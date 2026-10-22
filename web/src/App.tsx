@@ -1,5 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router'
+import { isNative, platform } from './platform/state'
 import { AppShell } from './shell/AppShell'
+import { OfflineView } from './views/OfflineView'
+import { ServerSetupView } from './views/ServerSetupView'
+import { SettingsView } from './views/SettingsView'
 import { AlbumView } from './views/AlbumView'
 import { ArtistView } from './views/ArtistView'
 import { FavoritesView } from './views/FavoritesView'
@@ -14,6 +18,8 @@ import { StatsView } from './views/StatsView'
 import { StatusView } from './views/StatusView'
 
 export default function App() {
+  // The Android app needs to know its server before anything else.
+  if (isNative() && !platform.server) return <ServerSetupView />
   return (
     <AppShell>
       <Routes>
@@ -30,6 +36,8 @@ export default function App() {
         <Route path="/queue" element={<QueueView />} />
         <Route path="/status" element={<StatusView />} />
         <Route path="/stats" element={<StatsView />} />
+        <Route path="/settings" element={<SettingsView />} />
+        <Route path="/offline" element={<OfflineView />} />
         <Route path="*" element={<NotFoundView />} />
       </Routes>
     </AppShell>

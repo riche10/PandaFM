@@ -5,6 +5,7 @@ import { Cover } from './Cover'
 import { Equalizer } from './Equalizer'
 import { FavoriteButton } from './FavoriteButton'
 import { Icon } from './Icon'
+import { OfflineMark } from './OfflineMark'
 import { TrackMenu } from './TrackMenu'
 
 interface TrackListProps {
@@ -71,6 +72,7 @@ export function TrackList({
                 >
                   <span className="track-title">{track.title}</span>
                 </button>
+                <OfflineMark trackId={track.id} />
                 {showArtist && (
                   <span className="track-sub">
                     {track.artist_id ? (

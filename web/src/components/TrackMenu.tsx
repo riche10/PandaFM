@@ -4,7 +4,10 @@ import { openDialog } from '../dialogs/store'
 import { playlists, toast, toggleFavorite, useFavorite } from '../library'
 import { startRadio } from '../library/play'
 import { player, playerStore } from '../player'
+import { offline, useOfflineTrack } from '../offline'
+import { isNative } from '../platform/state'
 import { Cover } from './Cover'
+import { QualityBadge } from './QualityBadge'
 import { MenuButton, MenuItem } from './Menu'
 
 export interface PlaylistContext {
@@ -15,6 +18,7 @@ export interface PlaylistContext {
 export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay: () => void; inPlaylist?: PlaylistContext }) {
   const navigate = useNavigate()
   const favorite = useFavorite('track', track.id, track.favorite)
+  const local = useOfflineTrack(track.id)
 
   const removeFromPlaylist = async (context: PlaylistContext) => {
     try {
@@ -35,6 +39,7 @@ export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay:
           <span className="menu-header-text">
             <span className="menu-header-title">{track.title}</span>
             <span className="menu-header-sub">{track.artist}</span>
+            <QualityBadge track={track} />
           </span>
         </div>
       }
@@ -67,6 +72,16 @@ export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay:
             />
             {inPlaylist && !inPlaylist.playlist.readonly && (
               <MenuItem icon="trash" label="Remove from this playlist" onSelect={run(() => void removeFromPlaylist(inPlaylist))} />
+            )}
+            {isNative() && !local && (
+              <MenuItem icon="download" label="Download" onSelect={run(() => openDialog({ type: 'download', target: { kind: 'track', id: track.id, name: track.title } }))} />
+            )}
+            {isNative() && local && (
+              <MenuItem
+                icon="trash"
+                label="Remove download (keeps it on the server)"
+                onSelect={run(() => void offline()?.removeTrack(track.id).then(() => toast('Removed from this device. It’s still in your library.')))}
+              />
             )}
             {track.album_id && (
               <MenuItem icon="album" label="View album" onSelect={run(() => navigate(`/albums/${encodeURIComponent(track.album_id!)}`))} />

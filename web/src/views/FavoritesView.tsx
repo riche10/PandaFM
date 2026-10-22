@@ -5,7 +5,10 @@ import { Icon } from '../components/Icon'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { useApi } from '../hooks/useApi'
+import { openDialog } from '../dialogs/store'
 import { useFavoritesVersion } from '../library'
+import { useOffline } from '../offline'
+import { isNative } from '../platform/state'
 import { countOf, formatLength, player, type QueueSource } from '../player'
 
 export function FavoritesView() {
@@ -15,6 +18,7 @@ export function FavoritesView() {
 
   const tracks = data?.tracks ?? []
   const source: QueueSource = { kind: 'favorites', name: 'Favorites' }
+  const downloaded = useOffline((s) => !!s.collections.favorites)
   const length = formatLength(tracks.reduce((sum, t) => sum + (t.duration_seconds ?? 0), 0))
   return (
     <div className="page page--detail">
@@ -32,6 +36,11 @@ export function FavoritesView() {
           <>
             <PlayCircle label="Play favorite songs" disabled={tracks.length === 0} onPlay={() => player.playCollection(tracks, { source })} />
             <ShuffleButton label="Shuffle favorite songs" disabled={tracks.length < 2} onShuffle={() => player.playCollection(tracks, { source, shuffle: true })} />
+            {isNative() && (
+              <button type="button" className="icon-button icon-button--large" aria-label="Download for offline listening" onClick={() => openDialog({ type: 'download', target: { kind: 'favorites', id: null, name: 'Favorites' } })}>
+                <Icon name={downloaded ? 'downloaded' : 'download'} />
+              </button>
+            )}
           </>
         }
       />

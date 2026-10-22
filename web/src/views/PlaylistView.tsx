@@ -7,6 +7,8 @@ import { Icon } from '../components/Icon'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { openDialog } from '../dialogs/store'
+import { useOffline } from '../offline'
+import { isNative } from '../platform/state'
 import { useApi } from '../hooks/useApi'
 import { useArtworkColor } from '../hooks/useArtworkColor'
 import { usePlaylistsVersion } from '../library'
@@ -19,6 +21,7 @@ export function PlaylistView() {
   const [resource, retry] = useApi(`playlist:${playlistId}:${version}`, (signal) => getPlaylist(playlistId, signal))
   const playlist = resource.state === 'ready' ? resource.data : resource.state === 'loading' ? resource.previous : undefined
   const color = useArtworkColor(playlist?.cover_art_id ?? null)
+  const downloaded = useOffline((s) => !!s.collections[`playlist:${playlistId}`])
 
   if (resource.state === 'error') {
     return (
@@ -41,6 +44,11 @@ export function PlaylistView() {
         actions={
           <>
             <PlayCircle label={`Play ${playlist.name}`} disabled={!playlist.tracks.length} onPlay={() => player.playCollection(playlist.tracks, { source })} />
+            {isNative() && (
+              <button type="button" className="icon-button icon-button--large" aria-label="Download for offline listening" onClick={() => openDialog({ type: 'download', target: { kind: 'playlist', id: playlist.id, name: playlist.name } })}>
+                <Icon name={downloaded ? 'downloaded' : 'download'} />
+              </button>
+            )}
             <ShuffleButton label={`Shuffle ${playlist.name}`} disabled={playlist.tracks.length < 2} onShuffle={() => player.playCollection(playlist.tracks, { source, shuffle: true })} />
             {!playlist.readonly && (
               <>

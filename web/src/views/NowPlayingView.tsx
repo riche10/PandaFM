@@ -4,6 +4,7 @@ import { coverUrl } from '../api/library'
 import { Cover } from '../components/Cover'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { Icon } from '../components/Icon'
+import { QualityBadge } from '../components/QualityBadge'
 import { RepeatToggle, ShuffleToggle } from '../components/PlaybackModes'
 import { QueueButton } from '../components/QueueButton'
 import { QueueList } from '../components/QueueList'
@@ -82,6 +83,7 @@ export function NowPlayingView() {
               <p className="np-artist">
                 {track.artist_id ? <Link to={`/artists/${encodeURIComponent(track.artist_id)}`}>{track.artist}</Link> : track.artist}
               </p>
+              <QualityBadge track={track} />
               {track.album && (
                 <p className="np-album">
                   {track.album_id ? <Link to={`/albums/${encodeURIComponent(track.album_id)}`}>{track.album}</Link> : track.album}
