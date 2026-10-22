@@ -1,14 +1,34 @@
 // Thin fetch wrapper used by every API module. Paths are relative (/api/...),
-// so the app never needs to know the server's host name.
+// so the app never needs to know the server's host name, and works the same
+// directly on the stack's port or behind an external reverse proxy.
 
 export class ApiError extends Error {
   readonly status: number
+  readonly code: string | null
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code: string | null = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
+}
+
+/** Turn a failed response into an ApiError with a message people can read. */
+export async function readApiError(response: Response): Promise<ApiError> {
+  // PandaFM's own errors look like {"error": {"code": "...", "message": "..."}}.
+  try {
+    const body = (await response.json()) as { error?: { code?: string; message?: string } }
+    if (body.error?.message) {
+      return new ApiError(response.status, body.error.message, body.error.code ?? null)
+    }
+  } catch {
+    // Not JSON: usually the web container's Nginx answering for a stopped API.
+  }
+  if (response.status >= 502 && response.status <= 504) {
+    return new ApiError(response.status, 'PandaFM’s API isn’t answering. It may be restarting.')
+  }
+  return new ApiError(response.status, `PandaFM’s server answered ${response.status}.`)
 }
 
 export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -19,8 +39,11 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     throw new ApiError(0, 'The PandaFM server could not be reached.')
   }
-  if (!response.ok) {
-    throw new ApiError(response.status, `The PandaFM API answered ${response.status} ${response.statusText}.`)
-  }
+  if (!response.ok) throw await readApiError(response)
   return (await response.json()) as T
+}
+
+export function toApiError(err: unknown): ApiError {
+  if (err instanceof ApiError) return err
+  return new ApiError(0, err instanceof Error ? err.message : 'Something went wrong.')
 }

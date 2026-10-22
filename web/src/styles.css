@@ -1,10 +1,12 @@
-/* PandaFM design tokens. Panda black and white carry the brand; colour is
-   reserved for meaning (connected / not connected). System fonts only, so
-   the app loads instantly on the LAN and works offline as a PWA later. */
+/* PandaFM design tokens. Panda black and white carry the brand; jade is
+   reserved for "on air" (the song playing now) and connected states. System
+   fonts only, so the app loads instantly on the LAN and needs no CDN. */
 
 :root {
   color-scheme: light dark;
   --bg: #f3f5f2;
+  --surface: #ffffff;
+  --surface-2: #e4e9e5;
   --ink: #000000;
   --text: #262b27;
   --muted: #5d6761;
@@ -13,11 +15,17 @@
   --problem: #b42318;
   --waiting: #7d8781;
   --font: ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --page-width: 40rem;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mini-player-height: 4.25rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #000000;
+    --surface: #121512;
+    --surface-2: #1f2420;
     --ink: #ffffff;
     --text: #e6ebe7;
     --muted: #9aa49e;
@@ -45,26 +53,109 @@ body {
   font-family: var(--font);
   font-size: 1rem;
   line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
 }
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+}
+
+:focus-visible {
+  outline: 3px solid var(--ok);
+  outline-offset: 2px;
+}
+
+/* ── Page frame ─────────────────────────────────────────────────────── */
 
 .page {
-  max-width: 30rem;
+  max-width: var(--page-width);
   margin: 0 auto;
-  padding: calc(env(safe-area-inset-top, 0px) + 3.5rem) 1.25rem
-    calc(env(safe-area-inset-bottom, 0px) + 2.5rem);
+  padding: calc(var(--safe-top) + 1rem) 1rem calc(var(--safe-bottom) + 2.5rem);
 }
 
-/* The one bold element: the wordmark, with FM in a tilted panda eye-patch. */
+.app[data-mini-player] .page {
+  padding-bottom: calc(var(--safe-bottom) + var(--mini-player-height) + 2rem);
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 0 0.75rem -0.6rem;
+}
+
+.page-header-title {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.section-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+section + section {
+  margin-top: 2rem;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.hint {
+  color: var(--muted);
+}
+
+.empty {
+  display: grid;
+  justify-items: start;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.empty p {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* ── Wordmark: FM in a tilted panda eye-patch ───────────────────────── */
+
 .wordmark {
   display: flex;
   align-items: center;
   gap: 0.14em;
   margin: 0;
   color: var(--ink);
-  font-size: clamp(3.25rem, 16vw, 5rem);
   font-weight: 800;
   letter-spacing: -0.045em;
   line-height: 1;
+}
+
+.wordmark--large {
+  font-size: clamp(3.25rem, 16vw, 5rem);
+}
+
+.wordmark--small {
+  font-size: 2.25rem;
 }
 
 .wordmark-fm {
@@ -76,6 +167,646 @@ body {
   letter-spacing: -0.02em;
   transform: rotate(-6deg);
 }
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0.6rem 1.4rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: -0.3rem;
+}
+
+.button--quiet {
+  border: 1.5px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.icon {
+  display: block;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.icon-button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.icon-button--large .icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.text-button {
+  padding: 0.5rem 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+/* ── Home: search and browse ───────────────────────────────────────── */
+
+.home .wordmark {
+  margin: 0.75rem 0 1rem;
+}
+
+.search {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 -1rem 1.5rem;
+  padding: calc(var(--safe-top) + 0.5rem) 1rem 0.5rem;
+  background: var(--bg);
+}
+
+.search > .icon {
+  position: absolute;
+  left: 1.85rem;
+  bottom: calc(0.5rem + 12px);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.search .icon-button {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 0.5rem;
+}
+
+.search-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.6rem 3rem 0.6rem 2.75rem;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.search-input::placeholder {
+  color: var(--muted);
+}
+
+.search-input:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+}
+
+.search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.chip {
+  min-height: 36px;
+  padding: 0.35rem 0.95rem;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.results[aria-busy='true'] {
+  opacity: 0.6;
+}
+
+/* ── Artwork ───────────────────────────────────────────────────────── */
+
+.cover {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  background: var(--surface-2);
+  object-fit: cover;
+}
+
+.cover--empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+/* ── Track lists ───────────────────────────────────────────────────── */
+
+.track-list {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.track-row {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.4rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.track-list--album .track-row {
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  border-bottom: 1px solid var(--line);
+}
+
+.track-cover {
+  width: 3rem;
+}
+
+.track-number {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.track-number .icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--ok);
+}
+
+.track-text {
+  display: grid;
+  min-width: 0;
+}
+
+.track-title,
+.track-meta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.track-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.track-row[aria-current='true'] .track-title {
+  color: var(--ok);
+}
+
+.track-meta {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.track-duration {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Album grid ────────────────────────────────────────────────────── */
+
+.album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.25rem, 1fr));
+  gap: 1.25rem 0.875rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.album-card {
+  display: grid;
+  gap: 0.1rem;
+  text-decoration: none;
+}
+
+.album-card-cover {
+  width: 100%;
+  margin-bottom: 0.4rem;
+}
+
+.album-card-name {
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.album-card-meta {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* ── Artists ───────────────────────────────────────────────────────── */
+
+.artist-list {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.artist-row {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  min-height: 3.5rem;
+  padding: 0.4rem 0;
+  text-decoration: none;
+}
+
+.artist-avatar {
+  width: 3rem;
+  border-radius: 50%;
+}
+
+.artist-name {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.artist-meta {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.artist-hero {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.artist-hero-avatar {
+  width: 6rem;
+  flex: none;
+  border-radius: 50%;
+}
+
+/* ── Album page ────────────────────────────────────────────────────── */
+
+.hero {
+  display: grid;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.hero-cover {
+  width: min(100%, 18rem);
+}
+
+.hero-text {
+  display: grid;
+  justify-items: start;
+  gap: 0.35rem;
+}
+
+.hero-subtitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.hero-facts {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+}
+
+@media (min-width: 34rem) {
+  .hero {
+    grid-template-columns: 13rem 1fr;
+    align-items: end;
+  }
+
+  .hero-cover {
+    width: 100%;
+  }
+}
+
+/* ── Now Playing ───────────────────────────────────────────────────── */
+
+.now-playing {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.np-cover {
+  width: min(100%, 22rem, 42dvh);
+  margin: 0.5rem auto 1.5rem;
+  border-radius: 12px;
+}
+
+.np-text {
+  text-align: center;
+}
+
+.np-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.np-artist,
+.np-album {
+  margin: 0.25rem 0 0;
+}
+
+.np-artist {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.np-album {
+  color: var(--muted);
+}
+
+.np-artist a,
+.np-album a,
+.hero-subtitle a {
+  text-decoration: none;
+}
+
+.np-artist a:hover,
+.np-album a:hover,
+.hero-subtitle a:hover {
+  text-decoration: underline;
+}
+
+.np-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  margin: 1rem 0 1.5rem;
+}
+
+/* The bold element: a solid panda-black disc. */
+.play-button {
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  cursor: pointer;
+}
+
+.play-button .icon {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .play-button[data-loading] {
+    animation: loading-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes loading-pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* ── Seek bar ──────────────────────────────────────────────────────── */
+
+.seek {
+  margin-top: 1.5rem;
+}
+
+.seek-input {
+  --progress: 0;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.seek-input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--ink) calc(var(--progress) * 100%), var(--line) 0);
+}
+
+.seek-input::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--ink) calc(var(--progress) * 100%), var(--line) 0);
+}
+
+.seek-input::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  appearance: none;
+}
+
+.seek-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.seek-input:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.seek-times {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Mini player ───────────────────────────────────────────────────── */
+
+.mini-player {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  padding-bottom: var(--safe-bottom);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.mini-inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: var(--page-width);
+  height: var(--mini-player-height);
+  margin: 0 auto;
+  padding: 0 0.5rem 0 1rem;
+}
+
+.mini-progress {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--ok);
+  transform: scaleX(var(--progress));
+  transform-origin: left;
+}
+
+.mini-info {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.mini-cover {
+  width: 2.75rem;
+  flex: none;
+}
+
+.mini-text {
+  display: grid;
+  min-width: 0;
+}
+
+.mini-title,
+.mini-artist {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mini-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mini-artist {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* ── Notices and the connection banner ─────────────────────────────── */
+
+.notice {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border-left: 3px solid var(--problem);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.notice p {
+  margin: 0;
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 1rem;
+  padding: calc(var(--safe-top) + 0.5rem) 1rem 0.5rem;
+  background: var(--surface-2);
+  font-size: 0.9375rem;
+}
+
+.banner p {
+  margin: 0;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+/* ── Status page (the Stage 1 connection check) ────────────────────── */
 
 .tagline {
   margin: 0.9rem 0 0;
@@ -162,28 +893,8 @@ body {
   overflow-wrap: anywhere;
 }
 
-.button {
-  min-height: 44px;
+.check .button {
   margin-top: 1.5rem;
-  padding: 0.7rem 1.5rem;
-  border: 0;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--bg);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.button:focus-visible,
-a:focus-visible {
-  outline: 3px solid var(--ok);
-  outline-offset: 3px;
 }
 
 .footnote {

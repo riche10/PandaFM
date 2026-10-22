@@ -1,0 +1,219 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.64.2 (10114574)",
+  "openSubsonic": true,
+  "searchResult3": {
+   "artist": [
+    {
+     "id": "5ZstAHqkcUcIBy4ynNFyHU",
+     "name": "Neon Panda",
+     "coverArt": "ar-5ZstAHqkcUcIBy4ynNFyHU",
+     "albumCount": 2,
+     "artistImageUrl": "http://localhost:4533/share/img/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFyLTVac3RBSHFrY1VjSUJ5NHluTkZ5SFUiLCJpc3MiOiJORCJ9.ms9EIr02jckaqwfsRgihRCCWd22LVnv1Mi0vLPHk8P8?size=600",
+     "musicBrainzId": "",
+     "sortName": "neon panda",
+     "roles": [
+      "albumartist",
+      "artist",
+      "maincredit"
+     ]
+    }
+   ],
+   "album": [
+    {
+     "id": "0rtMZ6l7OaEJfGyeavQLSm",
+     "name": "Bamboo Grid",
+     "artist": "Neon Panda",
+     "artistId": "5ZstAHqkcUcIBy4ynNFyHU",
+     "coverArt": "al-0rtMZ6l7OaEJfGyeavQLSm_f54244aae5e29a28",
+     "songCount": 2,
+     "duration": 190,
+     "created": "2026-10-21T23:58:34.911198322Z",
+     "year": 1989,
+     "genre": "Synthwave",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Synthwave"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "bamboo grid",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {},
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayArtist": "Neon Panda",
+     "explicitStatus": "",
+     "version": ""
+    },
+    {
+     "id": "3QQgi6b8Gk6AsuZouBCw4Q",
+     "name": "Midnight Drive",
+     "artist": "Neon Panda",
+     "artistId": "5ZstAHqkcUcIBy4ynNFyHU",
+     "coverArt": "al-3QQgi6b8Gk6AsuZouBCw4Q_38eab189e80e9ca3",
+     "songCount": 4,
+     "duration": 380,
+     "created": "2026-10-21T23:58:31.707198395Z",
+     "year": 1986,
+     "genre": "Synthwave",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Synthwave"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "midnight drive",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {},
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayArtist": "Neon Panda",
+     "explicitStatus": "",
+     "version": ""
+    }
+   ],
+   "song": [
+    {
+     "id": "3nez97scXPbq0svK4n9xV7",
+     "parent": "3QQgi6b8Gk6AsuZouBCw4Q",
+     "isDir": false,
+     "title": "Afterglow",
+     "album": "Midnight Drive",
+     "artist": "Neon Panda",
+     "track": 4,
+     "year": 1986,
+     "genre": "Synthwave",
+     "coverArt": "al-3QQgi6b8Gk6AsuZouBCw4Q_38eab189e80e9ca3",
+     "size": 2281615,
+     "contentType": "audio/mpeg",
+     "suffix": "mp3",
+     "duration": 95,
+     "bitRate": 192,
+     "path": "Neon Panda/Midnight Drive/04 - Afterglow.mp3",
+     "created": "2026-10-21T23:58:50.858267982Z",
+     "albumId": "3QQgi6b8Gk6AsuZouBCw4Q",
+     "artistId": "5ZstAHqkcUcIBy4ynNFyHU",
+     "type": "music",
+     "bpm": 0,
+     "comment": "",
+     "sortName": "afterglow",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Synthwave"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 1,
+     "samplingRate": 44100,
+     "bitDepth": 0,
+     "moods": [],
+     "artists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayArtist": "Neon Panda",
+     "albumArtists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayAlbumArtist": "Neon Panda",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    },
+    {
+     "id": "3bVG36VEmc3TDmuMxU82R0",
+     "parent": "3QQgi6b8Gk6AsuZouBCw4Q",
+     "isDir": false,
+     "title": "Coastline",
+     "album": "Midnight Drive",
+     "artist": "Neon Panda",
+     "track": 3,
+     "year": 1986,
+     "genre": "Synthwave",
+     "coverArt": "al-3QQgi6b8Gk6AsuZouBCw4Q_38eab189e80e9ca3",
+     "size": 2281615,
+     "contentType": "audio/mpeg",
+     "suffix": "mp3",
+     "duration": 95,
+     "bitRate": 192,
+     "path": "Neon Panda/Midnight Drive/03 - Coastline.mp3",
+     "created": "2026-10-21T23:58:50.857353794Z",
+     "albumId": "3QQgi6b8Gk6AsuZouBCw4Q",
+     "artistId": "5ZstAHqkcUcIBy4ynNFyHU",
+     "type": "music",
+     "bpm": 0,
+     "comment": "",
+     "sortName": "coastline",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [],
+     "genres": [
+      {
+       "name": "Synthwave"
+      }
+     ],
+     "replayGain": {},
+     "channelCount": 1,
+     "samplingRate": 44100,
+     "bitDepth": 0,
+     "moods": [],
+     "artists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayArtist": "Neon Panda",
+     "albumArtists": [
+      {
+       "id": "5ZstAHqkcUcIBy4ynNFyHU",
+       "name": "Neon Panda"
+      }
+     ],
+     "displayAlbumArtist": "Neon Panda",
+     "contributors": [],
+     "displayComposer": "",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    }
+   ]
+  }
+ }
+}

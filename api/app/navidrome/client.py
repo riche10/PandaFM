@@ -1,24 +1,36 @@
 """Client for Navidrome's Subsonic / OpenSubsonic API.
 
 This is the only module in PandaFM that knows Subsonic wire details: the
-salted-token authentication, the JSON envelope and the error codes. The
-rest of the application calls typed methods on NavidromeClient and catches
-the exceptions defined here.
+salted-token authentication, the JSON envelope and the error codes. JSON
+bodies are turned into PandaFM models by parse.py. The rest of the
+application calls typed methods on NavidromeClient and catches the
+exceptions defined here.
 
-Stage 1 implements the transport and ping(). Stage 2 adds the library
-calls (search, albums, artists, songs, streaming, cover art).
+Navidrome credentials never leave this module: requests to Navidrome carry
+the token, but nothing returned to PandaFM's callers does.
 """
 
 from __future__ import annotations
 
 import hashlib
 import secrets
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 
 from app import __version__
+from app.navidrome import parse
+from app.schemas.library import (
+    Album,
+    AlbumListKind,
+    AlbumSummary,
+    Artist,
+    ArtistSummary,
+    SearchResults,
+    Track,
+)
 
 SUBSONIC_API_VERSION = "1.16.1"
 CLIENT_NAME = "pandafm"
@@ -26,6 +38,30 @@ CLIENT_NAME = "pandafm"
 # Subsonic error codes meaning the credentials or the auth method are wrong.
 _AUTH_ERROR_CODES = frozenset({40, 41, 42, 43, 44})
 _NOT_FOUND_CODE = 70
+
+_ALBUM_LIST_TYPES = {
+    AlbumListKind.newest: "newest",
+    AlbumListKind.recent: "recent",
+    AlbumListKind.frequent: "frequent",
+    AlbumListKind.random: "random",
+    AlbumListKind.alphabetical: "alphabeticalByName",
+}
+
+# Upstream audio headers worth passing to the browser. Everything else is
+# dropped, including the nd-player cookie Navidrome sets on every stream.
+_STREAM_HEADERS = (
+    "content-type",
+    "content-length",
+    "content-range",
+    "accept-ranges",
+    "last-modified",
+    "etag",
+    "x-content-duration",
+)
+
+MAX_COVER_BYTES = 20 * 1024 * 1024
+
+T = TypeVar("T")
 
 
 class NavidromeError(Exception):
@@ -45,7 +81,7 @@ class NavidromeAuthError(NavidromeError):
 
 
 class NavidromeNotFound(NavidromeError):
-    """The requested song, album or artist does not exist in Navidrome."""
+    """The requested song, album, artist or artwork does not exist in Navidrome."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +90,42 @@ class ServerInfo:
     server_type: str | None
     server_version: str | None
     open_subsonic: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CoverArt:
+    content: bytes
+    content_type: str
+    etag: str | None
+
+
+class AudioStream:
+    """An open audio response from Navidrome, read incrementally.
+
+    The caller must call aclose() when done (the API's stream response does
+    this in a finally block), whether the song finished or the browser went
+    away mid-stream.
+    """
+
+    def __init__(self, response: httpx.Response) -> None:
+        self._response = response
+        self.status_code = response.status_code
+        self.headers = {
+            name: response.headers[name] for name in _STREAM_HEADERS if name in response.headers
+        }
+
+    async def iter_bytes(self) -> AsyncIterator[bytes]:
+        try:
+            # Raw bytes, forwarded as they arrive from the network and exactly
+            # as Navidrome sent them, so Content-Length and Content-Range stay
+            # true (we asked for no compression).
+            async for chunk in self._response.aiter_raw():
+                yield chunk
+        finally:
+            await self.aclose()
+
+    async def aclose(self) -> None:
+        await self._response.aclose()  # safe to call more than once
 
 
 class NavidromeClient:
@@ -81,7 +153,7 @@ class NavidromeClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    # ── Public API ────────────────────────────────────────────────────
+    # ── Server ────────────────────────────────────────────────────────
 
     async def ping(self) -> ServerInfo:
         """Check connectivity and credentials in one call."""
@@ -92,6 +164,107 @@ class NavidromeClient:
             server_version=body.get("serverVersion"),
             open_subsonic=bool(body.get("openSubsonic", False)),
         )
+
+    # ── Library (JSON endpoints) ──────────────────────────────────────
+
+    async def search(
+        self, query: str, *, track_count: int = 20, album_count: int = 8, artist_count: int = 8
+    ) -> SearchResults:
+        """search3. Never call with an empty query: Navidrome returns everything."""
+        body = await self._call(
+            "search3",
+            query=query,
+            songCount=track_count,
+            albumCount=album_count,
+            artistCount=artist_count,
+        )
+        return _parsed(lambda: parse.search_results(query, body))
+
+    async def get_track(self, track_id: str) -> Track:
+        """getSong."""
+        body = await self._call("getSong", id=track_id)
+        return _parsed(lambda: parse.track(body["song"]))
+
+    async def get_album(self, album_id: str) -> Album:
+        """getAlbum (ID3), including its tracks."""
+        body = await self._call("getAlbum", id=album_id)
+        return _parsed(lambda: parse.album(body["album"]))
+
+    async def get_artist(self, artist_id: str) -> Artist:
+        """getArtist (ID3), including its albums."""
+        body = await self._call("getArtist", id=artist_id)
+        return _parsed(lambda: parse.artist(body["artist"]))
+
+    async def get_artists(self) -> list[ArtistSummary]:
+        """getArtists, flattened from Navidrome's A–Z groups."""
+        body = await self._call("getArtists")
+        return _parsed(lambda: parse.artist_index(body))
+
+    async def get_album_list(
+        self, kind: AlbumListKind, *, size: int = 30, offset: int = 0
+    ) -> list[AlbumSummary]:
+        """getAlbumList2."""
+        body = await self._call(
+            "getAlbumList2", type=_ALBUM_LIST_TYPES[kind], size=size, offset=offset
+        )
+        return _parsed(
+            lambda: [
+                parse.album_summary(item)
+                for item in (body.get("albumList2") or {}).get("album") or []
+            ]
+        )
+
+    # ── Media (binary endpoints) ──────────────────────────────────────
+
+    async def get_cover_art(self, cover_art_id: str, *, size: int | None = None) -> CoverArt:
+        """getCoverArt. Artwork is small, so it is read fully before returning."""
+        response = await self._get("getCoverArt", {"id": cover_art_id, "size": size})
+        content_type = response.headers.get("content-type", "")
+        if response.status_code == 200 and content_type.startswith("image/"):
+            if len(response.content) > MAX_COVER_BYTES:
+                raise NavidromeUnavailable("Navidrome returned unexpectedly large artwork")
+            return CoverArt(
+                content=response.content,
+                content_type=content_type,
+                etag=response.headers.get("etag"),
+            )
+        # Missing artwork arrives as HTTP 200 with a JSON error envelope.
+        self._envelope(response, "getCoverArt")
+        raise NavidromeUnavailable("Navidrome returned artwork that isn't an image")
+
+    async def open_stream(
+        self, track_id: str, *, range_header: str | None = None, if_range: str | None = None
+    ) -> AudioStream:
+        """stream, opened incrementally with the browser's Range headers forwarded.
+
+        Asks for the original file (format=raw) so byte ranges, and therefore
+        seeking, always work. Returns 200, 206 or 416 responses as-is; anything
+        else becomes one of this module's exceptions.
+        """
+        headers = {"Accept-Encoding": "identity"}
+        if range_header:
+            headers["Range"] = range_header
+        if if_range:
+            headers["If-Range"] = if_range
+
+        response = await self._get(
+            "stream", {"id": track_id, "format": "raw"}, headers=headers, stream=True
+        )
+        content_type = response.headers.get("content-type", "")
+        is_envelope = "json" in content_type or "xml" in content_type
+
+        if response.status_code == 416 or (
+            response.status_code in (200, 206) and not is_envelope
+        ):
+            return AudioStream(response)
+
+        # Errors (e.g. a missing song) arrive as a small JSON envelope.
+        try:
+            await response.aread()
+        finally:
+            await response.aclose()
+        self._envelope(response, "stream")
+        raise NavidromeUnavailable("Navidrome returned an unexpected response for the audio stream")
 
     # ── Transport ─────────────────────────────────────────────────────
 
@@ -115,11 +288,22 @@ class NavidromeClient:
 
     async def _call(self, endpoint: str, **params: Any) -> dict[str, Any]:
         """GET /rest/<endpoint> and return the unwrapped subsonic-response body."""
+        response = await self._get(endpoint, params)
+        return self._envelope(response, endpoint)
+
+    async def _get(
+        self,
+        endpoint: str,
+        params: dict[str, Any],
+        *,
+        headers: dict[str, str] | None = None,
+        stream: bool = False,
+    ) -> httpx.Response:
         query = self._auth_params() | {"f": "json"}
         query |= {key: value for key, value in params.items() if value is not None}
-
+        request = self._http.build_request("GET", endpoint, params=query, headers=headers)
         try:
-            response = await self._http.get(endpoint, params=query)
+            return await self._http.send(request, stream=stream)
         except httpx.TimeoutException as exc:
             raise NavidromeUnavailable(
                 f"Navidrome did not answer within {self._timeout:g}s"
@@ -130,6 +314,8 @@ class NavidromeClient:
                 f"Cannot reach Navidrome ({type(exc).__name__}: {exc})"
             ) from exc
 
+    def _envelope(self, response: httpx.Response, endpoint: str) -> dict[str, Any]:
+        """Unwrap a Subsonic JSON response, raising the matching exception on errors."""
         if response.status_code != 200:
             raise NavidromeUnavailable(
                 f"Navidrome returned HTTP {response.status_code} for {endpoint}"
@@ -154,3 +340,11 @@ class NavidromeClient:
         if code == _NOT_FOUND_CODE:
             raise NavidromeNotFound(message, code)
         raise NavidromeError(message, code)
+
+
+def _parsed(build: Callable[[], T]) -> T:
+    """Run a parse step; a response missing required fields is a server problem."""
+    try:
+        return build()
+    except (KeyError, TypeError, ValueError) as exc:  # pydantic errors are ValueErrors
+        raise NavidromeUnavailable("Navidrome sent a response PandaFM couldn't read") from exc

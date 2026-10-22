@@ -9,8 +9,9 @@ from fastapi import FastAPI
 from app import __version__
 from app.config import Settings, get_settings
 from app.db import create_engine
+from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
-from app.routers import health
+from app.routers import health, library, media
 
 log = logging.getLogger("pandafm")
 
@@ -26,6 +27,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             level=cfg.log_level.upper(),
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         )
+        # httpx logs every request URL at INFO, and Navidrome URLs carry the
+        # Subsonic username, token and salt (a replayable login). Keep them
+        # out of the container log, whatever PANDAFM_LOG_LEVEL is.
+        for noisy in ("httpx", "httpcore"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
 
         # Long-lived shared resources, closed cleanly on shutdown.
         app.state.settings = cfg
@@ -47,12 +53,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="PandaFM API",
         version=__version__,
         lifespan=lifespan,
-        # Everything lives under /api so Caddy can route with one rule.
+        # Everything lives under /api so the web container's Nginx routes it with one rule.
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         redoc_url=None,
     )
     app.include_router(health.router, prefix="/api")
+    app.include_router(library.router, prefix="/api")
+    app.include_router(media.router, prefix="/api")
+    register_error_handlers(app)
     return app
 
 

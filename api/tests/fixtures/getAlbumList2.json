@@ -1,0 +1,85 @@
+{
+ "subsonic-response": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.64.2 (10114574)",
+  "openSubsonic": true,
+  "albumList2": {
+   "album": [
+    {
+     "id": "57xQIAWKDiVCyo92Vyv6K1",
+     "name": "Signal Lost",
+     "artist": "The Static Hours",
+     "artistId": "29w3Lho1XjOz4FJyvcLYfY",
+     "coverArt": "al-57xQIAWKDiVCyo92Vyv6K1_f30d9af640e0f64f",
+     "songCount": 3,
+     "duration": 285,
+     "created": "2026-10-21T23:58:37.939198253Z",
+     "year": 2019,
+     "genre": "Electronic",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Electronic"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "signal lost",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {},
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "29w3Lho1XjOz4FJyvcLYfY",
+       "name": "The Static Hours"
+      }
+     ],
+     "displayArtist": "The Static Hours",
+     "explicitStatus": "",
+     "version": ""
+    },
+    {
+     "id": "5Uv4PbQy3lvu8Pjsu3ZSvk",
+     "name": "Low Clouds",
+     "artist": "Mist Valley",
+     "artistId": "2QnME7MXydDtNq5wWAuudn",
+     "coverArt": "al-5Uv4PbQy3lvu8Pjsu3ZSvk_c63d5152c0189394",
+     "songCount": 3,
+     "duration": 285,
+     "created": "2026-10-21T23:58:35.579198307Z",
+     "year": 2003,
+     "genre": "Ambient",
+     "userRating": 0,
+     "genres": [
+      {
+       "name": "Ambient"
+      }
+     ],
+     "musicBrainzId": "",
+     "isCompilation": false,
+     "sortName": "low clouds",
+     "discTitles": [],
+     "originalReleaseDate": {},
+     "releaseDate": {},
+     "releaseTypes": [],
+     "recordLabels": [],
+     "moods": [],
+     "artists": [
+      {
+       "id": "2QnME7MXydDtNq5wWAuudn",
+       "name": "Mist Valley"
+      }
+     ],
+     "displayArtist": "Mist Valley",
+     "explicitStatus": "",
+     "version": ""
+    }
+   ]
+  }
+ }
+}

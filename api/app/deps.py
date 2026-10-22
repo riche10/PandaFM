@@ -7,7 +7,9 @@ here; the latter returns the single default user in 0.1 and is the one
 place real authentication would plug in later.
 """
 
-from fastapi import Request
+from typing import Annotated
+
+from fastapi import Depends, Path, Request
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.navidrome.client import NavidromeClient
@@ -19,3 +21,10 @@ def get_db_engine(request: Request) -> AsyncEngine:
 
 def get_navidrome(request: Request) -> NavidromeClient:
     return request.app.state.navidrome
+
+
+NavidromeDep = Annotated[NavidromeClient, Depends(get_navidrome)]
+
+# Navidrome ids (songs, albums, artists, artwork). They are only ever sent to
+# Navidrome as query parameters, so a length cap is the only check needed.
+ItemId = Annotated[str, Path(min_length=1, max_length=200)]
