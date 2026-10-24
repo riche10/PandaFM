@@ -9,6 +9,7 @@ import { isNative, platform } from '../platform/state'
 import { ServerSetupView } from './ServerSetupView'
 import { AppearanceSettings } from './settings/AppearanceSettings'
 import { RadioSettings } from './settings/RadioSettings'
+import { Diagnostics } from './settings/Diagnostics'
 import { useAutoplaySettings, autoplaySettings } from '../player/autoplay'
 import { usePresets } from '../library/presets'
 
@@ -149,6 +150,7 @@ export function SettingsView() {
         <p className="hint">Status: {health}</p>
         {isNative() && <button type="button" className="button button--quiet" onClick={() => setChanging(true)}>Change server</button>}
       </section>
+      <Diagnostics />
     </div>
   )
 }

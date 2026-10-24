@@ -9,7 +9,7 @@ import type { PlaybackErrorKind } from './types'
  * down comes back as a readable PandaFM error; if the stream is fine, the
  * browser itself couldn't play the file.
  */
-export async function explainPlaybackError(trackId: string, kind: PlaybackErrorKind): Promise<string> {
+export async function explainPlaybackError(trackId: string, kind: PlaybackErrorKind, fallback = PLAYBACK_ERROR_MESSAGES[kind]): Promise<string> {
   try {
     const response = await fetch(streamUrl(trackId), { headers: { Range: 'bytes=0-1' } })
     if (!response.ok) return (await readApiError(response)).message
@@ -17,5 +17,5 @@ export async function explainPlaybackError(trackId: string, kind: PlaybackErrorK
   } catch {
     return 'PandaFM’s server couldn’t be reached.'
   }
-  return PLAYBACK_ERROR_MESSAGES[kind]
+  return fallback // the stream is fine: keep the engine's own explanation
 }

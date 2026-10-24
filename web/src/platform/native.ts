@@ -38,3 +38,33 @@ export interface PandaStoragePlugin {
   addListener(event: 'jobUpdate', listener: (state: NativeJobState) => void): Promise<{ remove: () => Promise<void> }>
   addListener(event: 'network', listener: (state: { connected: boolean; metered: boolean; wifi: boolean }) => void): Promise<{ remove: () => Promise<void> }>
 }
+
+/** One native player event. `gen` ties it to the load() that caused it, so stale events are ignored. */
+export interface NativePlayerEvent {
+  gen: number
+  type: 'loading' | 'playing' | 'paused' | 'time' | 'ended' | 'error'
+  position?: number
+  duration?: number | null
+  kind?: 'network' | 'decode' | 'unsupported' | 'missing' | 'unknown'
+  reason?: string // e.g. 'timeout', 'http_status', 'cleartext', 'not_found', 'no_permission'
+  code?: string // Media3 error code name, for diagnostics only
+}
+
+/** Lock screen, notification, Bluetooth and headset buttons, handed to the shared queue. */
+export interface NativeRemoteCommand {
+  action: 'play' | 'pause' | 'next' | 'previous' | 'seek'
+  position?: number
+}
+
+/** The Android-only native player (web/android/.../PandaPlayerPlugin.java): Media3 / ExoPlayer. */
+export interface PandaPlayerPlugin {
+  load(options: { gen: number; url: string; trackId: string; title: string; artist: string; album: string | null; artworkUrl: string | null; durationSeconds: number | null }): Promise<void>
+  play(options: { gen: number }): Promise<void>
+  pause(): Promise<void>
+  seek(options: { position: number }): Promise<void>
+  stop(): Promise<void>
+  setVolume(options: { volume: number }): Promise<void>
+  getState(): Promise<{ engine: string; isPlaying: boolean; position: number; duration: number | null; uriScheme: string | null; mediaId: string | null }>
+  addListener(event: 'state', listener: (event: NativePlayerEvent) => void): Promise<{ remove: () => Promise<void> }>
+  addListener(event: 'remote', listener: (command: NativeRemoteCommand) => void): Promise<{ remove: () => Promise<void> }>
+}

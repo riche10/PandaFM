@@ -71,7 +71,7 @@ export interface PlayerDeps {
   /** Where to play a song from (downloaded file or server stream); null when neither is available. */
   streamUrl: (trackId: string) => string | null
   /** Find out why a track failed (e.g. ask the API), returning a readable message. */
-  explainError: (trackId: string, kind: PlaybackErrorKind) => Promise<string>
+  explainError: (trackId: string, kind: PlaybackErrorKind, fallback?: string) => Promise<string>
   initialVolume?: number
   random?: Q.Random
   /** Listening behaviour, reported centrally from here (see player/events.ts). */
@@ -85,6 +85,7 @@ export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorKind, string> = {
   network: 'The connection dropped while this song was loading.',
   decode: 'This file is damaged, or in a format this browser can’t decode.',
   unsupported: 'This browser can’t play this file’s format.',
+  missing: 'This downloaded file is missing.',
   unknown: 'This song couldn’t be played.',
 }
 
@@ -167,7 +168,7 @@ export function createPlayerStore({
         duration: item.track.duration_seconds ?? 0,
         error: null,
       })
-      engine.load(source)
+      engine.load(source, item.track)
       startPlayback()
     }
 
@@ -342,9 +343,10 @@ export function createPlayerStore({
         break
       case 'error': {
         const track = currentTrack(state)
-        store.setState({ status: 'error', error: PLAYBACK_ERROR_MESSAGES[event.kind] })
-        if (!track) break
-        void explainError(track.id, event.kind).then((message) => {
+        const message = event.message ?? PLAYBACK_ERROR_MESSAGES[event.kind]
+        store.setState({ status: 'error', error: message })
+        if (!track || event.explain === false) break
+        void explainError(track.id, event.kind, message).then((message) => {
           const now = store.getState()
           // Only if the user is still looking at the same failed song.
           if (now.status === 'error' && currentTrack(now)?.id === track.id) {

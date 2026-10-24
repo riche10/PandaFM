@@ -1,6 +1,9 @@
 import { useStore } from 'zustand'
 import type { CoverSize } from '../api/library'
-import { artworkSrc, onReconnect, resolveSource } from '../offline'
+import { artworkSrc, nativeArtworkUri, onReconnect, resolveSource } from '../offline'
+import { platform } from '../platform/state'
+import { createPlaybackEngine, usesBrowserMediaSession } from './engineSelect'
+import { NativePlaybackEngine } from './nativeEngine'
 import { apiUrl } from '../api/client'
 import { radioApi } from '../api/radio'
 import { createReporter, type ListeningEvent, snapshot } from './events'
@@ -9,14 +12,13 @@ import { createRadioController } from './radio'
 import { toast } from '../library/toasts'
 import { isOnline } from '../offline'
 import { uuid } from './uuid'
-import { AudioEngine } from './engine'
 import { explainPlaybackError } from './explain'
 import { connectMediaSession } from './mediaSession'
 import * as Q from './queue'
 import { createPlayerStore, currentTrack, hasNext, type PlaybackReport, type PlayerStoreState } from './store'
 
 // The app's one player: one engine, one store, created once.
-export const audioEngine = new AudioEngine()
+export const audioEngine = createPlaybackEngine(platform, { artworkFor: (track) => nativeArtworkUri(track.cover_art_id) })
 
 const VOLUME_KEY = 'pandafm.volume'
 
@@ -114,13 +116,28 @@ export const useCurrentTrack = () => usePlayer(currentTrack)
 export const useHasNext = () => usePlayer(hasNext)
 
 // Lock screen, notification and media keys, where the browser supports them.
-if (typeof navigator !== 'undefined' && 'mediaSession' in navigator && typeof MediaMetadata !== 'undefined') {
+// On Android the native Media3 session does this instead (never both).
+if (usesBrowserMediaSession(platform) && typeof navigator !== 'undefined' && 'mediaSession' in navigator && typeof MediaMetadata !== 'undefined') {
   connectMediaSession(
     playerStore,
     navigator.mediaSession,
     (init) => new MediaMetadata(init),
     (id, size) => new URL(artworkSrc(id, size as CoverSize), window.location.href).href,
   )
+}
+
+// Android: lock screen, notification, Bluetooth and headset buttons go through the
+// same store actions as the app's own buttons, so listening events, the queue,
+// radio and Autoplay behave identically.
+if (audioEngine instanceof NativePlaybackEngine) {
+  audioEngine.onRemote((command) => {
+    const s = playerStore.getState()
+    if (command.action === 'play') s.play()
+    else if (command.action === 'pause') s.pause()
+    else if (command.action === 'next') s.next()
+    else if (command.action === 'previous') s.previous()
+    else if (command.action === 'seek' && command.position != null) s.seek(command.position)
+  })
 }
 
 /** Player actions for event handlers. Stable functions, safe to call anywhere. */
