@@ -63,7 +63,7 @@ export interface ReporterDeps {
   delayMs?: number
 }
 
-const MAX_BUFFER = 300 // beyond this the oldest events are dropped
+const MAX_BUFFER = 2000 // ~hours of offline listening; beyond this the oldest events are dropped
 const BATCH = 100
 const URGENT: ListeningEventType[] = ['skip', 'play_completed'] // radio steering waits on these
 const RETRY_MIN_MS = 5_000

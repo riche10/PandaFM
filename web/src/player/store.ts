@@ -66,7 +66,8 @@ export type PlayerStore = StoreApi<PlayerStoreState>
 
 export interface PlayerDeps {
   engine: PlaybackEngine
-  streamUrl: (trackId: string) => string
+  /** Where to play a song from (downloaded file or server stream); null when neither is available. */
+  streamUrl: (trackId: string) => string | null
   /** Find out why a track failed (e.g. ask the API), returning a readable message. */
   explainError: (trackId: string, kind: PlaybackErrorKind) => Promise<string>
   initialVolume?: number
@@ -82,6 +83,8 @@ export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorKind, string> = {
   unsupported: 'This browser can’t play this file’s format.',
   unknown: 'This song couldn’t be played.',
 }
+
+export const OFFLINE_UNAVAILABLE = 'This song isn’t downloaded, and PandaFM’s server can’t be reached right now.'
 
 /** Pressing "previous" this far into a song restarts it instead. */
 const RESTART_THRESHOLD_SECONDS = 3
@@ -145,6 +148,13 @@ export function createPlayerStore({
       // Leaving a song that started but didn't finish is a skip (early or late is decided by the server).
       if (listen?.started && !listen.completed) emit('skip')
       listen = { playId: newId(), uid: item.uid, started: false, completed: false, paused: false }
+      const source = streamUrl(item.track.id)
+      if (source === null) {
+        // Offline and not downloaded: say so plainly instead of failing over and over.
+        engine.stop()
+        set({ index, status: 'error', position: 0, duration: item.track.duration_seconds ?? 0, error: OFFLINE_UNAVAILABLE })
+        return
+      }
       set({
         index,
         status: 'loading',
@@ -152,7 +162,7 @@ export function createPlayerStore({
         duration: item.track.duration_seconds ?? 0,
         error: null,
       })
-      engine.load(streamUrl(item.track.id))
+      engine.load(source)
       startPlayback()
     }
 

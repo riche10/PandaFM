@@ -3,6 +3,7 @@ import { NavLink } from 'react-router'
 import { Cover } from '../components/Cover'
 import { Icon, type IconName } from '../components/Icon'
 import { Wordmark } from '../components/Wordmark'
+import { isNative } from '../platform/state'
 import { openDialog } from '../dialogs/store'
 import { playlists, usePlaylists, usePlaylistsStatus } from '../library'
 
@@ -38,6 +39,20 @@ export function Sidebar() {
       </ul>
 
       <ul className="nav-list nav-list--secondary">
+        {isNative() && (
+          <li>
+            <NavLink to="/offline" className="nav-link">
+              <Icon name="downloaded" />
+              <span>Downloaded</span>
+            </NavLink>
+          </li>
+        )}
+        <li>
+          <NavLink to="/settings" className="nav-link">
+            <Icon name="settings" />
+            <span>Settings</span>
+          </NavLink>
+        </li>
         <li>
           <NavLink to="/favorites" className="nav-link">
             <span className="nav-tile nav-tile--favorites">

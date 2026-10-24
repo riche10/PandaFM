@@ -82,6 +82,11 @@ services:
       PANDAFM_NAVIDROME_USER: ${NAVIDROME_USER:?Set NAVIDROME_USER in Portainer}
       PANDAFM_NAVIDROME_PASSWORD: ${NAVIDROME_PASSWORD:?Set NAVIDROME_PASSWORD in Portainer}
       PANDAFM_LOG_LEVEL: ${PANDAFM_LOG_LEVEL:-info}
+      # Converted copies for downloads live in their own volume, never in the library.
+      PANDAFM_CACHE_DIR: /cache
+      PANDAFM_CACHE_MAX_GB: ${PANDAFM_CACHE_MAX_GB:-20}
+    volumes:
+      - pandafm-cache:/cache
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=8)"]
       interval: 30s
@@ -102,3 +107,4 @@ services:
 volumes:
   navidrome-data:
   pandafm-db:
+  pandafm-cache:

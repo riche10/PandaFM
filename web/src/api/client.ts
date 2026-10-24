@@ -1,6 +1,11 @@
-// Thin fetch wrapper used by every API module. Paths are relative (/api/...),
-// so the app never needs to know the server's host name, and works the same
-// directly on the stack's port or behind an external reverse proxy.
+// Thin fetch wrapper used by every API module. In a browser, paths stay
+// relative (/api/...): PandaFM is served by its own server, directly or behind
+// a reverse proxy. In the Android app, the same paths go to the configured
+// server. apiUrl() is the only place that decides.
+
+import { platform } from '../platform/state.ts'
+
+export const apiUrl = (path: string) => `${platform.server}/api${path}`
 
 export class ApiError extends Error {
   readonly status: number
@@ -34,7 +39,7 @@ export async function readApiError(response: Response): Promise<ApiError> {
 export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`/api${path}`, { signal, headers: { Accept: 'application/json' } })
+    response = await fetch(apiUrl(path), { signal, headers: { Accept: 'application/json' } })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     throw new ApiError(0, 'The PandaFM server could not be reached.')
@@ -56,7 +61,7 @@ export async function apiSend<T = null>(
 ): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`/api${path}`, {
+    response = await fetch(apiUrl(path), {
       method,
       headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),

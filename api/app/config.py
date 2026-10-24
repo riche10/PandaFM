@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     # Keep the track cache in step with Navidrome in the background.
     background_sync: bool = True
 
+    # Downloads (Stage 4): where converted copies are cached, and how big that may grow.
+    cache_dir: str = "/cache"
+    cache_max_gb: float = 20.0
+    conversion_concurrency: int = 1
+    # Origins allowed to call the API from another origin: the Android app's WebView.
+    # Browsers using PandaFM on its own address don't need this.
+    cors_origins: list[str] = ["https://localhost", "http://localhost", "capacitor://localhost"]
+
     @property
     def database_url(self) -> URL:
         # URL.create escapes special characters in the password, which a

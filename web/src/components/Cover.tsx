@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { type CoverSize, coverUrl } from '../api/library'
+import type { CoverSize } from '../api/library'
+import { artworkSrc } from '../offline'
 import { Icon } from './Icon'
 
 interface CoverProps {
@@ -23,7 +24,7 @@ export function Cover({ coverArtId, size, className = '' }: CoverProps) {
   return (
     <img
       className={classes}
-      src={coverUrl(coverArtId, size)}
+      src={artworkSrc(coverArtId, size)}
       alt=""
       loading="lazy"
       decoding="async"

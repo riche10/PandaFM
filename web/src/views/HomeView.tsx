@@ -46,6 +46,9 @@ export function HomeView() {
     <div className="page page--home">
       <header className="home-header">
         <Wordmark size="small" heading={false} />
+        <Link to="/settings" className="icon-button" aria-label="Settings">
+          <Icon name="settings" />
+        </Link>
       </header>
       <h1 className="greeting">{greeting()}</h1>
       {HOME_SECTIONS.map(({ id, Section }) => (

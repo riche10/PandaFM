@@ -7,13 +7,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.config import Settings, get_settings
 from app.db import create_engine, create_session_factory
 from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
-from app.routers import events, favorites, health, library, me, media, playlists, radio, sync
+from app.routers import downloads, events, favorites, health, library, me, media, playlists, radio, sync
+from app.services.conversions import ConversionCache
 from app.services.library_sync import LibrarySyncer
 
 log = logging.getLogger("pandafm")
@@ -48,6 +50,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         app.state.syncer = LibrarySyncer(app.state.session_factory, app.state.navidrome, lambda: _default_user_id(app))
         sync_task = asyncio.create_task(app.state.syncer.run_periodically()) if cfg.background_sync else None
+        app.state.conversions = ConversionCache(
+            cfg.cache_dir, int(cfg.cache_max_gb * 1024**3), app.state.session_factory, app.state.navidrome, cfg.conversion_concurrency
+        )
+        try:
+            app.state.conversions.prepare_dirs()
+        except OSError as exc:  # downloads need a writable cache; everything else works without
+            log.warning("Conversion cache at %s isn't writable: %s", cfg.cache_dir, exc)
         log.info("PandaFM API %s starting (Navidrome at %s)", __version__, cfg.navidrome_url)
         try:
             yield
@@ -77,8 +86,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sync.router, prefix="/api")
     app.include_router(radio.router, prefix="/api")
     app.include_router(me.router, prefix="/api")
+    app.include_router(downloads.router, prefix="/api")
+    # The Android app's WebView runs on its own origin (https://localhost) and calls
+    # the API cross-origin. Browsers using PandaFM on its own address are unaffected.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=(settings or get_settings()).cors_origins if settings else _cors_origins(),
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition", "X-PandaFM-SHA256", "Retry-After"],
+    )
     register_error_handlers(app)
     return app
+
+
+def _cors_origins() -> list[str]:
+    try:
+        return get_settings().cors_origins
+    except Exception:  # settings incomplete (e.g. while generating docs): use the safe default
+        return ["https://localhost", "http://localhost", "capacitor://localhost"]
 
 
 async def _default_user_id(app: FastAPI) -> int:

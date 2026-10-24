@@ -16,7 +16,9 @@ from sqlalchemy import func, literal_column, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.audio.quality import revision
 from app.models import LibrarySync, Track, TrackPreference
+from app.navidrome.parse import facts_of
 from app.navidrome.client import NavidromeClient, NavidromeError
 from app.schemas.library import Track as TrackOut
 from app.schemas.library import TrackListOrder
@@ -185,13 +187,21 @@ def track_row(t: TrackOut) -> dict[str, Any]:
         "year": t.year,
         "duration_s": t.duration_seconds,
         "cover_art_id": t.cover_art_id,
+        "suffix": t.suffix,
+        "bitrate_kbps": t.bitrate_kbps,
+        "sample_rate": t.sample_rate,
+        "bit_depth": t.bit_depth,
+        "channels": t.channels,
+        "size_bytes": t.size_bytes,
+        "source_revision": revision(facts_of(t)) if t.suffix else None,
     }
 
 
 async def upsert_tracks(db: AsyncSession, user_id: int, tracks: list[TrackOut]) -> int:
     """Insert or refresh songs; mirror Navidrome stars. Returns how many were new."""
     stmt = pg_insert(Track).values([track_row(t) for t in tracks])
-    fields = ["title", "artist", "artist_id", "album", "album_id", "genres", "year", "duration_s", "cover_art_id"]
+    fields = ["title", "artist", "artist_id", "album", "album_id", "genres", "year", "duration_s", "cover_art_id",
+              "suffix", "bitrate_kbps", "sample_rate", "bit_depth", "channels", "size_bytes", "source_revision"]
     stmt = stmt.on_conflict_do_update(
         index_elements=[Track.navidrome_id],
         set_={**{f: stmt.excluded[f] for f in fields}, "is_available": True, "last_synced_at": func.now()},

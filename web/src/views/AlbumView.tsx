@@ -7,7 +7,10 @@ import { FavoriteButton } from '../components/FavoriteButton'
 import { MenuButton, MenuItem } from '../components/Menu'
 import { ErrorNotice, Loading } from '../components/States'
 import { TrackList } from '../components/TrackList'
+import { Icon } from '../components/Icon'
 import { openDialog } from '../dialogs/store'
+import { useOffline } from '../offline'
+import { isNative } from '../platform/state'
 import { toast } from '../library'
 import { startRadio } from '../library/play'
 import { useApi } from '../hooks/useApi'
@@ -19,6 +22,7 @@ export function AlbumView() {
   const [resource, retry] = useApi(`album:${albumId}`, (signal) => getAlbum(albumId, signal))
   const album = resource.state === 'ready' ? resource.data : undefined
   const color = useArtworkColor(album?.cover_art_id ?? null)
+  const downloaded = useOffline((s) => !!s.collections[`album:${albumId}`])
 
   if (resource.state === 'error') {
     return (
@@ -51,6 +55,11 @@ export function AlbumView() {
             <PlayCircle label={`Play ${album.name}`} disabled={!album.tracks.length} onPlay={() => player.playCollection(album.tracks, { source })} />
             <ShuffleButton label={`Shuffle ${album.name}`} disabled={album.tracks.length < 2} onShuffle={() => player.playCollection(album.tracks, { source, shuffle: true })} />
             <FavoriteButton kind="album" id={album.id} fromServer={album.favorite} label={album.name} className="icon-button--large" />
+            {isNative() && (
+              <button type="button" className="icon-button icon-button--large" aria-label="Download for offline listening" onClick={() => openDialog({ type: 'download', target: { kind: 'album', id: album.id, name: album.name } })}>
+                <Icon name={downloaded ? 'downloaded' : 'download'} />
+              </button>
+            )}
             <MenuButton label={`More options for ${album.name}`} className="icon-button--large">
               {(close) => (
                 <>

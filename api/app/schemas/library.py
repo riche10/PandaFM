@@ -11,6 +11,16 @@ from typing import Annotated
 from pydantic import BaseModel, Field, StringConstraints
 
 
+class AudioQuality(BaseModel):
+    codec: str
+    lossless: bool | None
+    hi_res: bool
+    badge: str | None  # "LOSSLESS" | "HI-RES" | None
+    detail: str | None  # "24-bit / 96 kHz" or "44.1 kHz"
+    short: str | None  # "24/96"
+    bitrate_kbps: int | None
+
+
 class Track(BaseModel):
     id: str
     title: str
@@ -28,6 +38,12 @@ class Track(BaseModel):
     suffix: str | None = None
     bitrate_kbps: int | None = None
     favorite: bool = False
+    album_artist: str | None = None
+    sample_rate: int | None = None
+    bit_depth: int | None = None
+    channels: int | None = None
+    size_bytes: int | None = None
+    quality: AudioQuality | None = None
 
 
 class AlbumSummary(BaseModel):

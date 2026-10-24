@@ -1,5 +1,7 @@
 import { useStore } from 'zustand'
-import { coverUrl, type CoverSize, streamUrl } from '../api/library'
+import type { CoverSize } from '../api/library'
+import { artworkSrc, onReconnect, resolveSource } from '../offline'
+import { apiUrl } from '../api/client'
 import { radioApi } from '../api/radio'
 import { createReporter, type ListeningEvent, snapshot } from './events'
 import { createRadioController } from './radio'
@@ -29,7 +31,7 @@ const EVENTS_KEY = 'pandafm.pending-events'
 /** Listening events go to the API in batches; unsent ones survive a closed tab. */
 export const reporter = createReporter({
   send: async (events) => {
-    const response = await fetch('/api/events', {
+    const response = await fetch(apiUrl('/events'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ events }),
@@ -63,12 +65,15 @@ function toEvent(report: PlaybackReport): ListeningEvent {
 
 export const playerStore = createPlayerStore({
   engine: audioEngine,
-  streamUrl,
+  streamUrl: resolveSource, // a downloaded file when there is one, else the server stream
   explainError: explainPlaybackError,
   initialVolume: savedVolume(),
   report: (event) => reporter.report(toEvent(event)),
   newId: uuid,
 })
+
+// Listening while offline is buffered; send it the moment the server is reachable again.
+onReconnect(() => void reporter.flush())
 
 if (typeof document !== 'undefined') {
   // Send what's buffered when the app goes to the background (phones may kill it there).
@@ -107,7 +112,7 @@ if (typeof navigator !== 'undefined' && 'mediaSession' in navigator && typeof Me
     playerStore,
     navigator.mediaSession,
     (init) => new MediaMetadata(init),
-    (id, size) => new URL(coverUrl(id, size as CoverSize), window.location.href).href,
+    (id, size) => new URL(artworkSrc(id, size as CoverSize), window.location.href).href,
   )
 }
 

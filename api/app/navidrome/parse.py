@@ -13,6 +13,8 @@ artist pictures go through PandaFM's cover proxy using `coverArt` instead.
 
 from typing import Any
 
+from app.audio.quality import AudioFacts, describe
+
 from app.schemas.library import (
     Album,
     AlbumSummary,
@@ -49,6 +51,27 @@ def track(raw: Raw) -> Track:
         suffix=_text(raw.get("suffix")),
         bitrate_kbps=_positive_int(raw.get("bitRate")),
         favorite=_starred(raw),
+        album_artist=_text(raw.get("displayAlbumArtist")) or _text(raw.get("albumArtist")),
+        sample_rate=_positive_int(raw.get("samplingRate")),
+        bit_depth=_positive_int(raw.get("bitDepth")),
+        channels=_positive_int(raw.get("channelCount")),
+        size_bytes=_positive_int(raw.get("size")),
+        quality=_quality(raw),
+    )
+
+
+def facts_of(t: Track) -> AudioFacts:
+    return AudioFacts(t.suffix, t.content_type, t.bitrate_kbps, t.sample_rate, t.bit_depth, t.channels, t.size_bytes, t.duration_seconds)
+
+
+def _quality(raw: Raw) -> dict | None:
+    suffix = _text(raw.get("suffix"))
+    if not suffix:
+        return None
+    return describe(
+        AudioFacts(suffix, _text(raw.get("contentType")), _positive_int(raw.get("bitRate")), _positive_int(raw.get("samplingRate")),
+                   _positive_int(raw.get("bitDepth")), _positive_int(raw.get("channelCount")), _positive_int(raw.get("size")),
+                   _positive_int(raw.get("duration")))
     )
 
 

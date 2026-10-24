@@ -72,4 +72,25 @@ describe('event reporter', () => {
     reporter.report(event(1, 'skip'))
     assert.deepEqual(seen, ['skip'])
   })
+
+  it('keeps a long offline session and sends all of it, once, when back online', async () => {
+    const sent: string[] = []
+    let online = false
+    const timers = manualTimers()
+    const reporter = createReporter({
+      send: async (events) => {
+        if (!online) throw new Error('offline')
+        sent.push(...events.map((e) => e.event_id))
+      },
+      ...timers,
+    })
+    for (let i = 0; i < 250; i++) reporter.report(event(i, i % 2 ? 'skip' : 'play_started'))
+    await timers.runAll()
+    assert.equal(reporter.pending(), 250)
+    online = true
+    while (reporter.pending()) await reporter.flush() // the reconnect hook drains the buffer
+    assert.equal(sent.length, 250)
+    assert.equal(new Set(sent).size, 250)
+    assert.equal(reporter.pending(), 0)
+  })
 })
