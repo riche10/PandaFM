@@ -14,7 +14,7 @@ OWNER="$(id -u):$(id -g)"
 
 echo "==> Building the web app and copying it into the Android project"
 docker run --rm -v "$PWD":/app -w /app -e PANDAFM_ANDROID_ALLOW_HTTP="$ALLOW_HTTP" node:22 \
-  sh -c "npm ci && npm run build && npx cap sync android && chown -R $OWNER /app/dist /app/android /app/node_modules"
+  sh -c "npm install --no-audit --no-fund && npm run build && npx cap sync android && chown -R $OWNER /app/dist /app/android /app/node_modules"
 
 echo "==> Building the APK"
 docker run --rm -v "$PWD":/app -w /app/android \

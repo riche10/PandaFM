@@ -22,7 +22,7 @@ also runs the native unit tests. The APK is debug-signed, which is fine for
 installing on your own devices (allow "install unknown apps" for the app you
 open it with).
 
-With Android Studio instead: `cd web && npm ci && npm run android:sync`,
+With Android Studio instead: `cd web && npm install && npm run android:sync`,
 then open `web/android`.
 
 ### HTTPS, and plain-http LAN servers
