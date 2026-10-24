@@ -1,4 +1,5 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import { artVars } from '../hooks/useArtworkColor'
 import { PageHeader } from './PageHeader'
 
 /** The top of album, artist, playlist and Favorites pages, washed in the artwork's colour. */
@@ -20,7 +21,7 @@ export function DetailHero({
   round?: boolean
 }) {
   return (
-    <header className="hero" style={color ? ({ '--art': color } as CSSProperties) : undefined}>
+    <header className="hero" style={artVars(color)}>
       <PageHeader />
       <div className="hero-main">
         <div className="hero-art" data-round={round ? '' : undefined}>

@@ -4,7 +4,10 @@ import { artworkSrc, onReconnect, resolveSource } from '../offline'
 import { apiUrl } from '../api/client'
 import { radioApi } from '../api/radio'
 import { createReporter, type ListeningEvent, snapshot } from './events'
+import { createAutoplay } from './autoplay'
 import { createRadioController } from './radio'
+import { toast } from '../library/toasts'
+import { isOnline } from '../offline'
 import { uuid } from './uuid'
 import { AudioEngine } from './engine'
 import { explainPlaybackError } from './explain'
@@ -70,6 +73,7 @@ export const playerStore = createPlayerStore({
   initialVolume: savedVolume(),
   report: (event) => reporter.report(toEvent(event)),
   newId: uuid,
+  onQueueEnd: () => void autoplay.onQueueEnd(),
 })
 
 // Listening while offline is buffered; send it the moment the server is reachable again.
@@ -83,7 +87,10 @@ if (typeof document !== 'undefined') {
 }
 
 /** Panda Radio, feeding the shared queue above. */
-export const radio = createRadioController({ api: radioApi, store: playerStore, reporter })
+export const radio = createRadioController({ api: radioApi, store: playerStore, reporter, onEnd: () => autoplay.suppress() })
+
+/** Autoplay: a finished song, album or playlist carries on as Panda Radio (Settings › Playback). */
+export const autoplay = createAutoplay({ store: playerStore, radio, online: isOnline, notify: toast })
 
 /** The active radio session, or null. */
 export const useRadio = () => usePlayer((s) => (s.source?.kind === 'radio' ? (s.source.radio ?? null) : null))

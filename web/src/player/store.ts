@@ -58,6 +58,8 @@ export interface PlayerActions {
   startRadio(picks: Q.RadioPickInput[], source: Q.QueueSource, options?: { seedTrack?: Track | null; keepCurrent?: boolean }): void
   /** Panda Radio: drop replaced upcoming picks and add new ones. */
   addRadio(replaced: number[], picks: Q.RadioPickInput[]): void
+  /** Autoplay: append radio picks after a finished queue and play on. */
+  continueWithRadio(picks: Q.RadioPickInput[], source: Q.QueueSource): void
   endRadio(): void
 }
 
@@ -75,6 +77,8 @@ export interface PlayerDeps {
   /** Listening behaviour, reported centrally from here (see player/events.ts). */
   report?: (event: PlaybackReport) => void
   newId?: () => string
+  /** The queue truly ran out (natural end, no repeat, nothing next). Called once, after play_completed. */
+  onQueueEnd?: () => void
 }
 
 export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorKind, string> = {
@@ -108,6 +112,7 @@ export function createPlayerStore({
   random = Math.random,
   report,
   newId = () => Math.random().toString(36).slice(2),
+  onQueueEnd,
 }: PlayerDeps): PlayerStore {
   engine.setVolume(initialVolume)
 
@@ -282,6 +287,11 @@ export function createPlayerStore({
       },
 
       addRadio: (replaced, picks) => update((q) => Q.addRadio(q, replaced, picks)),
+      continueWithRadio(picks, source) {
+        const { index, status } = get()
+        update((q) => Q.appendRadio(q, picks, source))
+        if (status === 'ended' && index + 1 < get().items.length) start(index + 1)
+      },
       endRadio: () => update(Q.endRadio),
     }
   })
@@ -327,6 +337,7 @@ export function createPlayerStore({
           state.next()
         } else {
           store.setState({ status: 'ended', position: state.duration })
+          onQueueEnd?.() // Autoplay decides whether music continues
         }
         break
       case 'error': {

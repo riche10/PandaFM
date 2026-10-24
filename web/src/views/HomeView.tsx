@@ -4,14 +4,14 @@ import { getFavorites, listAlbumsPage, listArtists, listTracks, type Track } fro
 import { getHomeSections } from '../api/radio'
 import { AlbumCard, ArtistCard, PlaylistCard, QuickTile, Shelf, TrackCard } from '../components/Cards'
 import { Cover } from '../components/Cover'
-import { Icon, type IconName } from '../components/Icon'
+import { Icon } from '../components/Icon'
+import { RadioCards } from '../components/RadioCards'
 import { ErrorNotice } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { Wordmark } from '../components/Wordmark'
 import { useApi } from '../hooks/useApi'
 import { toast, useFavoritesVersion, usePlaylists } from '../library'
-import { startRadio } from '../library/play'
-import { player, useRadio } from '../player'
+import { player } from '../player'
 
 /**
  * Home is a list of independent sections, each loading its own data. Future
@@ -108,42 +108,8 @@ function QuickAccess() {
   )
 }
 
-const MODES: { id: string; label: string; icon: IconName; hint: string }[] = [
-  { id: 'panda', label: 'Panda Radio', icon: 'radio', hint: 'Your taste, with a few surprises' },
-  { id: 'study', label: 'Study', icon: 'book', hint: 'Steady, uninterrupted listening' },
-  { id: 'familiar', label: 'Familiar', icon: 'heart', hint: 'Favourites and songs you finish' },
-  { id: 'discovery', label: 'Discovery', icon: 'compass', hint: 'Corners of your library you rarely play' },
-  { id: 'chaos', label: 'Chaos', icon: 'sparkle', hint: 'Anything goes, no repeats' },
-]
-
-/** Panda Radio modes: one engine, different weightings. Starts from your long-term taste. */
 function PandaModes() {
-  const active = useRadio()
-  return (
-    <section className="shelf modes" aria-labelledby="modes-title">
-      <div className="section-head">
-        <h2 id="modes-title" className="section-title">
-          Panda Radio
-        </h2>
-      </div>
-      <ul className="modes-row">
-        {MODES.map((mode) => (
-          <li key={mode.id}>
-            <button
-              type="button"
-              className="mode-tile"
-              aria-pressed={active?.mode === mode.id}
-              onClick={() => void startRadio(mode.id, null)}
-            >
-              <Icon name={mode.icon} />
-              <span className="mode-name">{mode.label}</span>
-              <span className="mode-hint">{mode.hint}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  )
+  return <RadioCards />
 }
 
 /** From PandaFM's own listening history; each shelf hides itself until it has something real. */

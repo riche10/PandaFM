@@ -7,6 +7,10 @@ import { useOffline } from '../offline'
 import { updateSettings, useOfflineSettings } from '../offline/settings'
 import { isNative, platform } from '../platform/state'
 import { ServerSetupView } from './ServerSetupView'
+import { AppearanceSettings } from './settings/AppearanceSettings'
+import { RadioSettings } from './settings/RadioSettings'
+import { useAutoplaySettings, autoplaySettings } from '../player/autoplay'
+import { usePresets } from '../library/presets'
 
 const PROFILES = [
   ['original', 'Original'],
@@ -17,6 +21,8 @@ const PROFILES = [
 
 export function SettingsView() {
   const settings = useOfflineSettings()
+  const autoplay = useAutoplaySettings()
+  const { presets } = usePresets()
   const [health, setHealth] = useState<string>('Checking…')
   const [changing, setChanging] = useState(false)
   const [folder, setFolder] = useState<string | null>(null)
@@ -48,17 +54,47 @@ export function SettingsView() {
     <div className="page page--settings">
       <PageHeader />
       <h1 className="page-title">Settings</h1>
+      <nav className="settings-nav" aria-label="Settings sections">
+        {[['appearance', 'Appearance'], ['radio', 'Radio'], ['playback', 'Playback'], ...(isNative() ? [['offline', 'Offline']] : []), ['server', 'Server']].map(([id, label]) => (
+          <button key={id} type="button" className="chip" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{label}</button>
+        ))}
+      </nav>
 
-      <section className="settings-block">
-        <h2 className="section-title">Server</h2>
-        <p>{isNative() ? platform.server : 'This browser uses the PandaFM server it was opened from.'}</p>
-        <p className="hint">Status: {health}</p>
-        {isNative() && <button type="button" className="button button--quiet" onClick={() => setChanging(true)}>Change server</button>}
+      <AppearanceSettings />
+      <RadioSettings />
+
+      <section className="settings-block" id="playback">
+        <h2 className="section-title">Playback</h2>
+        <label className="check-option">
+          <input type="checkbox" checked={autoplay.enabled} onChange={(e) => autoplaySettings.setState({ enabled: e.target.checked })} />
+          Autoplay: continue with Panda Radio when my music ends
+        </label>
+        <label className="field">
+          <span className="field-label">Autoplay mode</span>
+          <select className="field-input" value={autoplay.preset} disabled={!autoplay.enabled} onChange={(e) => autoplaySettings.setState({ preset: e.target.value })}>
+            {(presets ?? [{ id: 'panda', name: 'Panda Radio' }]).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+        <p className="hint">Saved on this device. Repeat, songs you queued and End Radio always come first.</p>
+        {isNative() && (
+          <>
+            <label className="check-option">
+              <input type="checkbox" checked={settings.preferLocal} onChange={(e) => updateSettings({ preferLocal: e.target.checked })} />
+              Prefer downloaded files
+            </label>
+            <label className="check-option">
+              <input type="checkbox" checked={settings.streamFallback} onChange={(e) => updateSettings({ streamFallback: e.target.checked })} />
+              Stream when a song isn’t downloaded
+            </label>
+          </>
+        )}
       </section>
+
+
 
       {isNative() ? (
         <>
-          <section className="settings-block">
+          <section className="settings-block" id="offline">
             <h2 className="section-title">Offline storage</h2>
             <p>{folder ?? 'No folder chosen yet. Pick or create a PandaFM folder, for example on your SD card.'}</p>
             <p className="hint">
@@ -92,17 +128,7 @@ export function SettingsView() {
             </label>
           </section>
 
-          <section className="settings-block">
-            <h2 className="section-title">Playback</h2>
-            <label className="check-option">
-              <input type="checkbox" checked={settings.preferLocal} onChange={(e) => updateSettings({ preferLocal: e.target.checked })} />
-              Prefer downloaded files
-            </label>
-            <label className="check-option">
-              <input type="checkbox" checked={settings.streamFallback} onChange={(e) => updateSettings({ streamFallback: e.target.checked })} />
-              Stream when a song isn’t downloaded
-            </label>
-          </section>
+
         </>
       ) : (
         <section className="settings-block">
@@ -117,6 +143,12 @@ export function SettingsView() {
           <p className="hint">{formatBytes(cache.bytes)} of {formatBytes(cache.max_bytes)} used. Converted copies are remade when needed.</p>
         </section>
       )}
+      <section className="settings-block" id="server">
+        <h2 className="section-title">Server</h2>
+        <p>{isNative() ? platform.server : 'This browser uses the PandaFM server it was opened from.'}</p>
+        <p className="hint">Status: {health}</p>
+        {isNative() && <button type="button" className="button button--quiet" onClick={() => setChanging(true)}>Change server</button>}
+      </section>
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { Cover } from '../components/Cover'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { Icon } from '../components/Icon'
-import { useArtworkColor } from '../hooks/useArtworkColor'
+import { artVars, useArtworkColor } from '../hooks/useArtworkColor'
 import { player, useCurrentTrack, usePlayer } from '../player'
 
 /** Phones: a compact card above the bottom navigation. Tapping it opens Now Playing. */
@@ -16,7 +16,7 @@ export function MiniPlayer() {
 
   const active = status === 'playing' || status === 'loading'
   return (
-    <div className="mini-player" style={color ? ({ '--art': color } as CSSProperties) : undefined}>
+    <div className="mini-player" style={artVars(color)}>
       <Link to="/now-playing" className="mini-info" aria-label={`Open Now Playing: ${track.title} by ${track.artist}`}>
         <Cover coverArtId={track.cover_art_id} size={96} className="mini-cover" />
         <span className="mini-text">
