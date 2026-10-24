@@ -283,3 +283,26 @@ PandaFM/
 ```
 
 Secrets belong in Portainer environment variables and must not be committed.
+
+## Android app and offline downloads (Stage 4)
+
+PandaFM builds as an Android app (Capacitor) for phones and Android
+Walkmans: stream your whole library, or download songs, albums, playlists
+and Favorites as ordinary files to a folder you choose, including on an SD
+card. Downloads can be the original files or portable conversions made on
+the server (Lossless Portable, High Quality AAC 256, Space Saver AAC 128).
+Lossy files are never converted to FLAC. See [docs/android.md](docs/android.md)
+for building the APK, how storage and sync work, and a test checklist.
+
+Server side, Stage 4 adds:
+
+- migration `0002` (additive): audio facts on cached tracks and a
+  `conversions` table;
+- ffmpeg in the API image, used only to convert copies for downloads;
+- a `pandafm-cache` volume for converted copies (`PANDAFM_CACHE_MAX_GB`,
+  default 20; safe to delete, copies are remade on demand);
+- CORS for the app's WebView origin (`https://localhost`).
+
+After redeploying, `docker logs pandafm-api 2>&1 | grep "schema is at revision"`
+should show `0002`. Quality badges appear once the next library sync (within
+a minute of start-up) has stored the new audio facts.

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PandaFM</string>
+    <string name="title_activity_main">PandaFM</string>
+    <string name="package_name">app.pandafm.client</string>
+    <string name="custom_url_scheme">app.pandafm.client</string>
+</resources>
