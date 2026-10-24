@@ -2,7 +2,7 @@
 // Capacitor import, so every module (and every unit test) can use it; the
 // Android runtime fills it in at start-up (platform/runtime.ts).
 
-import type { PandaStoragePlugin } from './native'
+import type { PandaPlayerPlugin, PandaStoragePlugin } from './native'
 
 export interface PlatformState {
   kind: 'web' | 'android'
@@ -11,6 +11,8 @@ export interface PlatformState {
   /** Turn a device file (content:// URI) into a URL the WebView can play. */
   localFileUrl: (uri: string) => string
   storage: PandaStoragePlugin | null
+  /** Native Media3 playback (Android). When set, the player uses it instead of <audio>. */
+  player: PandaPlayerPlugin | null
 }
 
 export const platform: PlatformState = {
@@ -18,6 +20,7 @@ export const platform: PlatformState = {
   server: '',
   localFileUrl: (uri) => uri,
   storage: null,
+  player: null,
 }
 
 export const isNative = () => platform.kind === 'android'

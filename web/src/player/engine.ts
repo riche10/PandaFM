@@ -1,4 +1,4 @@
-import { Deck, type DeckId } from './deck'
+import { Deck, type DeckId } from './deck.ts'
 import type { EngineEvent, PlaybackEngine } from './types'
 
 /**

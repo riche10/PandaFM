@@ -1,8 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { coverUrl } from '../api/library'
 import { appearanceVersion, currentAppearance, subscribeAppearance } from '../appearance/apply'
 import { artworkTint, ensureContrast, mix, readableOn, toHex } from '../appearance/color'
-import { platform } from '../platform/state'
+import { useCoverSrc } from './useCoverSrc'
 
 // Album artwork is PandaFM's main source of colour. The cover's dominant
 // colour is sampled once, then made safe for the current theme: darkened on
@@ -16,26 +15,27 @@ const accents = new Map<string, { accent: string; contrast: string }>()
 export function useArtworkColor(coverArtId: string | null): string | null {
   const [sampled, setSampled] = useState<string | null>(() => (coverArtId ? (raw.get(coverArtId) ?? null) : null))
   const version = useSyncExternalStore(subscribeAppearance, appearanceVersion, appearanceVersion)
+  const src = useCoverSrc(coverArtId, 96) // same-origin everywhere (blob: on Android), so the canvas may read it
 
   useEffect(() => {
     if (!coverArtId) return setSampled(null)
     const cached = raw.get(coverArtId)
     if (cached) return setSampled(cached)
+    if (!src) return
     let cancelled = false
     const image = new Image()
     image.decoding = 'async'
-    if (platform.server) image.crossOrigin = 'anonymous' // the app loads covers from the server's origin
     image.onload = () => {
       const color = sampleColor(image)
       if (!color) return
       raw.set(coverArtId, color)
       if (!cancelled) setSampled(color)
     }
-    image.src = coverUrl(coverArtId, 96)
+    image.src = src
     return () => {
       cancelled = true
     }
-  }, [coverArtId])
+  }, [coverArtId, src])
 
   return useMemo(() => {
     const a = currentAppearance()

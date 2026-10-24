@@ -65,7 +65,8 @@ export const resolveSource = createSourceResolver({
   track: (id) => manager?.state.getState().tracks[id],
   settings: () => settingsStore.getState(),
   online: isOnline,
-  localFileUrl: (uri) => platform.localFileUrl(uri),
+  // The native player reads content:// itself (no WebView copy); <audio> needs Capacitor's local URL.
+  localFileUrl: (uri) => (platform.player ? uri : platform.localFileUrl(uri)),
   streamUrl,
 })
 
@@ -73,6 +74,19 @@ export const resolveSource = createSourceResolver({
 export function artworkSrc(coverArtId: string, size: CoverSize): string {
   const local = manager?.state.getState().artwork[coverArtId]
   return local ? platform.localFileUrl(local) : coverUrl(coverArtId, size)
+}
+
+/** Artwork for the native lock screen: the saved copy on the device, else the server's cover (absolute URL). */
+export function nativeArtworkUri(coverArtId: string | null): string | null {
+  if (!coverArtId) return null
+  return manager?.state.getState().artwork[coverArtId] ?? coverUrl(coverArtId, 600)
+}
+
+/** A cover the WebView can show directly (web, or saved on the device); null when Android must fetch it. */
+export function directArtworkSrc(coverArtId: string, size: CoverSize): string | null {
+  const local = manager?.state.getState().artwork[coverArtId]
+  if (local) return platform.localFileUrl(local)
+  return isNative() ? null : coverUrl(coverArtId, size)
 }
 
 /** Save a collection's artwork on the device once, for offline browsing and the lock screen. */

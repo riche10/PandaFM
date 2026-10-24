@@ -1,3 +1,5 @@
+import type { Track } from '../api/library'
+
 // The contract between the player store and whatever makes sound.
 //
 // The store only talks to a PlaybackEngine, never to <audio> directly, so the
@@ -6,7 +8,7 @@
 
 export type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
 
-export type PlaybackErrorKind = 'network' | 'decode' | 'unsupported' | 'unknown'
+export type PlaybackErrorKind = 'network' | 'decode' | 'unsupported' | 'missing' | 'unknown'
 
 export type EngineEvent =
   | { type: 'loading' }
@@ -14,11 +16,15 @@ export type EngineEvent =
   | { type: 'paused' }
   | { type: 'time'; position: number; duration: number | null }
   | { type: 'ended' }
-  | { type: 'error'; kind: PlaybackErrorKind }
+  /** message: the engine's own readable explanation; explain: false when asking the server can't help (e.g. a local file). */
+  | { type: 'error'; kind: PlaybackErrorKind; message?: string; explain?: boolean }
 
 export interface PlaybackEngine {
-  /** Point the active deck at a new source. Does not start playback. */
-  load(src: string): void
+  /**
+   * Point the engine at a new source. Does not start playback. `track` lets a
+   * native engine show title, artist and artwork on the lock screen.
+   */
+  load(src: string, track?: Track): void
   play(): Promise<void>
   pause(): void
   seek(seconds: number): void

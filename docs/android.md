@@ -11,31 +11,55 @@ You only need Docker (for example on the PandaFM server):
 
 ```bash
 git clone https://github.com/riche10/PandaFM.git && cd PandaFM
-git checkout feature/stage4-android-offline
-./web/android/build-apk.sh
+./web/android/build-apk.sh                              # HTTPS servers (default)
+PANDAFM_ANDROID_ALLOW_HTTP=1 ./web/android/build-apk.sh # also plain-http LAN servers
 # → web/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The first build downloads the Android SDK (a few minutes); it is kept in
-the `pandafm-android-sdk` and `pandafm-gradle` Docker volumes. The script
-also runs the native unit tests. The APK is debug-signed, which is fine for
-installing on your own devices (allow "install unknown apps" for the app you
-open it with).
+The first build downloads the Android SDK (a few minutes); it is kept in the
+`pandafm-android-sdk` and `pandafm-gradle` Docker volumes. The script also
+runs the native unit tests. With Android Studio instead: `cd web && npm
+install && npm run android:sync`, then open `web/android`.
 
-With Android Studio instead: `cd web && npm install && npm run android:sync`,
-then open `web/android`.
+### Signing: install updates over the previous APK
+
+Android only installs an update over an app signed by the same key. Every
+build is signed with PandaFM's development key, created on the first build in
+the Docker volume `pandafm-android-signing` (`PANDAFM_SIGNING_DIR=/some/folder`
+uses a host folder instead). It holds `pandafm-dev.p12`, a random password in
+`.password` and `signing.properties`; nothing of it is in Git, and the
+password is never printed. Each build prints the key's SHA-256 fingerprint:
+it should stay the same.
+
+Back it up (losing it means uninstalling the app to update it):
+
+```bash
+docker run --rm -v pandafm-android-signing:/signing -v "$PWD":/backup alpine \
+  tar czf /backup/pandafm-android-signing.tgz -C /signing .
+# restore on another machine:
+docker run --rm -v pandafm-android-signing:/signing -v "$PWD":/backup alpine \
+  tar xzf /backup/pandafm-android-signing.tgz -C /signing
+```
+
+**One-time step:** APKs built before Stage 4.2 were signed with a throwaway
+key that no longer exists, so the first Stage 4.2 APK cannot update them.
+Uninstall the old PandaFM once (this clears its saved server address and its
+list of downloads; music files already on the SD card stay, download them
+again to relink them), then install. From then on, new builds update in place
+and keep everything.
+
+### Versions
+
+`web/android/app/version.properties` holds `versionName` and `versionCode`.
+Bump both for every APK you install over an older one; `versionCode` must only
+grow (`major*10000 + minor*100 + patch`, so 0.4.2 is 402).
 
 ### HTTPS, and plain-http LAN servers
 
-Release builds talk to **https://** servers only. To use a plain
-`http://192.168.x.x:8085` address on your home network, build with:
-
-```bash
-PANDAFM_ANDROID_ALLOW_HTTP=1 ./web/android/build-apk.sh
-```
-
-That build allows cleartext traffic and user-installed certificate
-authorities. Don't distribute it; prefer HTTPS through your external Nginx.
+Default builds talk to **https://** servers only. `PANDAFM_ANDROID_ALLOW_HTTP=1`
+builds also allow plain `http://192.168.x.x:PORT` and user-installed
+certificate authorities. Don't distribute those; prefer HTTPS through your
+external Nginx.
 
 ## How it works
 
@@ -67,6 +91,73 @@ authorities. Don't distribute it; prefer HTTPS through your external Nginx.
   buffered and sent to PandaFM when the server is reachable again (same event
   ids, so nothing is counted twice). Panda Radio needs the server; its picks
   play from downloaded files when they exist.
+
+## Playback (Stage 4.2)
+
+The app plays music natively with **AndroidX Media3 / ExoPlayer 1.11.1**, not
+in the WebView. Browsers keep using `<audio>`; the choice is made once, at the
+platform boundary (`web/src/player/engineSelect.ts`).
+
+- **The shared queue stays in charge.** The web app's queue, Panda Radio and
+  Autoplay decide every song. The native player (`PandaPlayerPlugin` →
+  `PlaybackService`) plays one song at a time and reports what happens. Each
+  load has a generation number, so late events from a previous song are
+  ignored, and a song completes once however often Android reports it.
+- **Background playback** lives in a Media3 `MediaSessionService`, not in the
+  Activity: music continues with the screen locked or another app in front.
+  The WebView's renderer is kept at important priority so the queue can move
+  on to the next song in the background.
+- **Media controls** (lock screen, notification, Bluetooth, headsets, Walkman
+  buttons) use the one native MediaSession; the browser Media Session is not
+  used in the app. Play, pause and seek act at once and are recorded like the
+  app's own buttons; next and previous go to the shared queue. Audio focus and
+  "headphones unplugged" use Media3's standard handling.
+- **Sources:** streams are the normal `…/api/tracks/{id}/stream` URLs (PandaFM
+  stays the proxy, with Range requests for seeking). Downloads are played
+  straight from their `content://` URI in your PandaFM folder, with no copies.
+- **Formats:** FLAC, MP3, AAC/M4A, Ogg Vorbis, Opus and WAV through Android's
+  decoders. Nothing is transcoded for playback. FLAC needs Android 8.1 or newer
+  (every current phone and Walkman).
+- **Artwork:** remote covers are fetched through the PandaFM API and shown as
+  in-app images (see below); downloaded artwork is used offline; the lock
+  screen loads its artwork natively (the saved copy, else the server's cover).
+
+### Why artwork and FLAC failed before
+
+The app's page runs at `https://localhost`. On a plain-http LAN server
+(`http://192.168.10.65:8086`), Chromium (and so the WebView) treats images
+and audio from that address as mixed content that it cannot upgrade to HTTPS
+(the host is an IP address) and blocks them. The "allow mixed content" switch
+only covers fetch()/XHR, which is why song data loaded while covers and
+streams did not. A blocked stream surfaces as `MEDIA_ERR_SRC_NOT_SUPPORTED`,
+which PandaFM showed as "This browser can't play this file's format"; the FLAC
+itself was never the problem. Native playback sidesteps the WebView, and
+covers now load through fetch().
+
+### Diagnostics
+
+Settings › Diagnostics shows the platform, the playback engine, whether the
+current song comes from the server or a download, the source type and codec.
+With a debug APK, `chrome://inspect` on a computer (phone connected by USB)
+shows the WebView's console. Native logs: `adb logcat -s PandaFM.Player`
+(never URLs or credentials).
+
+### Limitations
+
+- If Android ends PandaFM's process (or you swipe it away), playback stops:
+  the queue lives in the web app, and isn't rebuilt natively.
+- System "next" at the end of a queue does what the app's Next does (nothing
+  unless Autoplay or the queue has more).
+
+## Dependencies
+
+The repository deliberately keeps no `package-lock.json`: the web Docker image
+installs from `package.json` with `npm install`, and a lockfile made on one
+machine can leave out platform-specific packages another needs. What must be
+reproducible is pinned exactly instead: Capacitor 8.5.3 in `package.json`,
+Media3 1.11.1 in `web/android/variables.gradle`, and the Gradle wrapper version
+in `web/android/gradle/wrapper`. Moving both builds to `npm ci` with a
+committed lockfile is a good later, separate change.
 
 ## Quality profiles (server-side, `api/app/audio/profiles.py`)
 
