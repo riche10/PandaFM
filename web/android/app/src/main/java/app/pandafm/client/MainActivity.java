@@ -7,6 +7,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(PandaStoragePlugin.class); // before the bridge starts
+        registerPlugin(PandaPlayerPlugin.class); // native Media3 playback
         super.onCreate(savedInstanceState);
     }
 }

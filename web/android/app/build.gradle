@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// App version: bump both values in version.properties for every APK you install (see docs/android.md).
+def pandafmVersion = new Properties()
+file('version.properties').withInputStream { pandafmVersion.load(it) }
+
+// Stable development signing: build-apk.sh passes -PpandafmSigning=<properties file> from a
+// persistent, untracked location, so each new APK installs over the previous one.
+def pandafmSigning = new Properties()
+if (project.hasProperty('pandafmSigning') && file(project.property('pandafmSigning')).exists()) {
+    file(project.property('pandafmSigning')).withInputStream { pandafmSigning.load(it) }
+}
+
 android {
     namespace = "app.pandafm.client"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,8 @@ android {
         applicationId "app.pandafm.client"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.4.0"
+        versionCode pandafmVersion['versionCode'] as Integer
+        versionName pandafmVersion['versionName']
         // HTTPS-only by default. Build with -PpandafmAllowHttp=true to also reach a
         // plain-http server on your LAN (see docs/android.md).
         manifestPlaceholders = [networkSecurityConfig: project.hasProperty('pandafmAllowHttp') && project.property('pandafmAllowHttp') == 'true'
@@ -20,7 +31,20 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (!pandafmSigning.isEmpty()) {
+            pandafmDev {
+                storeFile file(pandafmSigning['storeFile'])
+                storePassword pandafmSigning['storePassword']
+                keyAlias pandafmSigning['keyAlias']
+                keyPassword pandafmSigning['keyPassword']
+            }
+        }
+    }
     buildTypes {
+        debug {
+            if (!pandafmSigning.isEmpty()) signingConfig signingConfigs.pandafmDev
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
@@ -37,6 +61,8 @@ repositories {
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.media3:media3-exoplayer:$media3Version"
+    implementation "androidx.media3:media3-session:$media3Version"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
