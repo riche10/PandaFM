@@ -172,7 +172,7 @@ class RadioSession(Base):
     # Stage 4.1: which preset started it, the name shown, and the profile it used.
     preset_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), ForeignKey("radio_presets.id", ondelete="SET NULL"))
     display_name: Mapped[str | None] = mapped_column(String(80))
-    profile: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    profile: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))  # SQL NULL for built-ins
     status: Mapped[str] = mapped_column(String(16), server_default=text("'active'"))
     state: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))  # short-term taste
     created_at: Mapped[datetime] = _now()

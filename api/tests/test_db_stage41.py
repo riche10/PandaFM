@@ -31,7 +31,7 @@ def test_built_in_modes_always_listed_and_can_be_renamed_and_reset(db):
     session = start(c, mode="study")["session"]
     assert (session["mode"], session["mode_label"], session["preset_id"]) == ("study", "Lock In", "study")
     with db.connect() as conn:  # a renamed built-in plays the untouched built-in profile
-        assert conn.execute(text("SELECT profile FROM radio_sessions WHERE mode = 'study'")).scalar() is None
+        assert conn.execute(text("SELECT profile IS NULL FROM radio_sessions WHERE mode = 'study'")).scalar() is True  # SQL NULL, not JSON null
     assert c.patch("/api/radio/modes/study", json={"name": None}).json()["name"] == "Study"
     assert c.patch("/api/radio/modes/jazz", json={"name": "x"}).status_code == 422
     assert c.delete("/api/radio/presets/study").status_code == 422
