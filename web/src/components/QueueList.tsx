@@ -66,7 +66,7 @@ export function QueueList({ limit, showCurrent = true }: { limit?: number; showC
         <section className="queue-section" aria-label="Next from the collection">
           <div className="queue-heading-row">
             <h3 className="queue-heading">
-              {source?.radio ? `Next from ${source.radio.modeLabel}${source.radio.seedName ? ` · based on ${source.radio.seedName}` : ''}` : `Next from: ${source?.name ?? 'your selection'}`}
+              {source?.radio ? `${source.radio.autoplay ? 'Autoplay · ' : 'Next from '}${source.radio.modeLabel}${source.radio.seedName ? ` · based on ${source.radio.seedName}` : ''}` : `Next from: ${source?.name ?? 'your selection'}`}
             </h3>
             {limit === undefined &&
               (source?.radio ? (
@@ -107,7 +107,11 @@ function QueueRow({ item, current = false, playing = false }: { item: QueueItem;
           </button>
         )}
         <span className="queue-artist">
-          {item.radio && <Icon name="radio" className="icon queue-radio-mark" />}
+          {item.radio && (
+            <span className="paw queue-radio-mark" title="Panda picked this" aria-label="Panda picked this">
+              <Icon name="paw" />
+            </span>
+          )}
           {track.artist_id ? <Link to={`/artists/${encodeURIComponent(track.artist_id)}`}>{track.artist}</Link> : track.artist}
         </span>
       </span>

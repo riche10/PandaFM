@@ -20,6 +20,7 @@ export interface RadioSessionOut {
   id: string
   mode: string
   mode_label: string
+  preset_id?: string | null
   status: string
   seed_kind: string | null
   seed_name: string | null
@@ -29,7 +30,8 @@ export interface RadioSessionOut {
 }
 
 export interface RadioApi {
-  start(mode: string, seed: { kind: 'track' | 'album' | 'artist'; id: string } | null): Promise<{ session: RadioSessionOut; seed_track: Track | null; picks: RadioPickOut[] }>
+  /** preset: a built-in mode id ("study") or a custom preset id. */
+  start(preset: string, seed: { kind: 'track' | 'album' | 'artist'; id: string } | null): Promise<{ session: RadioSessionOut; seed_track: Track | null; picks: RadioPickOut[] }>
   extend(sessionId: string, upcoming: number[], target: number): Promise<{ session: RadioSessionOut; replaced: number[]; picks: RadioPickOut[] }>
   end(sessionId: string): Promise<unknown>
 }
@@ -37,6 +39,8 @@ export interface RadioApi {
 export interface RadioController {
   start(mode: string, seed: { kind: 'track' | 'album' | 'artist'; id: string } | null, options?: { keepCurrent?: boolean }): Promise<void>
   end(): Promise<void>
+  /** Autoplay: continue a finished queue with radio, unless the listener moved on meanwhile. */
+  continueWith(preset: string, seed: { kind: 'track' | 'album' | 'artist'; id: string } | null, expectUid: string): Promise<boolean>
   /** Top up (or, with steer, re-plan) the radio songs queued ahead. */
   refill(steer?: boolean): Promise<void>
 }
@@ -51,12 +55,15 @@ export function createRadioController({
   reporter,
   now = Date.now,
   setTimer = (fn: () => void, ms: number) => setTimeout(fn, ms),
+  onEnd,
 }: {
   api: RadioApi
   store: PlayerStore
   reporter: Pick<Reporter, 'flush' | 'subscribe'>
   now?: () => number
   setTimer?: (fn: () => void, ms: number) => unknown
+  /** Told when the listener explicitly ends radio (Autoplay must not restart it). */
+  onEnd?: () => void
 }): RadioController {
   let busy = false
   let steerAgain = false
@@ -118,6 +125,7 @@ export function createRadioController({
         mode: out.session.mode,
         modeLabel: out.session.mode_label,
         seedName: out.session.seed_name,
+        presetId: out.session.preset_id ?? mode,
       }
       retryAt = 0
       store.getState().startRadio(
@@ -126,7 +134,28 @@ export function createRadioController({
         { seedTrack: keepCurrent ? null : out.seed_track, keepCurrent },
       )
     },
+    async continueWith(preset, seed, expectUid) {
+      const out = await api.start(preset, seed)
+      const s = store.getState()
+      const current = s.items[s.index]
+      if (s.status !== 'ended' || current?.uid !== expectUid || Q.nextIndex(s) !== null) {
+        void api.end(out.session.id).catch(() => undefined) // they chose something else meanwhile
+        return false
+      }
+      const radio: Q.RadioInfo = {
+        sessionId: out.session.id,
+        mode: out.session.mode,
+        modeLabel: out.session.mode_label,
+        seedName: out.session.seed_name,
+        presetId: out.session.preset_id ?? preset,
+        autoplay: true,
+      }
+      retryAt = 0
+      s.continueWithRadio(toPicks(out.picks, radio.sessionId), { kind: 'radio', id: radio.sessionId, name: radio.modeLabel, radio })
+      return true
+    },
     async end() {
+      onEnd?.()
       const radio = active()
       if (!radio) return
       store.getState().endRadio() // stop growing now; the music carries on
