@@ -17,6 +17,7 @@ from app.models import RadioQueueItem, RadioSession, Track
 from app.radio import config
 from app.radio import session as radio_session
 from app.radio.config import MODES, ModeProfile
+from app.radio.presets import from_snapshot, preset_reasons, snapshot
 from app.radio.explain import reasons
 from app.radio.scoring import Candidate, Profile, Recent, Seed
 from app.radio.selection import Pick, choose
@@ -142,15 +143,16 @@ def track_out(c: Candidate) -> TrackOut:
 def session_out(s: RadioSession) -> RadioSessionOut:
     state = s.state or {}
     mode = MODES.get(s.mode)
+    label = s.display_name or (mode.label if mode else s.mode)
     return RadioSessionOut(
-        id=s.id, mode=s.mode, mode_label=mode.label if mode else s.mode, status=s.status,
+        id=s.id, mode=s.mode, mode_label=label, preset_id=str(s.preset_id) if s.preset_id else s.mode, status=s.status,
         seed_kind=(s.seed or {}).get("kind"), seed_name=(s.seed or {}).get("name"),
         skips=state.get("skips", 0), completions=state.get("completions", 0), exploration=round(state.get("exploration", 0.0), 2),
     )
 
 
 async def _pick(db: AsyncSession, session: RadioSession, count: int, extra_exclude: set[int], rng: random.Random) -> list[RadioPick]:
-    mode = MODES[session.mode]
+    mode = profile_of(session)
     state = radio_session.SessionState.from_json(session.state, mode.base_exploration)
     profile = await load_profile(db, session.user_id)
     seed_json = (session.state or {}).get("_seed") or {}
@@ -168,6 +170,9 @@ async def _pick(db: AsyncSession, session: RadioSession, count: int, extra_exclu
     for pick in picks:
         c = pick.candidate
         why = reasons(c, pick.breakdown, seed, profile, mode)
+        controls = (session.profile or {}).get("controls")
+        if session.preset_id and controls:  # a custom preset: say what it leans towards
+            why = [*why, *preset_reasons(session.display_name or mode.label, controls)][:4]
         position += 1
         item = RadioQueueItem(
             session_id=session.id, track_id=c.track_id, position=position, score=pick.score,
@@ -182,17 +187,29 @@ async def _pick(db: AsyncSession, session: RadioSession, count: int, extra_exclu
     return out
 
 
-async def start(db: AsyncSession, user_id: int, mode_id: str, seed_kind: str | None, seed_id: str | None, count: int, rng: random.Random | None = None) -> tuple[RadioSession, Candidate | None, list[RadioPick]]:
+def profile_of(session: RadioSession) -> ModeProfile:
+    """The profile a session plays with: its snapshot (custom presets), else its built-in mode."""
+    if session.profile:
+        return from_snapshot(session.profile, session.mode)
+    return MODES[session.mode]
+
+
+async def start(db: AsyncSession, user_id: int, mode_id: str, seed_kind: str | None, seed_id: str | None, count: int,
+                rng: random.Random | None = None, *, display_name: str | None = None, preset_id: UUID | None = None,
+                controls: dict | None = None) -> tuple[RadioSession, Candidate | None, list[RadioPick]]:
     if mode_id not in MODES:
         raise RadioError(f"Unknown radio mode “{mode_id}”.")
     rng = rng or random.Random()
-    mode = MODES[mode_id]
+    name = display_name or MODES[mode_id].label
+    snap = snapshot(mode_id, controls, name) if controls is not None else None
+    mode = from_snapshot(snap, mode_id) if snap else MODES[mode_id]
     profile = await load_profile(db, user_id)
     seed, seed_meta, seed_track_id = await resolve_seed(db, seed_kind, seed_id, profile, user_id)
     # End any other active session: one radio at a time.
     await db.execute(update(RadioSession).where(RadioSession.user_id == user_id, RadioSession.status == "active").values(status="ended", ended_at=func.now()))
     session = RadioSession(
         id=uuid4(), user_id=user_id, seed_track_id=seed_track_id, seed=seed_meta, mode=mode_id,
+        preset_id=preset_id, display_name=name, profile=snap,
         state={**radio_session.SessionState(exploration=mode.base_exploration).to_json(),
                "_seed": {"artist_id": seed.artist_id, "album_id": seed.album_id, "genres": sorted(seed.genres), "year": seed.year}},
     )

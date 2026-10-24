@@ -1,33 +1,35 @@
-import { useEffect, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { coverUrl } from '../api/library'
+import { appearanceVersion, currentAppearance, subscribeAppearance } from '../appearance/apply'
+import { artworkTint, ensureContrast, mix, readableOn, toHex } from '../appearance/color'
+import { platform } from '../platform/state'
 
-// The colour behind album, playlist and Now Playing headers comes from the
-// artwork itself. Covers are same-origin (/api/covers), so a canvas may read
-// their pixels. The result is darkened so white text always stays readable.
+// Album artwork is PandaFM's main source of colour. The cover's dominant
+// colour is sampled once, then made safe for the current theme: darkened on
+// dark themes, lightened on light ones, always readable with the theme's text.
+// Artwork colours can be Off, Subtle (headers, Now Playing, the player) or
+// Immersive (more of the music screens, plus the artwork's own accent).
 
-const cache = new Map<string, string>()
+const raw = new Map<string, string>()
+const accents = new Map<string, { accent: string; contrast: string }>()
 
 export function useArtworkColor(coverArtId: string | null): string | null {
-  const [color, setColor] = useState<string | null>(() => (coverArtId ? (cache.get(coverArtId) ?? null) : null))
+  const [sampled, setSampled] = useState<string | null>(() => (coverArtId ? (raw.get(coverArtId) ?? null) : null))
+  const version = useSyncExternalStore(subscribeAppearance, appearanceVersion, appearanceVersion)
 
   useEffect(() => {
-    if (!coverArtId) {
-      setColor(null)
-      return
-    }
-    const cached = cache.get(coverArtId)
-    if (cached) {
-      setColor(cached)
-      return
-    }
+    if (!coverArtId) return setSampled(null)
+    const cached = raw.get(coverArtId)
+    if (cached) return setSampled(cached)
     let cancelled = false
     const image = new Image()
     image.decoding = 'async'
+    if (platform.server) image.crossOrigin = 'anonymous' // the app loads covers from the server's origin
     image.onload = () => {
-      const sampled = sampleColor(image)
-      if (!sampled) return
-      cache.set(coverArtId, sampled)
-      if (!cancelled) setColor(sampled)
+      const color = sampleColor(image)
+      if (!color) return
+      raw.set(coverArtId, color)
+      if (!cancelled) setSampled(color)
     }
     image.src = coverUrl(coverArtId, 96)
     return () => {
@@ -35,7 +37,26 @@ export function useArtworkColor(coverArtId: string | null): string | null {
     }
   }, [coverArtId])
 
-  return color
+  return useMemo(() => {
+    const a = currentAppearance()
+    if (!sampled || !a || a.artwork === 'off') return null
+    const tint = artworkTint(sampled, a.scheme, a.tokens['text-primary'])
+    const accent = ensureContrast(mix(sampled, a.scheme === 'dark' ? '#ffffff' : '#000000', 0.1), tint, 3)
+    accents.set(tint, { accent, contrast: readableOn(accent) })
+    return tint
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sampled, version])
+}
+
+/** Style variables for a music screen tinted by its artwork. */
+export function artVars(tint: string | null): CSSProperties | undefined {
+  if (!tint) return undefined
+  const vars: Record<string, string> = { '--art': tint }
+  const extra = accents.get(tint)
+  if (extra && currentAppearance()?.artwork === 'immersive') {
+    Object.assign(vars, { '--art-reach': '100%', '--accent': extra.accent, '--ink': extra.accent, '--accent-contrast': extra.contrast })
+  }
+  return vars as CSSProperties
 }
 
 function sampleColor(image: HTMLImageElement): string | null {
@@ -47,9 +68,11 @@ function sampleColor(image: HTMLImageElement): string | null {
     if (!context) return null
     context.drawImage(image, 0, 0, size, size)
     const pixels = context.getImageData(0, 0, size, size).data
-
     // Weight colourful pixels more, so a grey border doesn't win.
-    let r = 0, g = 0, b = 0, total = 0
+    let r = 0
+    let g = 0
+    let b = 0
+    let total = 0
     for (let i = 0; i < pixels.length; i += 4) {
       const max = Math.max(pixels[i], pixels[i + 1], pixels[i + 2])
       const min = Math.min(pixels[i], pixels[i + 1], pixels[i + 2])
@@ -59,23 +82,8 @@ function sampleColor(image: HTMLImageElement): string | null {
       b += pixels[i + 2] * weight
       total += weight
     }
-    const [h, s, l] = toHsl(r / total, g / total, b / total)
-    return `hsl(${Math.round(h)} ${Math.round(Math.min(s, 0.55) * 100)}% ${Math.round(Math.min(Math.max(l, 0.18), 0.32) * 100)}%)`
+    return total ? toHex([r / total, g / total, b / total]) : null
   } catch {
-    return null
+    return null // unreadable (e.g. cross-origin without CORS): no tint
   }
-}
-
-function toHsl(r: number, g: number, b: number): [number, number, number] {
-  r /= 255
-  g /= 255
-  b /= 255
-  const max = Math.max(r, g, b)
-  const min = Math.min(r, g, b)
-  const l = (max + min) / 2
-  if (max === min) return [0, 0, l]
-  const d = max - min
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4
-  return [h * 60, s, l]
 }

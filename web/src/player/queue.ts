@@ -17,9 +17,11 @@ export type RepeatMode = 'off' | 'all' | 'one'
 
 export interface RadioInfo {
   sessionId: string
-  mode: string
-  modeLabel: string
+  mode: string // the built-in base mode (stable id)
+  modeLabel: string // the friendly name: "Lock In", "Night Drive"
   seedName: string | null
+  presetId?: string // "study" or a custom preset's id
+  autoplay?: boolean // started automatically when your music ended
 }
 
 export interface QueueSource {
@@ -278,6 +280,11 @@ export function addRadio(state: QueueState, replaced: number[], picks: RadioPick
   const drop = new Set(replaced)
   const items = state.items.filter((item, i) => i <= state.index || !item.radio || !drop.has(item.radio.selectionId))
   return { ...state, items: [...items, ...wrapRadio(picks)] }
+}
+
+/** Autoplay: keep everything that played (the album stays in the queue) and continue with radio picks. */
+export function appendRadio(state: QueueState, picks: RadioPickInput[], source: QueueSource): QueueState {
+  return { ...state, source, shuffle: false, ordered: null, items: [...state.items, ...wrapRadio(picks)] }
 }
 
 /** Upcoming songs chosen by a radio session (what the app keeps topped up). */

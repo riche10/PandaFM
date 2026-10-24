@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { coverUrl } from '../api/library'
 import { Cover } from '../components/Cover'
@@ -11,7 +10,7 @@ import { QueueList } from '../components/QueueList'
 import { SeekBar } from '../components/SeekBar'
 import { EmptyState, ErrorNotice } from '../components/States'
 import { TrackMenu } from '../components/TrackMenu'
-import { useArtworkColor } from '../hooks/useArtworkColor'
+import { artVars, useArtworkColor } from '../hooks/useArtworkColor'
 import { openDialog } from '../dialogs/store'
 import { player, radio, useCurrentTrack, useHasNext, usePlayer, useRadio } from '../player'
 
@@ -41,6 +40,7 @@ export function NowPlayingView() {
         {activeRadio ? (
           <span className="np-header-source np-radio">
             <Icon name="radio" />
+            {activeRadio.autoplay ? 'Autoplay · ' : ''}
             {activeRadio.modeLabel}
             {activeRadio.seedName ? ` · based on ${activeRadio.seedName}` : ''}
           </span>
@@ -67,7 +67,7 @@ export function NowPlayingView() {
 
   const active = status === 'playing' || status === 'loading'
   return (
-    <div className="now-playing" style={color ? ({ '--art': color } as CSSProperties) : undefined}>
+    <div className="now-playing" style={artVars(color)}>
       {track.cover_art_id && (
         // The artwork, blurred and dimmed, as a quiet backdrop.
         <div className="np-backdrop" aria-hidden="true" style={{ backgroundImage: `url(${coverUrl(track.cover_art_id, 300)})` }} />

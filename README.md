@@ -304,5 +304,29 @@ Server side, Stage 4 adds:
 - CORS for the app's WebView origin (`https://localhost`).
 
 After redeploying, `docker logs pandafm-api 2>&1 | grep "schema is at revision"`
-should show `0002`. Quality badges appear once the next library sync (within
+should show the latest revision (`0003` after Stage 4.1). Quality badges appear once the next library sync (within
 a minute of start-up) has stored the new audio facts.
+
+## Personalisation and Autoplay (Stage 4.1)
+
+**Appearance** (Settings › Appearance) is chosen per device and applied
+instantly: Panda Classic (default), Dark, AMOLED, Light, Walkman Midnight,
+or System. Album artwork can tint the music screens (Off, Subtle,
+Immersive), always kept readable. Pick an accent, or build a custom theme
+from six colours and a corner style; themes export and import as small
+JSON files containing colours only. If a look ever goes wrong, Settings ›
+Appearance › Reset to Panda Classic.
+
+**Panda Radio presets** (Settings › Radio) are stored on the server, so
+every device shares them. Rename built-in modes (Study → Lock In) without
+changing how they choose songs, or create your own from any built-in with
+six controls: familiarity, discovery, continuity, artist variety, genre
+variety and wildcards. The server turns these into bounded weights for the
+same Stage 3 engine; repeat protection always applies. Migration `0003`
+(additive) adds `radio_presets`, `users.preferences` and preset snapshots
+on radio sessions.
+
+**Autoplay** (Settings › Playback, per device, on by default): when a song,
+album, artist, playlist or other finite queue ends naturally, PandaFM
+continues with Panda Radio seeded from it, in the same queue. Repeat, songs
+you queued, End Radio, and being offline all keep the normal ending.

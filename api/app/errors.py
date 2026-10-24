@@ -67,9 +67,16 @@ async def radio_error_handler(request: Request, exc: Exception) -> JSONResponse:
     return error_response(409, "radio", str(exc))
 
 
+async def preset_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    return error_response(exc.status, exc.code, str(exc))  # type: ignore[attr-defined]
+
+
 def register_error_handlers(app: FastAPI) -> None:
     # Registered on the base class; Starlette matches subclasses through the MRO.
     app.add_exception_handler(NavidromeError, navidrome_error_handler)
     from app.services.radio import RadioError  # local: keeps the handler module light
 
     app.add_exception_handler(RadioError, radio_error_handler)
+    from app.services.presets import PresetError
+
+    app.add_exception_handler(PresetError, preset_error_handler)

@@ -43,6 +43,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True)
     display_name: Mapped[str | None] = mapped_column(String(120))
+    # Shared across devices: e.g. {"radio_names": {"study": "Lock In"}} (Stage 4.1).
+    preferences: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = _now()
 
 
@@ -143,6 +145,22 @@ class TrackPreference(Base):
     )
 
 
+class RadioPreset(Base):
+    """A user's own Panda Radio mode: a built-in base mode plus six controls."""
+
+    __tablename__ = "radio_presets"
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    name: Mapped[str] = mapped_column(String(60))
+    base_mode: Mapped[str] = mapped_column(String(32))
+    controls: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (Index("ix_radio_presets_user", "user_id"),)
+
+
 class RadioSession(Base):
     __tablename__ = "radio_sessions"
 
@@ -150,7 +168,11 @@ class RadioSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     seed_track_id: Mapped[int | None] = mapped_column(ForeignKey("tracks.id"))
     seed: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # {"kind", "id", "name"} for "Based on: …"
-    mode: Mapped[str] = mapped_column(String(32))
+    mode: Mapped[str] = mapped_column(String(32))  # the built-in base mode (stable id)
+    # Stage 4.1: which preset started it, the name shown, and the profile it used.
+    preset_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), ForeignKey("radio_presets.id", ondelete="SET NULL"))
+    display_name: Mapped[str | None] = mapped_column(String(80))
+    profile: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))  # SQL NULL for built-ins
     status: Mapped[str] = mapped_column(String(16), server_default=text("'active'"))
     state: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))  # short-term taste
     created_at: Mapped[datetime] = _now()

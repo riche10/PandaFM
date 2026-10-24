@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon'
 import { Modal } from '../components/Modal'
 import { playlists, toast, usePlaylists } from '../library'
 import { DownloadDialog } from './DownloadDialog'
+import { PresetDialog } from './PresetDialog'
 import { closeDialog, type DialogRequest, openDialog, useDialog } from './store'
 
 const songs = (count: number) => (count === 1 ? '1 song' : `${count} songs`)
@@ -19,6 +20,7 @@ export function DialogHost() {
       {request?.type === 'new-playlist' && <PlaylistNameForm mode="create" tracks={request.tracks} />}
       {request?.type === 'rename-playlist' && <PlaylistNameForm mode="rename" playlist={request.playlist} />}
       {request?.type === 'download' && <DownloadDialog target={request.target} />}
+      {request?.type === 'preset' && <PresetDialog preset={request.preset} />}
       {request?.type === 'why' && <WhyThisSong track={request.track} reasons={request.reasons} modeLabel={request.modeLabel} />}
       {request?.type === 'delete-playlist' && (
         <DeletePlaylist playlist={request.playlist} onDeleted={request.onDeleted} />
@@ -41,6 +43,8 @@ function labelFor(request: DialogRequest): string {
       return 'Why this song?'
     case 'download':
       return 'Download'
+    case 'preset':
+      return 'Radio preset'
   }
 }
 

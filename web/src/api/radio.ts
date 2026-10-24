@@ -11,7 +11,7 @@ export interface RadioMode {
 export const listRadioModes = (signal?: AbortSignal) => apiGet<RadioMode[]>('/radio/modes', signal)
 
 export const radioApi: RadioApi = {
-  start: (mode, seed) => apiSend('POST', '/radio/sessions', { mode, seed, count: 10 }),
+  start: (preset, seed) => apiSend('POST', '/radio/sessions', { preset, seed, count: 10 }),
   extend: (sessionId, upcoming, target) =>
     apiSend('POST', `/radio/sessions/${encodeURIComponent(sessionId)}/extend`, { upcoming, target }),
   end: (sessionId) => apiSend<RadioSessionOut>('POST', `/radio/sessions/${encodeURIComponent(sessionId)}/end`),
@@ -51,3 +51,34 @@ export interface SyncStatus {
 
 export const getSyncStatus = (signal?: AbortSignal) => apiGet<SyncStatus>('/library/sync', signal)
 export const startSync = () => apiSend<SyncStatus>('POST', '/library/sync')
+
+/** The six high-level controls a preset tunes (0-100); the server turns them into bounded weights. */
+export interface RadioControls {
+  familiarity: number
+  discovery: number
+  continuity: number
+  artist_variety: number
+  genre_variety: number
+  wildcards: number
+}
+
+export interface RadioPreset {
+  id: string // "study" for built-ins, a uuid for your own
+  kind: 'builtin' | 'custom'
+  name: string
+  default_name: string | null
+  base_mode: string
+  base_name: string
+  description: string
+  controls: RadioControls
+}
+
+export const presetsApi = {
+  list: (signal?: AbortSignal) => apiGet<RadioPreset[]>('/radio/presets', signal),
+  create: (body: { name: string; base_mode: string; controls?: RadioControls }) => apiSend<RadioPreset>('POST', '/radio/presets', body),
+  update: (id: string, body: { name?: string; base_mode?: string; controls?: RadioControls }) =>
+    apiSend<RadioPreset>('PATCH', `/radio/presets/${encodeURIComponent(id)}`, body),
+  remove: (id: string) => apiSend<null>('DELETE', `/radio/presets/${encodeURIComponent(id)}`),
+  duplicate: (id: string) => apiSend<RadioPreset>('POST', `/radio/presets/${encodeURIComponent(id)}/duplicate`),
+  rename: (mode: string, name: string | null) => apiSend<RadioPreset>('PATCH', `/radio/modes/${encodeURIComponent(mode)}`, { name }),
+}
