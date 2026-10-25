@@ -3960,3 +3960,15 @@ body {
   padding-top: 2rem;
   padding-bottom: 2rem;
 }
+
+/* Station dialog: create or copy a radio style without leaving the station. */
+.style-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: -0.25rem 0 0.5rem;
+}
+
+.style-actions .text-button {
+  min-height: 2.75rem;
+}
