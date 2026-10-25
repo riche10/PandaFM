@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- PandaFM launcher icon, monochrome layer for Android 13+ themed icons.
+       One colour on transparency: Android tints it. Face features are holes;
+       a thin gap keeps the headphones apart from the head. -->
+  <defs>
+    <mask id="outside">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <circle cx="512" cy="548" r="228" fill="#000"/>
+    </mask>
+    <mask id="face">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <ellipse cx="434" cy="548" rx="56" ry="74" transform="rotate(-28 434 548)" fill="#000"/>
+      <ellipse cx="590" cy="548" rx="56" ry="74" transform="rotate(28 590 548)" fill="#000"/>
+      <circle cx="447" cy="537" r="17" fill="#fff"/>
+      <circle cx="577" cy="537" r="17" fill="#fff"/>
+      <ellipse cx="512" cy="628" rx="30" ry="20" fill="#000"/>
+      <path d="M486 662 Q512 686 538 662" fill="none" stroke="#000" stroke-width="10" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <g mask="url(#outside)">
+    <path d="M276 530 C270 236 754 236 748 530" fill="none" stroke="#fff" stroke-width="40" stroke-linecap="round"/>
+    <circle cx="360" cy="372" r="66" fill="#fff"/>
+    <circle cx="664" cy="372" r="66" fill="#fff"/>
+  </g>
+  <rect x="232" y="506" width="88" height="148" rx="40" fill="#fff"/>
+  <rect x="704" y="506" width="88" height="148" rx="40" fill="#fff"/>
+  <circle cx="512" cy="548" r="212" fill="#fff" mask="url(#face)"/>
+</svg>
