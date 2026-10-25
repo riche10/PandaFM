@@ -14,7 +14,7 @@ from app.config import Settings, get_settings
 from app.db import create_engine, create_session_factory
 from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
-from app.routers import downloads, events, favorites, health, library, me, media, playlists, radio, sync
+from app.routers import downloads, events, explore, favorites, health, library, me, media, playlists, radio, sync
 from app.services.conversions import ConversionCache
 from app.services.library_sync import LibrarySyncer
 
@@ -87,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(radio.router, prefix="/api")
     app.include_router(me.router, prefix="/api")
     app.include_router(downloads.router, prefix="/api")
+    app.include_router(explore.router, prefix="/api")
     # The Android app's WebView runs on its own origin (https://localhost) and calls
     # the API cross-origin. Browsers using PandaFM on its own address are unaffected.
     app.add_middleware(

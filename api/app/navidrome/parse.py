@@ -14,6 +14,7 @@ artist pictures go through PandaFM's cover proxy using `coverArt` instead.
 from typing import Any
 
 from app.audio.quality import AudioFacts, describe
+from app.explore import genre_tags
 
 from app.schemas.library import (
     Album,
@@ -80,7 +81,11 @@ def album_summary(raw: Raw) -> AlbumSummary:
 
 
 def album(raw: Raw) -> Album:
-    return Album(**_album_fields(raw), tracks=[track(song) for song in raw.get("song") or []])
+    fields = _album_fields(raw)
+    tracks = [track(song) for song in raw.get("song") or []]
+    if not fields["genre_tags"]:  # no album-level genre: use its songs' genres
+        fields["genre_tags"] = [{"key": k, "name": n} for k, n in genre_tags([g for t in tracks for g in t.genres])]
+    return Album(**fields, tracks=tracks)
 
 
 def artist_summary(raw: Raw) -> ArtistSummary:
@@ -154,6 +159,7 @@ def _album_fields(raw: Raw) -> dict[str, Any]:
         "duration_seconds": _positive_int(raw.get("duration")),
         "genres": _genres(raw),
         "favorite": _starred(raw),
+        "genre_tags": [{"key": k, "name": n} for k, n in genre_tags(_genres(raw))],
     }
 
 

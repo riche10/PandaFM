@@ -32,16 +32,16 @@ export interface RadioSessionOut {
 
 export interface RadioApi {
   /** preset: a built-in mode id ("study") or a custom preset id. */
-  start(preset: string, seed: { kind: 'track' | 'album' | 'artist' | 'station'; id: string } | null): Promise<{ session: RadioSessionOut; seed_track: Track | null; picks: RadioPickOut[] }>
+  start(preset: string, seed: { kind: 'track' | 'album' | 'artist' | 'station' | 'genre'; id: string } | null): Promise<{ session: RadioSessionOut; seed_track: Track | null; picks: RadioPickOut[] }>
   extend(sessionId: string, upcoming: number[], target: number): Promise<{ session: RadioSessionOut; replaced: number[]; picks: RadioPickOut[] }>
   end(sessionId: string): Promise<unknown>
 }
 
 export interface RadioController {
-  start(mode: string, seed: { kind: 'track' | 'album' | 'artist' | 'station'; id: string } | null, options?: { keepCurrent?: boolean }): Promise<void>
+  start(mode: string, seed: { kind: 'track' | 'album' | 'artist' | 'station' | 'genre'; id: string } | null, options?: { keepCurrent?: boolean }): Promise<void>
   end(): Promise<void>
   /** Autoplay: continue a finished queue with radio, unless the listener moved on meanwhile. */
-  continueWith(preset: string, seed: { kind: 'track' | 'album' | 'artist' | 'station'; id: string } | null, expectUid: string): Promise<boolean>
+  continueWith(preset: string, seed: { kind: 'track' | 'album' | 'artist' | 'station' | 'genre'; id: string } | null, expectUid: string): Promise<boolean>
   /** Top up (or, with steer, re-plan) the radio songs queued ahead. */
   refill(steer?: boolean): Promise<void>
 }

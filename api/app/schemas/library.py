@@ -46,6 +46,18 @@ class Track(BaseModel):
     quality: AudioQuality | None = None
 
 
+class GenreTag(BaseModel):
+    key: str  # canonical genre (links to /genres/{key})
+    name: str  # display spelling
+
+
+class GenreSummary(GenreTag):
+    songs: int
+    albums: int = 0
+    artists: int = 0
+    cover_art_ids: list[str] = Field(default_factory=list)
+
+
 class AlbumSummary(BaseModel):
     id: str
     name: str
@@ -57,6 +69,7 @@ class AlbumSummary(BaseModel):
     duration_seconds: int | None = None
     genres: list[str] = Field(default_factory=list)
     favorite: bool = False
+    genre_tags: list[GenreTag] = Field(default_factory=list)  # deduplicated, for chips
 
 
 class Album(AlbumSummary):
@@ -73,6 +86,7 @@ class ArtistSummary(BaseModel):
 
 class Artist(ArtistSummary):
     albums: list[AlbumSummary] = Field(default_factory=list)
+    genres: list[GenreTag] = Field(default_factory=list)  # the artist's dominant genres
 
 
 class ArtistList(BaseModel):
@@ -98,6 +112,7 @@ class SearchResults(BaseModel):
     tracks: list[Track] = Field(default_factory=list)
     albums: list[AlbumSummary] = Field(default_factory=list)
     artists: list[ArtistSummary] = Field(default_factory=list)
+    genres: list[GenreSummary] = Field(default_factory=list)
 
 
 class TrackListOrder(StrEnum):

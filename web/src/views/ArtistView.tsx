@@ -4,6 +4,7 @@ import { getArtist, getArtistTracks } from '../api/library'
 import { AlbumCard, CardGrid, PlayCircle, ShuffleButton } from '../components/Cards'
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
+import { GenreChips } from '../components/GenreChips'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { MenuButton, MenuItem } from '../components/Menu'
 import { startRadio } from '../library/play'
@@ -57,6 +58,7 @@ export function ArtistView() {
           </>
         }
       />
+      <GenreChips tags={artist.genres} />
       {tracks.length > 0 && (
         <section className="shelf" aria-label="Songs">
           <div className="section-head">

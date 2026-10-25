@@ -3,6 +3,9 @@ import { isNative, platform } from './platform/state'
 import { AndroidBack } from './shell/AndroidBack'
 import { AppShell } from './shell/AppShell'
 import { OfflineView } from './views/OfflineView'
+import { GenreView } from './views/GenreView'
+import { DecadeView } from './views/DecadeView'
+import { CollectionView } from './views/CollectionView'
 import { ServerSetupView } from './views/ServerSetupView'
 import { SettingsView } from './views/SettingsView'
 import { AlbumView } from './views/AlbumView'
@@ -20,7 +23,14 @@ import { StatusView } from './views/StatusView'
 
 export default function App() {
   // The Android app needs to know its server before anything else.
-  if (isNative() && !platform.server) return <ServerSetupView />
+  if (isNative() && !platform.server) {
+    // Outside the app shell (body doesn't scroll): its own full-height scroll area, so short screens reach Continue.
+    return (
+      <div className="setup-screen">
+        <ServerSetupView />
+      </div>
+    )
+  }
   return (
     <AppShell>
       {isNative() && <AndroidBack />}
@@ -40,6 +50,9 @@ export default function App() {
         <Route path="/stats" element={<StatsView />} />
         <Route path="/settings" element={<SettingsView />} />
         <Route path="/offline" element={<OfflineView />} />
+        <Route path="/genres/:genreKey" element={<GenreView />} />
+        <Route path="/decades/:decade" element={<DecadeView />} />
+        <Route path="/collections/:collectionId" element={<CollectionView />} />
         <Route path="*" element={<NotFoundView />} />
       </Routes>
     </AppShell>
