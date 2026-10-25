@@ -6,15 +6,16 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.deps import require_auth
 from app.config import Settings, get_settings
 from app.db import create_engine, create_session_factory
 from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
-from app.routers import downloads, events, explore, favorites, health, library, me, media, playlists, radio, sync
+from app.routers import auth, downloads, events, explore, favorites, health, library, me, media, playlists, radio, sync
 from app.services.conversions import ConversionCache
 from app.services.library_sync import LibrarySyncer
 
@@ -72,22 +73,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="PandaFM API",
         version=__version__,
         lifespan=lifespan,
-        # Everything lives under /api so the web container's Nginx routes it with one rule.
-        docs_url="/api/docs",
-        openapi_url="/api/openapi.json",
+        # Interactive docs are never public: off unless PANDAFM_API_DOCS=true, and then owner-only (below).
+        docs_url=None,
+        openapi_url=None,
         redoc_url=None,
     )
+    if settings is not None:
+        app.state.settings = settings
+    # Public: the health check (booleans only for anonymous callers) and sign-in/setup.
     app.include_router(health.router, prefix="/api")
-    app.include_router(library.router, prefix="/api")
-    app.include_router(media.router, prefix="/api")
-    app.include_router(favorites.router, prefix="/api")
-    app.include_router(playlists.router, prefix="/api")
-    app.include_router(events.router, prefix="/api")
-    app.include_router(sync.router, prefix="/api")
-    app.include_router(radio.router, prefix="/api")
-    app.include_router(me.router, prefix="/api")
-    app.include_router(downloads.router, prefix="/api")
-    app.include_router(explore.router, prefix="/api")
+    app.include_router(auth.router, prefix="/api")
+    # Everything else needs a signed-in owner (5.0). Routes with a UserId parameter
+    # get the same check through it; the router-level dependency covers the rest.
+    signed_in = [Depends(require_auth)]
+    for module in (library, media, favorites, playlists, events, sync, radio, me, downloads, explore):
+        app.include_router(module.router, prefix="/api", dependencies=signed_in)
+    if (settings or _docs_enabled()) and (settings.api_docs if settings else _docs_enabled()):
+        _owner_only_docs(app)
     # The Android app's WebView runs on its own origin (https://localhost) and calls
     # the API cross-origin. Browsers using PandaFM on its own address are unaffected.
     app.add_middleware(
@@ -109,16 +111,35 @@ def _cors_origins() -> list[str]:
 
 
 async def _default_user_id(app: FastAPI) -> int:
+    """The owner (5.0), or before setup the default user it will become: the same row either way."""
     from sqlalchemy import select
 
-    from app.deps import DEFAULT_USERNAME
     from app.models import User
 
     async with app.state.session_factory() as session:
-        user_id = await session.scalar(select(User.id).where(User.username == DEFAULT_USERNAME))
+        user_id = await session.scalar(select(User.id).order_by(User.password_hash.is_(None), User.id).limit(1))
     if user_id is None:
-        raise RuntimeError("The default user is missing; run `python -m app.migrate upgrade`.")
+        raise RuntimeError("No user exists; run `python -m app.migrate upgrade`.")
     return user_id
+
+
+def _docs_enabled() -> bool:
+    try:
+        return get_settings().api_docs
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _owner_only_docs(app: FastAPI) -> None:
+    from fastapi.openapi.docs import get_swagger_ui_html
+
+    @app.get("/api/openapi.json", include_in_schema=False, dependencies=[Depends(require_auth)])
+    async def openapi_json():
+        return app.openapi()
+
+    @app.get("/api/docs", include_in_schema=False, dependencies=[Depends(require_auth)])
+    async def docs():
+        return get_swagger_ui_html(openapi_url="/api/openapi.json", title="PandaFM API")
 
 
 app = create_app()

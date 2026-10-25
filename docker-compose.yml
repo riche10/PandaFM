@@ -82,6 +82,10 @@ services:
       PANDAFM_NAVIDROME_USER: ${NAVIDROME_USER:?Set NAVIDROME_USER in Portainer}
       PANDAFM_NAVIDROME_PASSWORD: ${NAVIDROME_PASSWORD:?Set NAVIDROME_PASSWORD in Portainer}
       PANDAFM_LOG_LEVEL: ${PANDAFM_LOG_LEVEL:-info}
+      # 5.0: lets you (once) create PandaFM's owner account. Any long random string,
+      # e.g. `openssl rand -hex 24`. It stops working when the owner exists.
+      PANDAFM_SETUP_TOKEN: ${PANDAFM_SETUP_TOKEN:-}
+      PANDAFM_API_DOCS: ${PANDAFM_API_DOCS:-false}
       # Converted copies for downloads live in their own volume, never in the library.
       PANDAFM_CACHE_DIR: /cache
       PANDAFM_CACHE_MAX_GB: ${PANDAFM_CACHE_MAX_GB:-20}
