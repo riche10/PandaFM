@@ -10,6 +10,7 @@ import { ServerSetupView } from './ServerSetupView'
 import { AppearanceSettings } from './settings/AppearanceSettings'
 import { RadioSettings } from './settings/RadioSettings'
 import { Diagnostics } from './settings/Diagnostics'
+import { StorageLimit } from './settings/StorageLimit'
 import { useAutoplaySettings, autoplaySettings } from '../player/autoplay'
 import { usePresets } from '../library/presets'
 
@@ -102,6 +103,7 @@ export function SettingsView() {
               {downloaded} songs · {formatBytes(used)} used{space?.freeBytes != null ? ` · ${formatBytes(space.freeBytes)} free` : ''}
             </p>
             <button type="button" className="button button--quiet" onClick={() => void chooseFolder()}>{folder ? 'Change location' : 'Choose folder'}</button>
+            <StorageLimit />
           </section>
 
           <section className="settings-block">

@@ -4,6 +4,7 @@ import { formatBytes } from '../components/QualityBadge'
 import { Loading } from '../components/States'
 import { toast } from '../library'
 import { cacheArtwork, offline } from '../offline'
+import type { Budget } from '../offline/budget'
 import { updateSettings, useOfflineSettings } from '../offline/settings'
 import type { CollectionKind, Manifest } from '../offline/types'
 import { platform } from '../platform/state'
@@ -19,7 +20,7 @@ export function DownloadDialog({ target }: { target: { kind: CollectionKind; id:
   const [keepSynced, setKeepSynced] = useState(target.kind !== 'track')
   const [preview, setPreview] = useState<Manifest | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [free, setFree] = useState<number | null>(null)
+  const [budget, setBudget] = useState<Budget | null>(null)
   const [folder, setFolder] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -27,12 +28,13 @@ export function DownloadDialog({ target }: { target: { kind: CollectionKind; id:
     const kind = target.kind === 'track' ? 'tracks' : target.kind
     apiSend<Manifest>('POST', '/downloads/prepare', { kind, id: target.kind === 'track' ? null : target.id, track_ids: target.kind === 'track' && target.id ? [target.id] : [], profile: 'original', warm: false })
       .then(setPreview, (err: Error) => setError(err.message))
-    platform.storage?.getStorageInfo().then((s) => setFree(s.freeBytes)).catch(() => undefined)
+    offline()?.budget().then(setBudget, () => undefined)
     platform.storage?.getDirectory().then((d) => setFolder(d.writable ? d.name : null)).catch(() => undefined)
   }, [target.kind, target.id])
 
   const estimate = preview?.estimates.find((e) => e.profile === profile)
-  const tooBig = estimate && free != null && estimate.bytes > free
+  // A first look; the download manager checks precisely (songs already on the device don't count again).
+  const tooBig = estimate && budget?.remainingBytes != null && estimate.bytes > budget.remainingBytes
   const tracks = preview?.items.length ?? 0
 
   const chooseFolder = async () => {
@@ -86,10 +88,12 @@ export function DownloadDialog({ target }: { target: { kind: CollectionKind; id:
       )}
       <dl className="download-facts">
         <div><dt>Saved to</dt><dd>{folder ?? 'No folder chosen yet'}</dd></div>
-        <div><dt>Free space</dt><dd>{free != null ? formatBytes(free) : 'Unknown'}</dd></div>
+        <div><dt>Free on storage</dt><dd>{budget?.freeBytes != null ? formatBytes(budget.freeBytes) : 'Unknown'}</dd></div>
+        <div><dt>PandaFM may still use</dt><dd>{budget?.remainingBytes != null ? formatBytes(budget.remainingBytes) : 'Up to the free space'}</dd></div>
         {estimate && <div><dt>{estimate.exact ? 'Needs' : 'Needs about'}</dt><dd>{formatBytes(estimate.bytes)}</dd></div>}
       </dl>
-      {tooBig && <p className="field-error">That’s more than the free space in this folder.</p>}
+      {budget?.overLimit && <p className="field-error">PandaFM is over this device’s storage limit. Remove some downloads or raise the limit in Settings.</p>}
+      {tooBig && !budget?.overLimit && <p className="field-warning">This may not fit under this device’s storage limit. Songs you already have don’t count again.</p>}
       {target.kind !== 'track' && (
         <label className="check-option">
           <input type="checkbox" checked={keepSynced} onChange={(e) => setKeepSynced(e.target.checked)} />
@@ -100,7 +104,7 @@ export function DownloadDialog({ target }: { target: { kind: CollectionKind; id:
       <div className="modal-actions">
         <button type="button" className="button button--quiet" onClick={closeDialog}>Cancel</button>
         {folder ? (
-          <button type="button" className="button" disabled={!preview || busy || !!tooBig} onClick={() => void start()}>
+          <button type="button" className="button" disabled={!preview || busy} onClick={() => void start()}>
             {busy ? 'Starting…' : 'Start download'}
           </button>
         ) : (

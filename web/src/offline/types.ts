@@ -8,6 +8,7 @@ export interface OfflineTrack {
   relativePath: string
   localUri: string | null // content:// inside the chosen folder, once downloaded
   sizeBytes: number | null
+  expectedBytes?: number | null // size (or estimate) while it downloads, for the storage budget
   sha256: string | null
   sourceRevision: string | null
   codec: string

@@ -51,6 +51,7 @@ export function startOffline(): void {
     native: storage,
     absoluteUrl: (path) => `${platform.server}${path}`,
     settings: () => settingsStore.getState(),
+    freeSpace: async () => (await storage.getStorageInfo()).freeBytes ?? null,
   })
   void storage.addListener('jobUpdate', (job) => void manager?.onJob(job))
   void storage.addListener('network', networkChanged)
@@ -112,7 +113,7 @@ export async function cacheArtwork(coverArtIds: (string | null)[]): Promise<void
   }
 }
 
-const emptyState: OfflineState = { ready: false, tracks: {}, collections: {}, artwork: {}, progress: {}, paused: false }
+const emptyState: OfflineState = { ready: false, tracks: {}, collections: {}, artwork: {}, progress: {}, paused: false, budgetNotice: null }
 const fallbackStore = { getState: () => emptyState, subscribe: () => () => {} } as unknown as DownloadManager['state']
 
 export function useOffline<T>(selector: (s: OfflineState) => T): T {
