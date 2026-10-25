@@ -65,6 +65,7 @@ class Weights:
     recent_album: float = 1.0  # penalty: same album as a recent pick
     skip_history: float = 1.2  # penalty: you often skip this song
     session_skip: float = 2.0  # penalty: you skipped this artist in this session
+    off_genre: float = 2.5  # penalty: clearly unrelated to the radio's genres (radio/genres.py)
 
 
 @dataclass(frozen=True)

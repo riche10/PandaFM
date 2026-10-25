@@ -13,10 +13,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import RadioQueueItem, RadioSession, Track
+from app.models import RadioQueueItem, RadioSession, Track, RadioStation
 from app.radio import config
 from app.radio import session as radio_session
 from app.radio.config import MODES, ModeProfile
+from app.radio.genres import STATION_MIN, anchor_strength, canonical, neighbourhood
 from app.radio.presets import from_snapshot, preset_reasons, snapshot
 from app.radio.explain import reasons
 from app.radio.scoring import Candidate, Profile, Recent, Seed
@@ -50,7 +51,7 @@ async def resolve_seed(db: AsyncSession, kind: str | None, navidrome_id: str | N
         t = await db.scalar(select(Track).where(Track.navidrome_id == navidrome_id))
         if t is None:
             raise RadioError("That song isn’t in PandaFM’s library cache yet. Try again after the next library sync.")
-        seed = Seed(name=t.title, track_id=t.id, artist_id=t.artist_id, album_id=t.album_id, genres=frozenset(t.genres), year=t.year)
+        seed = Seed(name=t.title, track_id=t.id, artist_id=t.artist_id, album_id=t.album_id, genres=frozenset(t.genres), year=t.year, anchor=canonical(t.genres))
         return seed, {"kind": "track", "id": navidrome_id, "name": t.title}, t.id
     if kind in ("album", "artist"):
         column = Track.album_id if kind == "album" else Track.artist_id
@@ -60,8 +61,12 @@ async def resolve_seed(db: AsyncSession, kind: str | None, navidrome_id: str | N
         genres = frozenset(g for t in rows for g in t.genres)
         years = [t.year for t in rows if t.year]
         name = rows[0].album if kind == "album" else rows[0].artist
-        seed = Seed(name=name, artist_id=rows[0].artist_id, album_id=rows[0].album_id if kind == "album" else None, genres=genres, year=min(years) if years else None)
+        seed = Seed(name=name, artist_id=rows[0].artist_id, album_id=rows[0].album_id if kind == "album" else None, genres=genres, year=min(years) if years else None, anchor=canonical(genres))
         return seed, {"kind": kind, "id": navidrome_id, "name": name}, None
+    if kind == "station":
+        station = await _station(db, user_id, navidrome_id)
+        genres = frozenset(station.genres)
+        return Seed(name=station.name, genres=genres, anchor=canonical(genres), strict=True), {"kind": "station", "id": str(station.id), "name": station.name, "genres": sorted(genres)}, None
     # No seed: start from long-term taste, or from favorites, or (brand new) anywhere.
     liked_genres = sorted(((g, a) for g, a in profile.genre_affinity.items() if a > 0), key=lambda x: -x[1])[:3]
     if not liked_genres:
@@ -70,7 +75,19 @@ async def resolve_seed(db: AsyncSession, kind: str | None, navidrome_id: str | N
             {"user": user_id},
         )
         liked_genres = [(r.g, r.n) for r in rows]
-    return Seed(genres=frozenset(g for g, _ in liked_genres)), None, None
+    taste = frozenset(g for g, _ in liked_genres)
+    return Seed(genres=taste, anchor=canonical(taste)), None, None
+
+
+async def _station(db: AsyncSession, user_id: int, station_id: str | None) -> RadioStation:
+    try:
+        sid = UUID(str(station_id))
+    except ValueError:
+        raise RadioError("That station doesn’t exist.") from None
+    station = await db.scalar(select(RadioStation).where(RadioStation.id == sid, RadioStation.user_id == user_id))
+    if station is None:
+        raise RadioError("That station doesn’t exist (it may have been deleted).")
+    return station
 
 
 async def gather_candidates(db: AsyncSession, user_id: int, mode: ModeProfile, seed: Seed, profile: Profile, exclude: set[int], rng: random.Random) -> list[Candidate]:
@@ -85,7 +102,22 @@ async def gather_candidates(db: AsyncSession, user_id: int, mode: ModeProfile, s
     }
     if seed.artist_id:
         queries["seed_artist"] = (f"{base} AND t.artist_id = :artist ORDER BY random() LIMIT :n", {"artist": seed.artist_id})
-    if seed.genres:
+    if seed.anchor:
+        # The genre neighbourhood from the shared genre model, not just the exact tags.
+        library = await library_genres(db)
+        close = neighbourhood(library, seed.anchor, 0.7)
+        around = [g for g in neighbourhood(library, seed.anchor, STATION_MIN) if g not in close]
+        if close:
+            queries["seed_genre"] = (f"{base} AND t.genres && CAST(:close AS text[]) ORDER BY random() LIMIT :n", {"close": close})
+        if around:
+            queries["adjacent_genre"] = (f"{base} AND t.genres && CAST(:around AS text[]) ORDER BY random() LIMIT :n", {"around": around})
+        if seed.strict:  # a station: every source stays inside its neighbourhood
+            hood = close + around
+            for name in ("random", "favorites", "underplayed"):
+                sql, extra = queries.pop(name)
+                if hood:
+                    queries[name] = (sql.replace(base, f"{base} AND t.genres && CAST(:hood AS text[])", 1), {**extra, "hood": hood})
+    elif seed.genres:
         genres = list(seed.genres)
         queries["seed_genre"] = (f"{base} AND t.genres && CAST(:genres AS text[]) ORDER BY random() LIMIT :n", {"genres": genres})
         adjacent = (
@@ -99,7 +131,7 @@ async def gather_candidates(db: AsyncSession, user_id: int, mode: ModeProfile, s
     if seed.year:
         queries["era"] = (f"{base} AND t.year BETWEEN :year - 5 AND :year + 5 ORDER BY random() LIMIT :n", {"year": seed.year})
     top_artists = [a for a, v in sorted(profile.artist_affinity.items(), key=lambda x: -x[1]) if v > 0.2][:8]
-    if top_artists:
+    if top_artists and not seed.strict:
         queries["top_artists"] = (f"{base} AND t.artist_id = ANY(:artists) ORDER BY random() LIMIT :n", {"artists": top_artists})
 
     sources: dict[int, set[str]] = {}
@@ -133,6 +165,12 @@ async def gather_candidates(db: AsyncSession, user_id: int, mode: ModeProfile, s
     ]
 
 
+async def library_genres(db: AsyncSession) -> list[str]:
+    """Distinct genre tags in the library, read fresh (they change with every sync)."""
+    rows = (await db.execute(text("SELECT DISTINCT unnest(genres) FROM tracks WHERE is_available"))).scalars().all()
+    return [r for r in rows if r]
+
+
 def track_out(c: Candidate) -> TrackOut:
     return TrackOut(
         id=c.navidrome_id, title=c.title, artist=c.artist, artist_id=c.artist_id, album=c.album, album_id=c.album_id,
@@ -145,7 +183,7 @@ def session_out(s: RadioSession) -> RadioSessionOut:
     mode = MODES.get(s.mode)
     label = s.display_name or (mode.label if mode else s.mode)
     return RadioSessionOut(
-        id=s.id, mode=s.mode, mode_label=label, preset_id=str(s.preset_id) if s.preset_id else s.mode, status=s.status,
+        id=s.id, mode=s.mode, mode_label=label, preset_id=str(s.preset_id) if s.preset_id else s.mode, station_id=str(s.station_id) if s.station_id else None, status=s.status,
         seed_kind=(s.seed or {}).get("kind"), seed_name=(s.seed or {}).get("name"),
         skips=state.get("skips", 0), completions=state.get("completions", 0), exploration=round(state.get("exploration", 0.0), 2),
     )
@@ -156,9 +194,13 @@ async def _pick(db: AsyncSession, session: RadioSession, count: int, extra_exclu
     state = radio_session.SessionState.from_json(session.state, mode.base_exploration)
     profile = await load_profile(db, session.user_id)
     seed_json = (session.state or {}).get("_seed") or {}
+    raw_genres = frozenset(seed_json.get("genres", []))
+    strict = bool(seed_json.get("strict"))
     seed = Seed(
         name=(session.seed or {}).get("name"), track_id=session.seed_track_id, artist_id=seed_json.get("artist_id"),
-        album_id=seed_json.get("album_id"), genres=frozenset(seed_json.get("genres", [])), year=seed_json.get("year"),
+        album_id=seed_json.get("album_id"), genres=raw_genres, year=seed_json.get("year"),
+        anchor=frozenset(seed_json["anchor"]) if "anchor" in seed_json else canonical(raw_genres),
+        strict=strict, strength=anchor_strength(len(state.recent_track_ids), strict),  # song seeds drift gently
     )
     exclude = set(state.recent_track_ids) | extra_exclude | ({session.seed_track_id} if session.seed_track_id else set())
     candidates = await gather_candidates(db, session.user_id, mode, seed, profile, exclude, rng)
@@ -196,7 +238,7 @@ def profile_of(session: RadioSession) -> ModeProfile:
 
 async def start(db: AsyncSession, user_id: int, mode_id: str, seed_kind: str | None, seed_id: str | None, count: int,
                 rng: random.Random | None = None, *, display_name: str | None = None, preset_id: UUID | None = None,
-                controls: dict | None = None) -> tuple[RadioSession, Candidate | None, list[RadioPick]]:
+                controls: dict | None = None, station_id: UUID | None = None) -> tuple[RadioSession, Candidate | None, list[RadioPick]]:
     if mode_id not in MODES:
         raise RadioError(f"Unknown radio mode “{mode_id}”.")
     rng = rng or random.Random()
@@ -209,9 +251,10 @@ async def start(db: AsyncSession, user_id: int, mode_id: str, seed_kind: str | N
     await db.execute(update(RadioSession).where(RadioSession.user_id == user_id, RadioSession.status == "active").values(status="ended", ended_at=func.now()))
     session = RadioSession(
         id=uuid4(), user_id=user_id, seed_track_id=seed_track_id, seed=seed_meta, mode=mode_id,
-        preset_id=preset_id, display_name=name, profile=snap,
+        preset_id=preset_id, display_name=name, profile=snap, station_id=station_id,
         state={**radio_session.SessionState(exploration=mode.base_exploration).to_json(),
-               "_seed": {"artist_id": seed.artist_id, "album_id": seed.album_id, "genres": sorted(seed.genres), "year": seed.year}},
+               "_seed": {"artist_id": seed.artist_id, "album_id": seed.album_id, "genres": sorted(seed.genres), "year": seed.year,
+                         "anchor": sorted(seed.anchor), "strict": seed.strict}},
     )
     db.add(session)
     await db.flush()

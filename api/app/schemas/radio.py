@@ -15,7 +15,7 @@ class RadioMode(BaseModel):
 
 
 class RadioSeedIn(BaseModel):
-    kind: Literal["track", "album", "artist"]
+    kind: Literal["track", "album", "artist", "station"]
     id: str = Field(min_length=1, max_length=200)
 
 
@@ -40,6 +40,7 @@ class RadioSessionOut(BaseModel):
     mode: str
     mode_label: str
     preset_id: str | None = None  # the preset that started it (mode id for built-ins)
+    station_id: str | None = None  # the saved station that started it, if any
     status: str
     seed_kind: str | None = None
     seed_name: str | None = None
@@ -112,3 +113,39 @@ class ModeRename(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str | None = PresetName  # null resets to PandaFM's name
+
+
+StationName = Field(min_length=1, max_length=40, pattern=r"^[^\x00-\x1f\x7f]+$")
+
+
+class RadioStationOut(BaseModel):
+    id: str
+    name: str
+    genres: list[str]  # library genre tags, as chosen
+    families: list[str]  # broad families, for a quiet subtitle ("punk, rock")
+    preset: str  # the behaviour actually used ("panda" if the chosen custom preset is gone)
+    preset_name: str
+    preset_missing: bool  # the custom preset this station used was deleted: playing as Panda
+    label: str  # what Queue and Now Playing show: "Rock" or "Rock · Familiar"
+
+
+class RadioStationIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str = StationName
+    genres: list[str] = Field(min_length=1, max_length=20)
+    preset: str | None = Field(default=None, max_length=64)
+
+
+class RadioStationUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str | None = StationName
+    genres: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    preset: str | None = Field(default=None, max_length=64)
+
+
+class LibraryGenre(BaseModel):
+    name: str  # the tag as it appears in your library
+    songs: int
+    family: str | None  # broad family from the shared genre model

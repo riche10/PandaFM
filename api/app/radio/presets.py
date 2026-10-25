@@ -43,7 +43,7 @@ _EFFECTS = {
     "wildcards": {"randomness": 2.2},
 }
 # Weights a preset never changes: the core repetition penalties.
-_PROTECTED = ("recent_track", "recent_album", "skip_history", "session_skip")
+_PROTECTED = ("recent_track", "recent_album", "skip_history", "session_skip", "off_genre")
 
 
 def _clamp(value: float, low: float, high: float) -> float:

@@ -17,8 +17,12 @@ from app.schemas.radio import (
     RadioSessionOut,
     RadioStart,
     RadioStartOut,
+    RadioStationIn,
+    RadioStationOut,
+    RadioStationUpdate,
+    LibraryGenre,
 )
-from app.services import presets
+from app.services import presets, stations
 from app.services import radio
 from app.services.radio import session_out, track_out
 
@@ -83,12 +87,19 @@ async def duplicate_preset(preset_ref: str, db: SessionDep, user_id: UserId) -> 
 async def start_radio(body: RadioStart, request: Request, db: SessionDep, user_id: UserId) -> RadioStartOut:
     await request.app.state.syncer.ensure_synced()
     seed = body.seed
-    chosen = await presets.resolve(db, user_id, body.preset or body.mode) if (body.preset or body.mode in MODES) else None
+    station_id = None
+    if seed and seed.kind == "station":  # a saved station brings its own behaviour (Panda if its preset is gone)
+        station = await stations.get(db, user_id, seed.id)
+        chosen, _ = await stations.behaviour(db, user_id, station)
+        chosen = presets.Resolved(chosen.base, stations.label(station, chosen), chosen.preset_id, chosen.controls)
+        station_id = station.id
+    else:
+        chosen = await presets.resolve(db, user_id, body.preset or body.mode) if (body.preset or body.mode in MODES) else None
     if chosen is None:
         raise radio.RadioError(f"Unknown radio mode “{body.mode}”.")
     session, seed_track, picks = await radio.start(
         db, user_id, chosen.base, seed.kind if seed else None, seed.id if seed else None, body.count,
-        display_name=chosen.name, preset_id=chosen.preset_id, controls=chosen.controls,
+        display_name=chosen.name, preset_id=chosen.preset_id, controls=chosen.controls, station_id=station_id,
     )
     return RadioStartOut(session=session_out(session), seed_track=track_out(seed_track) if seed_track else None, picks=picks)
 
@@ -107,3 +118,50 @@ async def extend_radio(session_id: UUID, body: RadioExtend, db: SessionDep, user
 @router.post("/radio/sessions/{session_id}/end", response_model=RadioSessionOut)
 async def end_radio(session_id: UUID, db: SessionDep, user_id: UserId) -> RadioSessionOut:
     return session_out(await radio.end(db, user_id, session_id))
+
+
+# ── Saved stations: musical neighbourhoods (WHAT), played with a preset (HOW) ──
+
+
+@router.get("/radio/genres", response_model=list[LibraryGenre])
+async def library_genres(db: SessionDep) -> list[LibraryGenre]:
+    """Genres that exist in your library, most songs first (for the station picker)."""
+    return await stations.library_genre_counts(db)
+
+
+@router.get("/radio/stations", response_model=list[RadioStationOut])
+async def list_stations(db: SessionDep, user_id: UserId) -> list[RadioStationOut]:
+    return [await stations.out(db, user_id, s) for s in await stations.list_all(db, user_id)]
+
+
+@router.post("/radio/stations", response_model=RadioStationOut, status_code=201)
+async def create_station(body: RadioStationIn, db: SessionDep, user_id: UserId) -> RadioStationOut:
+    return await stations.out(db, user_id, await stations.create(db, user_id, body.name, body.genres, body.preset))
+
+
+@router.get("/radio/stations/{station_id}", response_model=RadioStationOut)
+async def get_station(station_id: str, db: SessionDep, user_id: UserId) -> RadioStationOut:
+    return await stations.out(db, user_id, await stations.get(db, user_id, station_id))
+
+
+@router.patch("/radio/stations/{station_id}", response_model=RadioStationOut)
+async def update_station(station_id: str, body: RadioStationUpdate, db: SessionDep, user_id: UserId) -> RadioStationOut:
+    station = await stations.update(db, user_id, station_id, body.name, body.genres, body.preset, "preset" in body.model_fields_set)
+    return await stations.out(db, user_id, station)
+
+
+@router.delete("/radio/stations/{station_id}", status_code=204)
+async def delete_station(station_id: str, db: SessionDep, user_id: UserId) -> Response:
+    await stations.delete(db, user_id, station_id)
+    return Response(status_code=204)
+
+
+@router.post("/radio/stations/{station_id}/duplicate", response_model=RadioStationOut, status_code=201)
+async def duplicate_station(station_id: str, db: SessionDep, user_id: UserId) -> RadioStationOut:
+    return await stations.out(db, user_id, await stations.duplicate(db, user_id, station_id))
+
+
+@router.post("/radio/stations/{station_id}/start", response_model=RadioStartOut, status_code=201)
+async def start_station(station_id: str, request: Request, db: SessionDep, user_id: UserId, count: int = 10) -> RadioStartOut:
+    """Same as starting a session with a station seed: a normal Panda Radio session."""
+    return await start_radio(RadioStart(seed={"kind": "station", "id": station_id}, count=count), request, db, user_id)

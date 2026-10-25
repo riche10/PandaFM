@@ -153,7 +153,9 @@ async def _steer(db: AsyncSession, session_id: UUID, selection_id: int, event: E
         state = radio_session.on_skip(state, genres, artist_id, kind or "mid")
     else:
         state = radio_session.on_complete(state, genres, artist_id, mode.base_exploration)
-    session.state = state.to_json()
+    # Keep the session's own keys (the seed and its genre anchor): losing them made radio forget its seed after the first skip.
+    kept = {k: v for k, v in (session.state or {}).items() if k.startswith("_")}
+    session.state = {**kept, **state.to_json()}
     session.last_activity_at = func.now()
 
 
