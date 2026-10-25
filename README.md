@@ -149,7 +149,8 @@ tap it for Now Playing.
   previous / play / next / seek. Over plain `http://<server-ip>`, browsers
   don't offer this, and Chrome shows its basic media notification instead.
 - Space plays and pauses. Playback keeps going while you move around; a
-  full page refresh starts with an empty queue.
+  full page refresh brings your queue back, paused (the Android app keeps its
+  queue in its playback service).
 
 All music and artwork go through PandaFM's API (`/api/...`). The browser
 never talks to Navidrome and never sees its credentials. The API reference
@@ -205,8 +206,8 @@ that, plus your Navidrome favorites, for **Panda Radio**:
 ### Database migrations (automatic, safe on your existing volume)
 
 The API container runs `python -m app.migrate upgrade` before it starts.
-Migrations only add tables (the first one, `0001`, creates PandaFM's
-schema in the existing, so far empty, `pandafm` database); nothing is
+Migrations only add tables and columns (the first one, `0001`, created
+PandaFM's schema; 5.0's `0005` added sign-in and devices); nothing is
 dropped and the PostgreSQL and Navidrome volumes are never touched. A
 PostgreSQL advisory lock stops two API containers from migrating at once.
 
@@ -215,8 +216,8 @@ merging) and **Pull and redeploy**. Do **not** tick anything that removes
 volumes. Then check:
 
 ```bash
-docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0001
-docker exec pandafm-api python -m app.migrate check           # database: 0001, code expects: 0001
+docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0005 (5.0 and 5.0.1)
+docker exec pandafm-api python -m app.migrate check           # database: 0005, code expects: 0005
 ```
 
 About 20 seconds after start-up, PandaFM copies Navidrome's song list into

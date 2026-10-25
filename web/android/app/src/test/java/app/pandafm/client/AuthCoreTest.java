@@ -170,4 +170,32 @@ public class AuthCoreTest {
         assertEquals(Long.valueOf(900), MiniJson.number("{\"access_expires_in\": 900}", "access_expires_in"));
         assertNull(MiniJson.string("{}", "x"));
     }
+
+    @Test
+    public void concurrentRefreshesShareOneRotation() throws Exception {
+        final java.util.concurrent.CountDownLatch inFlight = new java.util.concurrent.CountDownLatch(1);
+        final java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        final int[] refreshes = {0};
+        AuthCore.Http slow = (url, body, bearer) -> {
+            if (url.endsWith("/refresh")) {
+                refreshes[0]++;
+                inFlight.countDown();
+                try { release.await(); } catch (InterruptedException ignored) {}
+            }
+            return http.post(url, body, bearer);
+        };
+        AuthCore core = new AuthCore(slow, vault, () -> now[0]);
+        core.signIn(SERVER, "panda", "pw", "Pixel");
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(3);
+        java.util.concurrent.Future<String> first = pool.submit(() -> core.accessToken(true)); // e.g. Media3 got a 401
+        inFlight.await();
+        java.util.List<java.util.concurrent.Future<String>> waiting = new java.util.ArrayList<>();
+        for (int k = 0; k < 2; k++) waiting.add(pool.submit(() -> core.accessToken(true))); // artwork, downloads
+        Thread.sleep(100);
+        release.countDown();
+        String token = first.get();
+        for (java.util.concurrent.Future<String> f : waiting) assertEquals(token, f.get());
+        assertEquals(1, refreshes[0]); // one rotation, shared
+        pool.shutdown();
+    }
 }

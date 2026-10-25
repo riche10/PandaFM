@@ -8,6 +8,7 @@ let setting: StreamQuality = loadQuality(typeof localStorage === 'undefined' ? n
 const listeners = new Set<() => void>()
 
 export function startNetworkWatch(): void {
+  void platform.player?.setPreferences({ streamQuality: setting }).catch(() => undefined)
   const storage = platform.storage
   if (!storage) return
   storage.getNetwork().then((n) => { network = n; listeners.forEach((l) => l()) }, () => undefined)
@@ -17,6 +18,7 @@ export function startNetworkWatch(): void {
 export const streamQualitySetting = () => setting
 export function setStreamQuality(q: StreamQuality): void {
   setting = q
+  void platform.player?.setPreferences({ streamQuality: q }).catch(() => undefined) // Android: the service picks each song's stream
   saveQuality(typeof localStorage === 'undefined' ? null : localStorage, q)
   listeners.forEach((l) => l())
 }

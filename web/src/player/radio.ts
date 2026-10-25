@@ -56,11 +56,12 @@ export function createRadioController({
   reporter,
   now = Date.now,
   setTimer = (fn: () => void, ms: number) => setTimeout(fn, ms),
-  onEnd,
-}: {
+  onEnd, nativeRefill = false }: {
   api: RadioApi
   store: PlayerStore
   reporter: Pick<Reporter, 'flush' | 'subscribe'>
+  /** Android 5.0.1: the native queue refills radio; don't do it here too. */
+  nativeRefill?: boolean
   now?: () => number
   setTimer?: (fn: () => void, ms: number) => unknown
   /** Told when the listener explicitly ends radio (Autoplay must not restart it). */
@@ -80,7 +81,7 @@ export function createRadioController({
 
   async function refill(steer = false): Promise<void> {
     const radio = active()
-    if (!radio) return
+    if (!radio || nativeRefill) return // Android: the playback service refills radio itself (even with the app closed)
     if (busy) {
       if (steer) steerAgain = true // run once more when the current request finishes
       return

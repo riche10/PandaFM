@@ -1,4 +1,5 @@
 import { authFetch } from '../api/auth'
+import { catalogOf } from './catalog'
 import { useStore } from 'zustand'
 import { apiSend, apiUrl } from '../api/client'
 import { type CoverSize, coverUrl, streamUrl } from '../api/library'
@@ -54,6 +55,7 @@ export function startOffline(): void {
     settings: () => settingsStore.getState(),
     freeSpace: async () => (await storage.getStorageInfo()).freeBytes ?? null,
   })
+  syncCatalog(manager)
   void storage.addListener('jobUpdate', (job) => void manager?.onJob(job))
   void storage.addListener('network', networkChanged)
   void storage.getNetwork().then(networkChanged).catch(() => undefined)
@@ -124,3 +126,16 @@ export function useOffline<T>(selector: (s: OfflineState) => T): T {
 export const useOfflineTrack = (trackId: string) => useOffline((s) => s.tracks[trackId])
 export const useCollectionProgress = (key: string) => useOffline((s) => collectionProgress(s, key))
 export { collectionProgress }
+
+// Android 5.0.1: tell the playback service what's downloaded (local playback, Android Auto offline).
+let catalogTimer: ReturnType<typeof setTimeout> | null = null
+function syncCatalog(m: DownloadManager): void {
+  m.state.subscribe((state) => {
+    if (!platform.player || !state.ready) return
+    if (catalogTimer) clearTimeout(catalogTimer)
+    catalogTimer = setTimeout(() => {
+      catalogTimer = null
+      void platform.player?.setOfflineCatalog({ catalog: JSON.stringify(catalogOf(m.state.getState())) }).catch(() => undefined)
+    }, 1500)
+  })
+}

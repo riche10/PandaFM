@@ -1,293 +1,209 @@
 package app.pandafm.client;
 
-import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.webkit.WebView;
-import androidx.annotation.OptIn;
-import androidx.media3.common.MediaItem;
-import androidx.media3.common.MediaLibraryInfo;
-import androidx.media3.common.MediaMetadata;
-import androidx.media3.common.PlaybackException;
-import androidx.media3.common.Player;
-import androidx.media3.common.C;
-import androidx.media3.common.util.UnstableApi;
-import androidx.media3.exoplayer.ExoPlayer;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.List;
+import java.util.Map;
 
 /**
- * The web app's PlaybackEngine on Android (web/src/player/nativeEngine.ts).
- * It plays one song at a time on PlaybackService's ExoPlayer and reports
- * what happens, tagged with the load generation the web app gave it, so the
- * shared queue can ignore anything from a previous song. It never decides
- * what plays next.
+ * The phone UI's window onto the native queue (5.0.1). On Android the native
+ * queue is the one authority: React sends it commands and mirrors the
+ * snapshots it publishes ("queue" on every change, "state" for position, at
+ * most once a second while playing). Complex arguments travel as JSON strings.
  */
 @CapacitorPlugin(name = "PandaPlayer")
-@OptIn(markerClass = UnstableApi.class)
 public class PandaPlayerPlugin extends Plugin {
-    private static final String TAG = "PandaFM.Player";
-    private static final long TICK_MS = 500;
-
+    private static final String TAG = "PandaFM.Playback";
+    private static final long TICK_MS = 1000;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable ticker = this::tick;
-    private Player.Listener listener;
-    private int gen = 0;
-    private boolean endedSent = false;
-    private boolean local = false;
-    private String scheme = null;
+    private QueueController.Listener listener;
 
-    interface PlayerTask {
-        void run(ExoPlayer player);
+    interface Task {
+        void run(QueueController c);
     }
 
     @Override
     public void load() {
-        PlaybackService.setRemote((action, position) -> {
-            JSObject o = new JSObject();
-            o.put("action", action);
-            if (position >= 0) o.put("position", position);
-            notifyListeners("remote", o);
-        });
-        // Keep the page's JavaScript alive while backgrounded: it advances the shared queue.
         if (Build.VERSION.SDK_INT >= 26) {
             main.post(() -> {
                 try {
                     getBridge().getWebView().setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
                 } catch (RuntimeException e) {
-                    Log.w(TAG, "Couldn't raise the WebView renderer priority", e);
+                    Log.w(TAG, "Couldn't raise the WebView renderer priority");
                 }
             });
         }
     }
 
-    private void withPlayer(PluginCall call, PlayerTask task) {
+    @Override
+    protected void handleOnDestroy() {
+        main.removeCallbacks(ticker);
+        QueueController c = PlaybackService.controller();
+        if (c != null && listener != null) c.removeListener(listener);
+        listener = null;
+    }
+
+    private void with(PluginCall call, Task task) {
         main.post(() -> PlaybackService.whenReady(getContext(), () -> {
-            ExoPlayer player = PlaybackService.player();
-            if (player == null) {
+            QueueController c = PlaybackService.controller();
+            if (c == null) {
                 call.reject("The player isn't available");
                 return;
             }
-            attach(player);
-            task.run(player);
+            attach(c);
+            task.run(c);
+            call.resolve();
         }));
     }
 
-    private void attach(ExoPlayer player) {
+    private void attach(QueueController c) {
         if (listener != null) return;
-        listener = new Player.Listener() {
-            @Override
-            public void onPlaybackStateChanged(int state) {
-                if (state == Player.STATE_BUFFERING) {
-                    send("loading");
-                } else if (state == Player.STATE_READY) {
-                    send(player.isPlaying() ? "playing" : player.getPlayWhenReady() ? "loading" : "paused");
-                    tick();
-                } else if (state == Player.STATE_ENDED && !endedSent) {
-                    endedSent = true; // one completion per song
-                    tick();
-                    send("ended");
-                }
-            }
-
-            @Override
-            public void onIsPlayingChanged(boolean isPlaying) {
-                if (isPlaying) {
-                    send("playing");
-                    startTicker();
-                } else if (player.getPlaybackState() == Player.STATE_READY && !player.getPlayWhenReady()) {
-                    send("paused");
-                    tick();
-                }
-            }
-
-            @Override
-            public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
-                // Headphones out or another app took the audio for good: a real pause, recorded as one.
-                if (!playWhenReady && (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
-                        || reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS)) {
-                    JSObject o = new JSObject();
-                    o.put("action", "pause");
-                    notifyListeners("remote", o);
-                }
-            }
-
-            @Override
-            public void onPlayerError(PlaybackException error) {
-                String[] kind = PlaybackErrors.classify(error.errorCode, local);
-                Log.w(TAG, "Playback error " + error.getErrorCodeName() + " (source " + scheme + ")"); // never the URL
-                JSObject o = event("error");
-                o.put("kind", kind[0]);
-                o.put("reason", kind[1]);
-                o.put("code", error.getErrorCodeName());
-                notifyListeners("state", o);
-            }
+        listener = reason -> {
+            JSObject o = new JSObject();
+            o.put("reason", reason);
+            o.put("snapshot", Json.write(c.uiSnapshot()));
+            notifyListeners("queue", o);
+            tick();
         };
-        player.addListener(listener);
-    }
-
-    private JSObject event(String type) {
-        JSObject o = new JSObject();
-        o.put("gen", gen);
-        o.put("type", type);
-        return o;
-    }
-
-    private void send(String type) {
-        notifyListeners("state", event(type));
-    }
-
-    private void startTicker() {
-        main.removeCallbacks(ticker);
-        main.post(ticker);
+        c.addListener(listener);
     }
 
     private void tick() {
-        ExoPlayer player = PlaybackService.player();
-        if (player == null) return;
-        JSObject o = event("time");
-        o.put("position", player.getCurrentPosition() / 1000.0);
-        long duration = player.getDuration();
-        o.put("duration", duration == C.TIME_UNSET ? null : (Object) (duration / 1000.0));
-        notifyListeners("state", o);
         main.removeCallbacks(ticker);
-        if (player.isPlaying()) main.postDelayed(ticker, TICK_MS);
+        QueueController c = PlaybackService.controller();
+        if (c == null) return;
+        Map<String, Object> s = c.uiSnapshot();
+        JSObject o = new JSObject();
+        o.put("status", c.status);
+        o.put("positionMs", (Object) s.get("positionMs"));
+        o.put("durationMs", (Object) s.get("durationMs"));
+        o.put("error", c.error);
+        o.put("gen", c.gen);
+        notifyListeners("state", o);
+        if ("playing".equals(c.status) || "loading".equals(c.status)) main.postDelayed(ticker, TICK_MS);
+    }
+
+    private static List<Map<String, Object>> tracks(PluginCall call, String key) {
+        return Json.maps(Json.tryParse(call.getString(key, "[]")));
     }
 
     @PluginMethod
-    public void load(PluginCall call) {
-        String url = call.getString("url");
-        if (url == null || !PlaybackErrors.allowedSource(url)) {
-            call.reject("Only PandaFM streams and downloaded files can be played");
-            return;
-        }
-        Integer requested = call.getInt("gen", 0);
-        MediaMetadata.Builder meta = new MediaMetadata.Builder()
-            .setTitle(call.getString("title", ""))
-            .setArtist(call.getString("artist", ""))
-            .setAlbumTitle(call.getString("album", null));
-        String artwork = call.getString("artworkUrl");
-        String trackId = call.getString("trackId", "");
-        boolean signedArtwork = artwork != null && artwork.startsWith("http") && PlaybackErrors.allowedSource(artwork);
-        if (artwork != null && !signedArtwork && PlaybackErrors.allowedSource(artwork)) meta.setArtworkUri(Uri.parse(artwork)); // saved artwork (content://)
-        MediaItem item = new MediaItem.Builder()
-            .setMediaId(trackId)
-            .setUri(Uri.parse(url))
-            .setMediaMetadata(meta.build())
-            .build();
-        if (signedArtwork) loadArtwork(artwork, trackId, url, meta, requested == null ? 0 : requested);
-        withPlayer(call, player -> {
-            gen = requested == null ? 0 : requested;
-            endedSent = false;
-            local = url.startsWith("content://");
-            scheme = PlaybackErrors.scheme(url);
-            player.setMediaItem(item);
-            player.prepare();
-            call.resolve();
-        });
+    public void getSnapshot(PluginCall call) {
+        main.post(() -> PlaybackService.whenReady(getContext(), () -> {
+            QueueController c = PlaybackService.controller();
+            attach(c);
+            JSObject o = new JSObject();
+            o.put("snapshot", Json.write(c.uiSnapshot()));
+            call.resolve(o);
+            tick();
+        }));
     }
 
     @PluginMethod
-    public void play(PluginCall call) {
-        withPlayer(call, player -> {
-            player.play();
-            startTicker();
-            call.resolve();
-        });
+    public void replaceQueue(PluginCall call) {
+        List<Map<String, Object>> t = tracks(call, "tracks");
+        Integer start = call.getInt("startIndex", -1);
+        Map<String, Object> source = Json.map(Json.tryParse(call.getString("source", "null")));
+        boolean shuffle = Boolean.TRUE.equals(call.getBoolean("shuffle", false));
+        boolean play = !Boolean.FALSE.equals(call.getBoolean("play", true));
+        with(call, c -> c.replace(t, start == null || start < 0 ? null : start, source, shuffle, play));
     }
 
     @PluginMethod
-    public void pause(PluginCall call) {
-        withPlayer(call, player -> {
-            player.pause();
-            call.resolve();
-        });
+    public void applyRadio(PluginCall call) {
+        List<Map<String, Object>> picks = tracks(call, "picks");
+        Map<String, Object> source = Json.map(Json.tryParse(call.getString("source", "null")));
+        Map<String, Object> seed = Json.map(Json.tryParse(call.getString("seedTrack", "null")));
+        boolean keep = Boolean.TRUE.equals(call.getBoolean("keepCurrent", false));
+        boolean autoplay = Boolean.TRUE.equals(call.getBoolean("autoplay", false));
+        with(call, c -> c.applyRadioPicks(picks, source, seed, keep, autoplay));
     }
+
+    @PluginMethod
+    public void startRadio(PluginCall call) {
+        String preset = call.getString("preset", "panda"), kind = call.getString("seedKind"), id = call.getString("seedId");
+        with(call, c -> c.startRadio(preset, kind, id));
+    }
+
+    @PluginMethod public void playNext(PluginCall call) { List<Map<String, Object>> t = tracks(call, "tracks"); with(call, c -> c.playNext(t)); }
+    @PluginMethod public void addToQueue(PluginCall call) { List<Map<String, Object>> t = tracks(call, "tracks"); with(call, c -> c.addToQueue(t)); }
+    @PluginMethod public void remove(PluginCall call) { String uid = call.getString("uid"); with(call, c -> c.remove(uid)); }
+    @PluginMethod public void move(PluginCall call) { String uid = call.getString("uid"); int d = call.getInt("direction", 1); with(call, c -> c.move(uid, d < 0 ? -1 : 1)); }
+    @PluginMethod public void clear(PluginCall call) { String which = call.getString("which", "all"); with(call, c -> c.clear(which)); }
+    @PluginMethod public void jumpTo(PluginCall call) { String uid = call.getString("uid"); with(call, c -> c.jumpTo(uid)); }
+    @PluginMethod public void toggleShuffle(PluginCall call) { with(call, QueueController::toggleShuffle); }
+    @PluginMethod public void cycleRepeat(PluginCall call) { with(call, QueueController::cycleRepeat); }
+    @PluginMethod public void endRadio(PluginCall call) { with(call, QueueController::endRadio); }
+    @PluginMethod public void play(PluginCall call) { with(call, QueueController::play); }
+    @PluginMethod public void pause(PluginCall call) { with(call, QueueController::pause); }
+    @PluginMethod public void next(PluginCall call) { with(call, QueueController::next); }
+    @PluginMethod public void previous(PluginCall call) { with(call, QueueController::previous); }
 
     @PluginMethod
     public void seek(PluginCall call) {
         Double seconds = call.getDouble("position");
-        withPlayer(call, player -> {
-            player.seekTo((long) ((seconds == null ? 0 : seconds) * 1000));
-            tick();
-            call.resolve();
-        });
-    }
-
-    @PluginMethod
-    public void stop(PluginCall call) {
-        withPlayer(call, player -> {
-            player.stop();
-            player.clearMediaItems();
-            main.removeCallbacks(ticker);
-            call.resolve();
-        });
+        with(call, c -> c.seekTo(Math.round((seconds == null ? 0 : seconds) * 1000)));
     }
 
     @PluginMethod
     public void setVolume(PluginCall call) {
-        Double volume = call.getDouble("volume");
-        withPlayer(call, player -> {
-            player.setVolume((float) Math.max(0, Math.min(1, volume == null ? 1 : volume)));
-            call.resolve();
+        Double v = call.getDouble("volume");
+        with(call, c -> {
+            ExoEngine e = PlaybackService.engine();
+            if (e != null) e.setVolume((float) Math.max(0, Math.min(1, v == null ? 1 : v)));
         });
     }
 
+    /** Streaming quality and Autoplay, chosen on this device in Settings. */
     @PluginMethod
-    public void getState(PluginCall call) {
-        withPlayer(call, player -> {
-            JSObject o = new JSObject();
-            o.put("engine", "Media3 ExoPlayer " + MediaLibraryInfo.VERSION);
-            o.put("isPlaying", player.isPlaying());
-            o.put("position", player.getCurrentPosition() / 1000.0);
-            long duration = player.getDuration();
-            o.put("duration", duration == C.TIME_UNSET ? null : (Object) (duration / 1000.0));
-            o.put("uriScheme", scheme);
-            MediaItem current = player.getCurrentMediaItem();
-            o.put("mediaId", current == null ? null : current.mediaId);
-            call.resolve(o);
+    public void setPreferences(PluginCall call) {
+        android.content.SharedPreferences.Editor e = NativePlatform.Prefs.of(getContext()).edit();
+        String quality = call.getString("streamQuality");
+        if (quality != null) e.putString("streamQuality", quality);
+        Boolean autoplay = call.getBoolean("autoplayEnabled", null);
+        if (autoplay != null) e.putBoolean("autoplayEnabled", autoplay);
+        String preset = call.getString("autoplayPreset");
+        if (preset != null) e.putString("autoplayPreset", preset);
+        e.apply();
+        main.post(() -> {
+            QueueController c = PlaybackService.controller();
+            if (c != null) {
+                c.autoplayEnabled = NativePlatform.Prefs.of(getContext()).getBoolean("autoplayEnabled", true);
+                c.autoplayPreset = NativePlatform.Prefs.of(getContext()).getString("autoplayPreset", "panda");
+            }
+        });
+        call.resolve();
+    }
+
+    /** What's downloaded, for local playback and Android Auto's offline root. */
+    @PluginMethod
+    public void setOfflineCatalog(PluginCall call) {
+        String json = call.getString("catalog", "{}");
+        with(call, c -> {
+            NativePlatform.Catalog catalog = PlaybackService.catalog();
+            if (catalog != null) catalog.replace(json);
         });
     }
 
-    private final java.util.concurrent.ExecutorService artworkIo = java.util.concurrent.Executors.newSingleThreadExecutor();
-
-    /** Server artwork needs the sign-in, which Media3's own bitmap loader doesn't have: fetch it here. */
-    private void loadArtwork(String artworkUrl, String trackId, String url, MediaMetadata.Builder meta, int forGen) {
-        android.content.Context ctx = getContext();
-        artworkIo.execute(() -> {
-            byte[] bytes = null;
-            java.net.HttpURLConnection c = null;
-            try {
-                c = AuthHttp.open(ctx, artworkUrl, java.util.Collections.<String, String>emptyMap(), 10_000, 15_000);
-                if (c.getResponseCode() == 200) {
-                    try (java.io.InputStream in = c.getInputStream(); java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
-                        byte[] buf = new byte[16384];
-                        int n;
-                        while ((n = in.read(buf)) > 0 && out.size() < 4 << 20) out.write(buf, 0, n);
-                        bytes = out.toByteArray();
-                    }
-                }
-            } catch (java.io.IOException ignored) {
-                // no artwork: the lock screen shows the app icon
-            } finally {
-                if (c != null) c.disconnect();
-            }
-            if (bytes == null || bytes.length == 0) return;
-            byte[] art = bytes;
-            main.post(() -> {
-                ExoPlayer player = PlaybackService.player();
-                if (player == null || gen != forGen) return; // a newer song was loaded meanwhile
-                MediaItem current = player.getCurrentMediaItem();
-                if (current == null || !trackId.equals(current.mediaId)) return;
-                MediaItem withArt = new MediaItem.Builder().setMediaId(trackId).setUri(Uri.parse(url))
-                    .setMediaMetadata(meta.setArtworkData(art, MediaMetadata.PICTURE_TYPE_FRONT_COVER).build()).build();
-                player.replaceMediaItem(player.getCurrentMediaItemIndex(), withArt);
-            });
-        });
+    /** 5.0 → 5.0.1: adopt the web app's saved queue once, if the native queue is empty and the snapshot is valid. */
+    @PluginMethod
+    public void migrate(PluginCall call) {
+        Map<String, Object> web = Json.map(Json.tryParse(call.getString("snapshot", "null")));
+        main.post(() -> PlaybackService.whenReady(getContext(), () -> {
+            QueueController c = PlaybackService.controller();
+            attach(c);
+            JSObject o = new JSObject();
+            o.put("migrated", c.migrateFromWeb(web));
+            call.resolve(o);
+        }));
     }
 }

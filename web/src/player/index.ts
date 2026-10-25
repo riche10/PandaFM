@@ -1,9 +1,10 @@
 import { useStore } from 'zustand'
 import type { CoverSize } from '../api/library'
-import { artworkSrc, nativeArtworkUri, onReconnect, resolveSource } from '../offline'
+import {artworkSrc, onReconnect, resolveSource } from '../offline'
 import { platform } from '../platform/state'
 import { createPlaybackEngine, usesBrowserMediaSession } from './engineSelect'
-import { NativePlaybackEngine } from './nativeEngine'
+import { createNativeQueueStore } from './nativeStore'
+import { autoplaySettings } from './autoplay'
 import { authFetch } from '../api/auth'
 import { apiUrl } from '../api/client'
 import { radioApi } from '../api/radio'
@@ -21,7 +22,9 @@ import { parseSnapshot, SESSION_KEY, snapshotOf } from './session'
 import { createPlayerStore, currentTrack, hasNext, type PlaybackReport, type PlayerStoreState } from './store'
 
 // The app's one player: one engine, one store, created once.
-export const audioEngine = createPlaybackEngine(platform, { artworkFor: (track) => nativeArtworkUri(track.cover_art_id) })
+export const audioEngine = createPlaybackEngine()
+/** Android (5.0.1): the native playback service owns the queue; this app mirrors it. */
+const nativeQueue = platform.kind === 'android' ? platform.player : null
 
 const VOLUME_KEY = 'pandafm.volume'
 
@@ -71,7 +74,9 @@ function toEvent(report: PlaybackReport): ListeningEvent {
   }
 }
 
-export const playerStore = createPlayerStore({
+export const playerStore = nativeQueue
+  ? createNativeQueueStore(nativeQueue, savedVolume())
+  : createPlayerStore({
   engine: audioEngine,
   streamUrl: resolveSource, // a downloaded file when there is one, else the server stream
   explainError: explainPlaybackError,
@@ -82,7 +87,17 @@ export const playerStore = createPlayerStore({
 })
 
 // 5.0: the playback session survives a restart on this device (restored paused; never plays by itself).
-{
+// Browsers only: on Android the playback service keeps the queue (a 5.0 snapshot is migrated once).
+if (nativeQueue) {
+  const MIGRATED = 'pandafm.session.native-migrated'
+  try {
+    const saved = localStorage.getItem(MIGRATED) ? null : parseSnapshot(localStorage.getItem(SESSION_KEY))
+    if (saved) void nativeQueue.migrate({ snapshot: JSON.stringify(saved) }).catch(() => undefined)
+    localStorage.setItem(MIGRATED, '1')
+  } catch {
+    // storage unavailable: nothing to migrate
+  }
+} else {
   const saved = typeof localStorage === 'undefined' ? null : parseSnapshot(localStorage.getItem(SESSION_KEY))
   if (saved) {
     playerStore.getState().restore(saved)
@@ -127,7 +142,7 @@ if (typeof document !== 'undefined') {
 }
 
 /** Panda Radio, feeding the shared queue above. */
-export const radio = createRadioController({ api: radioApi, store: playerStore, reporter, onEnd: () => autoplay.suppress() })
+export const radio = createRadioController({ api: radioApi, store: playerStore, reporter, onEnd: () => autoplay.suppress(), nativeRefill: !!nativeQueue })
 
 /** Autoplay: a finished song, album or playlist carries on as Panda Radio (Settings › Playback). */
 export const autoplay = createAutoplay({ store: playerStore, radio, online: isOnline, notify: toast })
@@ -164,18 +179,15 @@ if (usesBrowserMediaSession(platform) && typeof navigator !== 'undefined' && 'me
   )
 }
 
-// Android: lock screen, notification, Bluetooth and headset buttons go through the
-// same store actions as the app's own buttons, so listening events, the queue,
-// radio and Autoplay behave identically.
-if (audioEngine instanceof NativePlaybackEngine) {
-  audioEngine.onRemote((command) => {
-    const s = playerStore.getState()
-    if (command.action === 'play') s.play()
-    else if (command.action === 'pause') s.pause()
-    else if (command.action === 'next') s.next()
-    else if (command.action === 'previous') s.previous()
-    else if (command.action === 'seek' && command.position != null) s.seek(command.position)
-  })
+// Android: lock screen, notification, Bluetooth, headsets and Android Auto act on the
+// native queue directly (no JavaScript involved); this app sees the result in snapshots.
+if (nativeQueue) {
+  const sync = () => {
+    const a = autoplaySettings.getState()
+    void nativeQueue.setPreferences({ autoplayEnabled: a.enabled, autoplayPreset: a.preset }).catch(() => undefined)
+  }
+  sync()
+  autoplaySettings.subscribe(sync)
 }
 
 /** Player actions for event handlers. Stable functions, safe to call anywhere. */

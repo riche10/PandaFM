@@ -41,10 +41,22 @@
             android:name=".PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
+            <!-- One service for the phone, the lock screen, Bluetooth and Android Auto (5.0.1). -->
             <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <!-- Cover art for Android Auto's lists. Not exported: each URI is granted to the car host that asked. -->
+        <provider
+            android:name=".ArtworkProvider"
+            android:authorities="app.pandafm.client.artwork"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <!-- Android Auto: a standard media app (the car shows its own driver-safe UI). -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
         <!-- Keeps downloads running in the background (Android 14+: dataSync type). -->
         <service
             android:name=".DownloadService"

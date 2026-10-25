@@ -221,3 +221,15 @@ def test_tokens_never_appear_in_urls(fresh):
         assert secret not in text_out
     assert all("token" not in item["url"] for item in manifest.json()["items"])
     assert event  # (fixture helper import kept for parity with other DB tests)
+
+
+def test_simultaneous_refreshes_rotate_once(fresh):
+    from concurrent.futures import ThreadPoolExecutor
+
+    c, library, _ = fresh
+    setup(c)
+    d = device(c)
+    clients = [anon(library), anon(library)]
+    with ThreadPoolExecutor(2) as pool:
+        codes = sorted(pool.map(lambda cl: cl.post("/api/auth/refresh", json={"refresh_token": d["refresh_token"]}).status_code, clients))
+    assert codes == [200, 401]  # never two winners with one refresh token

@@ -39,34 +39,44 @@ export interface PandaStoragePlugin {
   addListener(event: 'network', listener: (state: { connected: boolean; metered: boolean; wifi: boolean }) => void): Promise<{ remove: () => Promise<void> }>
 }
 
-/** One native player event. `gen` ties it to the load() that caused it, so stale events are ignored. */
-export interface NativePlayerEvent {
-  gen: number
-  type: 'loading' | 'playing' | 'paused' | 'time' | 'ended' | 'error'
-  position?: number
-  duration?: number | null
-  kind?: 'network' | 'decode' | 'unsupported' | 'missing' | 'unknown'
-  reason?: string // e.g. 'timeout', 'http_status', 'cleartext', 'not_found', 'no_permission'
-  code?: string // Media3 error code name, for diagnostics only
-}
-
-/** Lock screen, notification, Bluetooth and headset buttons, handed to the shared queue. */
-export interface NativeRemoteCommand {
-  action: 'play' | 'pause' | 'next' | 'previous' | 'seek'
-  position?: number
-}
-
-/** The Android-only native player (web/android/.../PandaPlayerPlugin.java): Media3 / ExoPlayer. */
+/**
+ * The native queue (web/android/.../PandaPlayerPlugin.java, 5.0.1). On Android the
+ * playback service owns the queue; the app sends commands and mirrors the snapshots
+ * it publishes. Complex arguments travel as JSON strings.
+ */
 export interface PandaPlayerPlugin {
-  load(options: { gen: number; url: string; trackId: string; title: string; artist: string; album: string | null; artworkUrl: string | null; durationSeconds: number | null }): Promise<void>
-  play(options: { gen: number }): Promise<void>
+  getSnapshot(): Promise<{ snapshot: string }>
+  replaceQueue(options: { tracks: string; startIndex: number; source: string; shuffle: boolean; play: boolean }): Promise<void>
+  applyRadio(options: { picks: string; source: string; seedTrack: string; keepCurrent: boolean; autoplay: boolean }): Promise<void>
+  startRadio(options: { preset: string; seedKind?: string; seedId?: string }): Promise<void>
+  playNext(options: { tracks: string }): Promise<void>
+  addToQueue(options: { tracks: string }): Promise<void>
+  remove(options: { uid: string }): Promise<void>
+  move(options: { uid: string; direction: number }): Promise<void>
+  clear(options: { which: string }): Promise<void>
+  jumpTo(options: { uid: string }): Promise<void>
+  toggleShuffle(): Promise<void>
+  cycleRepeat(): Promise<void>
+  endRadio(): Promise<void>
+  play(): Promise<void>
   pause(): Promise<void>
+  next(): Promise<void>
+  previous(): Promise<void>
   seek(options: { position: number }): Promise<void>
-  stop(): Promise<void>
   setVolume(options: { volume: number }): Promise<void>
-  getState(): Promise<{ engine: string; isPlaying: boolean; position: number; duration: number | null; uriScheme: string | null; mediaId: string | null }>
-  addListener(event: 'state', listener: (event: NativePlayerEvent) => void): Promise<{ remove: () => Promise<void> }>
-  addListener(event: 'remote', listener: (command: NativeRemoteCommand) => void): Promise<{ remove: () => Promise<void> }>
+  setPreferences(options: { streamQuality?: string; autoplayEnabled?: boolean; autoplayPreset?: string }): Promise<void>
+  setOfflineCatalog(options: { catalog: string }): Promise<void>
+  migrate(options: { snapshot: string }): Promise<{ migrated: boolean }>
+  addListener(event: 'queue', listener: (e: { snapshot: string; reason: string }) => void): Promise<{ remove: () => Promise<void> }>
+  addListener(event: 'state', listener: (e: NativeState) => void): Promise<{ remove: () => Promise<void> }>
+}
+
+export interface NativeState {
+  status: string
+  positionMs: number
+  durationMs: number
+  error: string | null
+  gen: number
 }
 
 /** Android sign-in (web/android/.../PandaAuthPlugin.java). The refresh token stays native, Keystore-encrypted. */

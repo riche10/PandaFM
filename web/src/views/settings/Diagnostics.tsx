@@ -6,9 +6,12 @@ import { isNative, platform } from '../../platform/state'
 /** What's actually playing, and how: for troubleshooting. Never shows credentials. */
 export function Diagnostics() {
   const track = useCurrentTrack()
-  const [engine, setEngine] = useState(isNative() && platform.player ? 'Checking…' : 'HTML audio (browser)')
+  const [engine, setEngine] = useState(isNative() && platform.player ? 'Checking…' : 'HTML audio (browser), web queue')
   useEffect(() => {
-    platform.player?.getState().then((s) => setEngine(s.engine), () => setEngine('Native player unavailable'))
+    platform.player?.getSnapshot().then((r) => {
+      const s = JSON.parse(r.snapshot) as { items: unknown[]; status: string }
+      setEngine(`Media3, native queue (${s.items.length} songs, ${s.status})`)
+    }, () => setEngine('Native player unavailable'))
   }, [])
   const source = track ? resolveSource(track.id) : null
   const scheme = source ? (source.match(/^([a-z]+):/i)?.[1] ?? 'relative') : null
