@@ -95,6 +95,13 @@ async def start_radio(body: RadioStart, request: Request, db: SessionDep, user_i
         station_id = station.id
     else:
         chosen = await presets.resolve(db, user_id, body.preset or body.mode) if (body.preset or body.mode in MODES) else None
+        if chosen and seed and seed.kind == "genre":  # "Rock Radio", or "Rock · Familiar" with another preset
+            from app.services import explore
+
+            entry = (await explore.index(db)).get(seed.id)
+            if entry:
+                label = f"{entry.name} Radio" if chosen.base == "panda" and chosen.preset_id is None else f"{entry.name} · {chosen.name}"
+                chosen = presets.Resolved(chosen.base, label, chosen.preset_id, chosen.controls)
     if chosen is None:
         raise radio.RadioError(f"Unknown radio mode “{body.mode}”.")
     session, seed_track, picks = await radio.start(

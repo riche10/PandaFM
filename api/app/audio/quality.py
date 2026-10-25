@@ -98,3 +98,21 @@ def describe(facts: AudioFacts) -> dict:
         "short": short,  # "24/96"
         "bitrate_kbps": facts.bitrate_kbps,
     }
+
+
+def sql_lossless(alias: str = "t") -> tuple[str, dict]:
+    """A WHERE fragment matching is_lossless() exactly (same constants)."""
+    return (
+        f"(lower({alias}.suffix) = ANY(CAST(:q_lossless AS text[])) OR "
+        f"(lower({alias}.suffix) = ANY(CAST(:q_ambiguous AS text[])) AND coalesce({alias}.bit_depth, 0) > 0))",
+        {"q_lossless": sorted(LOSSLESS_SUFFIXES), "q_ambiguous": sorted(AMBIGUOUS_SUFFIXES)},
+    )
+
+
+def sql_hi_res(alias: str = "t") -> tuple[str, dict]:
+    """A WHERE fragment matching is_hi_res(): known lossless AND (>16-bit OR >48 kHz)."""
+    lossless, params = sql_lossless(alias)
+    return (
+        f"({lossless} AND (coalesce({alias}.bit_depth, 0) >= :q_bits OR coalesce({alias}.sample_rate, 0) >= :q_rate))",
+        {**params, "q_bits": HI_RES_MIN_BITS, "q_rate": HI_RES_MIN_RATE},
+    )

@@ -63,6 +63,14 @@ async def resolve_seed(db: AsyncSession, kind: str | None, navidrome_id: str | N
         name = rows[0].album if kind == "album" else rows[0].artist
         seed = Seed(name=name, artist_id=rows[0].artist_id, album_id=rows[0].album_id if kind == "album" else None, genres=genres, year=min(years) if years else None, anchor=canonical(genres))
         return seed, {"kind": kind, "id": navidrome_id, "name": name}, None
+    if kind == "genre":
+        from app.services import explore
+
+        entry = (await explore.index(db)).get(navidrome_id or "")
+        if entry is None:
+            raise RadioError("There’s no music with that genre in your library.")
+        raws = frozenset(entry.raws)
+        return Seed(name=entry.name, genres=raws, anchor=frozenset({entry.key}), strict=True), {"kind": "genre", "id": entry.key, "name": entry.name, "genres": sorted(raws)}, None
     if kind == "station":
         station = await _station(db, user_id, navidrome_id)
         genres = frozenset(station.genres)

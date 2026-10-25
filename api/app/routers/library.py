@@ -5,11 +5,13 @@ PandaFM model. Navidrome failures are turned into HTTP errors by
 app.errors, so no route needs its own try/except.
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.deps import ItemId, NavidromeDep
+from app.deps import SessionDep, ItemId, NavidromeDep
+from app.services import explore
 from app.schemas.library import (
     Album,
     AlbumList,
@@ -23,12 +25,14 @@ from app.schemas.library import (
     TrackPage,
 )
 
+log = logging.getLogger(__name__)
 router = APIRouter(tags=["library"])
 
 
 @router.get("/search", response_model=SearchResults)
 async def search(
     navidrome: NavidromeDep,
+    db: SessionDep,
     q: Annotated[str, Query(max_length=200, description="Words to search for")] = "",
     limit: Annotated[int, Query(ge=1, le=50, description="Maximum songs to return")] = 20,
 ) -> SearchResults:
@@ -36,7 +40,12 @@ async def search(
     if not query:
         # Navidrome treats an empty query as "everything". PandaFM treats it as nothing.
         return SearchResults(query="")
-    return await navidrome.search(query, track_count=limit)
+    results = await navidrome.search(query, track_count=limit)
+    try:  # "pop punk" finds the genre too; search itself never depends on the cache
+        results.genres = [explore.summary(g) for g in await explore.find_genres(db, query)]
+    except Exception:  # noqa: BLE001
+        log.warning("Genre search unavailable (database)", exc_info=True)
+    return results
 
 
 @router.get("/albums", response_model=AlbumList)
@@ -66,8 +75,13 @@ async def get_artist_tracks(artist_id: ItemId, navidrome: NavidromeDep) -> Track
 
 
 @router.get("/artists/{artist_id}", response_model=Artist)
-async def get_artist(artist_id: ItemId, navidrome: NavidromeDep) -> Artist:
-    return await navidrome.get_artist(artist_id)
+async def get_artist(artist_id: ItemId, navidrome: NavidromeDep, db: SessionDep) -> Artist:
+    artist = await navidrome.get_artist(artist_id)
+    try:  # dominant genres, from the synced cache; the page works without them
+        artist.genres = await explore.artist_genres(db, artist_id)
+    except Exception:  # noqa: BLE001
+        log.warning("Artist genres unavailable (database)", exc_info=True)
+    return artist
 
 
 @router.get("/tracks", response_model=TrackPage)

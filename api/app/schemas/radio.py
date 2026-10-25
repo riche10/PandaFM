@@ -15,7 +15,7 @@ class RadioMode(BaseModel):
 
 
 class RadioSeedIn(BaseModel):
-    kind: Literal["track", "album", "artist", "station"]
+    kind: Literal["track", "album", "artist", "station", "genre"]
     id: str = Field(min_length=1, max_length=200)
 
 
