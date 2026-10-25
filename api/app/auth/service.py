@@ -125,9 +125,20 @@ async def refresh(db: AsyncSession, refresh_token: str) -> Issued | None:
     if not _live(s, t):
         return None
     issued = Issued(s, new_token(), access=new_token(), access_expires=t + ACCESS_TTL)
-    s.token_hash, s.access_hash, s.access_expires_at = digest(issued.token), digest(issued.access), issued.access_expires
-    s.last_seen_at, s.expires_at = t, t + DEVICE_IDLE
+    # Atomic rotation: only the request still holding the current refresh token wins; a
+    # simultaneous second refresh with the same token finds nothing to update (5.0.1).
+    won = await db.execute(
+        update(AuthSession)
+        .where(AuthSession.id == s.id, AuthSession.token_hash == digest(refresh_token), AuthSession.revoked_at.is_(None))
+        .values(token_hash=digest(issued.token), access_hash=digest(issued.access), access_expires_at=issued.access_expires,
+                last_seen_at=t, expires_at=t + DEVICE_IDLE)
+        .returning(AuthSession.id)
+    )
+    if won.first() is None:
+        await db.rollback()
+        return None
     await db.commit()
+    await db.refresh(s)
     return issued
 
 

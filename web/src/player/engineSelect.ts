@@ -1,12 +1,12 @@
-import type { Track } from '../api/library'
-import type { PlatformState } from '../platform/state'
 import { AudioEngine } from './engine.ts'
-import { NativePlaybackEngine } from './nativeEngine.ts'
+import type { PlatformState } from '../platform/state'
 import type { PlaybackEngine } from './types'
 
-/** The platform boundary: browsers play through <audio>; the Android app through Media3. */
-export function createPlaybackEngine(p: Pick<PlatformState, 'kind' | 'player'>, deps: { artworkFor: (track: Track) => string | null }): PlaybackEngine {
-  if (p.kind === 'android' && p.player) return new NativePlaybackEngine(p.player, deps)
+/**
+ * Browsers play through <audio> with the web queue. The Android app doesn't use
+ * an engine here: the native playback service owns its queue (player/nativeStore.ts).
+ */
+export function createPlaybackEngine(): PlaybackEngine {
   return new AudioEngine()
 }
 

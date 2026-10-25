@@ -54,6 +54,7 @@ final class AuthCore {
     private final Clock clock;
     private String access;
     private long accessExpiresMs;
+    private long refreshedAtMs = -1;
 
     AuthCore(Http http, Vault vault, Clock clock) {
         this.http = http;
@@ -108,21 +109,28 @@ final class AuthCore {
      * Null when signed out or revoked. A server that can't be reached throws
      * IOException and keeps the sign-in: offline is not signed out.
      */
-    synchronized String accessToken(boolean force) throws IOException {
-        if (!signedIn()) return null;
-        if (!force && access != null && clock.nowMs() < accessExpiresMs - REFRESH_MARGIN_MS) return access;
-        Response r = http.post(server() + "/api/auth/refresh", "{\"refresh_token\":" + MiniJson.quote(vault.get("refresh")) + "}", null);
-        if (r.code == 401) { // this device was signed out (revoked, password changed, expired)
-            forget();
-            return null;
+    String accessToken(boolean force) throws IOException {
+        long asked = clock.nowMs();
+        synchronized (this) {
+            if (!signedIn()) return null;
+            // Single flight: callers that waited while another refresh ran share its result
+            // instead of rotating the refresh token again (Media3, artwork, downloads, Android Auto).
+            if (force && access != null && refreshedAtMs >= asked) return access;
+            if (!force && access != null && clock.nowMs() < accessExpiresMs - REFRESH_MARGIN_MS) return access;
+            Response r = http.post(server() + "/api/auth/refresh", "{\"refresh_token\":" + MiniJson.quote(vault.get("refresh")) + "}", null);
+            if (r.code == 401) { // this device was signed out (revoked, password changed, expired)
+                forget();
+                return null;
+            }
+            if (r.code != 200) throw new IOException("PandaFM couldn’t refresh the sign-in (HTTP " + r.code + ")");
+            try {
+                keep(server(), r);
+            } catch (AuthException e) {
+                throw new IOException(e.getMessage());
+            }
+            refreshedAtMs = clock.nowMs();
+            return access;
         }
-        if (r.code != 200) throw new IOException("PandaFM couldn’t refresh the sign-in (HTTP " + r.code + ")");
-        try {
-            keep(server(), r);
-        } catch (AuthException e) {
-            throw new IOException(e.getMessage());
-        }
-        return access;
     }
 
     /** The access token was refused: the next request refreshes first. */

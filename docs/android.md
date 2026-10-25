@@ -174,20 +174,24 @@ The app plays music natively with **AndroidX Media3 / ExoPlayer 1.11.1**, not
 in the WebView. Browsers keep using `<audio>`; the choice is made once, at the
 platform boundary (`web/src/player/engineSelect.ts`).
 
-- **The shared queue stays in charge.** The web app's queue, Panda Radio and
-  Autoplay decide every song. The native player (`PandaPlayerPlugin` →
-  `PlaybackService`) plays one song at a time and reports what happens. Each
-  load has a generation number, so late events from a previous song are
-  ignored, and a song completes once however often Android reports it.
-- **Background playback** lives in a Media3 `MediaSessionService`, not in the
-  Activity: music continues with the screen locked or another app in front.
-  The WebView's renderer is kept at important priority so the queue can move
-  on to the next song in the background.
+- **The native queue is in charge (5.0.1).** On Android the playback service
+  (`PlaybackService`, a Media3 `MediaLibraryService`) owns the queue
+  (`NativeQueue`, driven by `QueueController`). The app's screens are a
+  synchronised view: they send commands (play this album, Play next, remove,
+  move, shuffle, repeat…) and mirror the snapshots the service publishes. In
+  browsers nothing changed: the web queue is in charge there.
+- **Background playback without the app.** Songs advance, Panda Radio refills
+  and Autoplay continues inside the service, so swiping PandaFM away, a
+  destroyed Activity, or Android Auto starting the service on its own doesn't
+  stop the queue. Music that is playing keeps going; a paused or empty player
+  lets the service stop. Listening history is reported by the service too.
+- **What plays next vs. how it plays.** `QueueController` decides what plays;
+  `ExoEngine` plays one song. Each load has a generation number, so a late
+  "song ended" after you pressed Next can't advance the queue twice. (This
+  split is what PandaFM 5.1's two decks will build on.)
 - **Media controls** (lock screen, notification, Bluetooth, headsets, Walkman
-  buttons) use the one native MediaSession; the browser Media Session is not
-  used in the app. Play, pause and seek act at once and are recorded like the
-  app's own buttons; next and previous go to the shared queue. Audio focus and
-  "headphones unplugged" use Media3's standard handling.
+  buttons, the car) all go through `QueuePlayer` straight to the native queue.
+  Audio focus and "headphones unplugged" use Media3's standard handling.
 - **Sources:** streams are the normal `…/api/tracks/{id}/stream` URLs (PandaFM
   stays the proxy, with Range requests for seeking). Downloads are played
   straight from their `content://` URI in your PandaFM folder, with no copies.
@@ -296,4 +300,107 @@ server, **Set up PandaFM** with the administrator's setup token).
 - `adb logcat -s PandaFM.Auth PandaFM.Download` shows sign-in and download
   events without passwords or tokens.
 
-Android Auto and native queue ownership are planned for the next release.
+
+## Queue persistence (5.0.1)
+
+The service saves its queue to `files/queue.json` (written atomically: a
+temporary file, then a rename), after every change and every 10 seconds while
+playing: the songs (PandaFM's own track records, at most 500 around the
+current one), the current song, the source (album, playlist, radio, station…),
+shuffle, repeat, the radio session and the position. It never contains URLs,
+tokens or artwork. After a restart the queue comes back **paused** and Play
+resumes where it was; nothing ever plays by itself after a cold start. A
+corrupt or unknown file is ignored (the queue starts empty). If the radio
+session has ended on the server, its songs stay and the radio link is
+dropped. Streams are resolved when a song loads, so the current network and
+streaming quality always apply.
+
+Upgrading from 5.0: the first time 5.0.1 opens, a valid queue the 5.0 app had
+saved is moved into the service once (only if the service's queue is empty).
+Browser queues are untouched.
+
+## Android Auto
+
+PandaFM appears in Android Auto as a media app with the car's own driver-safe
+browsing UI (no custom screens). Sign in and choose the server on the phone;
+the car never asks for a password.
+
+```
+PandaFM
+├── Recently played
+├── Favorites
+├── Panda Radio            Panda, Familiar, Discovery, Study, Chaos, your Radio Styles
+├── My Stations
+├── Playlists → playlist → songs
+├── Genres → genre → Start <Genre> Radio · Songs · Albums
+├── Albums → album → songs        (pages from the server)
+├── Artists → artist → albums
+├── Smart Collections      Recently Added, Unplayed, Favorites, Rediscover, Lossless, Hi-Res
+└── Downloaded             Albums, Playlists, Songs (always on the phone)
+```
+
+- **Playing** a song plays its album, playlist or list from that song; playing
+  an album, playlist, collection or Favorites plays all of it. Stations, radio
+  styles and genres start Panda Radio on the server (the same semantics as on
+  the phone); the service keeps it topped up.
+- **Search and voice** use PandaFM's search ("Play Daft Punk", "Play Random
+  Access Memories", "Play my workout playlist", "Play Pop Punk", "Play my Pop
+  Punk Drive station"). Saying "playlist" or "station" prefers those; otherwise
+  an exact song, artist, album, playlist, genre (its radio) or station, then
+  the broader search.
+- **Not signed in** (or this phone was signed out): the car shows only "Open
+  PandaFM on your phone to sign in." and your downloads; no library details.
+- **No connection:** the root becomes Downloaded and Resume queue. Downloaded
+  songs always play from the phone, never streamed.
+- **Streaming quality** follows Settings › Playback (Auto: original on Wi-Fi,
+  AAC ~256 kbps on mobile data), decided per song, so a network change applies
+  from the next song without restarting the queue.
+- **Artwork** in the car's lists comes from PandaFM's own content provider,
+  granted only to the car app that asked; no tokens appear in any address.
+
+### Testing with the Desktop Head Unit (DHU)
+
+1. Install the Android SDK's **Android Auto Desktop Head Unit Emulator** (SDK
+   Manager › SDK Tools), then on the phone install Android Auto.
+2. On the phone: Android Auto settings → tap **Version** ten times → **Developer
+   settings** → **Start head unit server**. Also allow **Unknown sources** there
+   (for a locally built APK).
+3. Connect the phone by USB and run `adb forward tcp:5277 tcp:5277`, then start
+   `desktop-head-unit` from `<sdk>/extras/google/auto/`.
+4. In the DHU, open the media apps launcher: **PandaFM** is listed. Browse the
+   root, open Playlists, play one; check title, artist, artwork, next/previous.
+5. Voice: press the DHU's microphone (or type `mic` commands in its console) and
+   say "Play <artist>".
+6. Offline: switch the phone to airplane mode (keep USB), reopen PandaFM in the
+   DHU: Downloaded and Resume queue only.
+
+No Play Store publication is needed for this.
+
+### Manual acceptance checklist
+
+Online
+1. Sign in to PandaFM on the phone. Connect Android Auto.
+2. PandaFM appears as a media app; browse the root.
+3. Playlists → start a playlist; title, artist and artwork appear.
+4. Next and previous work. Lock the phone and swipe PandaFM away.
+5. The song ends and the next one plays (no app screen).
+6. Genres → start a Genre Radio. My Stations → start a station.
+7. Search for an artist, an album and a song.
+
+Offline
+1. Download a playlist on the phone. Turn the network off.
+2. Connect Android Auto: Downloaded is offered; play the playlist.
+3. With the app swiped away, the next downloaded song plays.
+
+Sign-in
+1. From a browser, Settings › Account & devices → sign out the phone.
+2. Android Auto's library shows only "Open PandaFM on your phone to sign in."
+3. Downloaded music is still there; the phone asks you to sign in.
+
+### Limitations
+
+- The car's "up next" list shows the current song (PandaFM's queue is in the
+  service, not in Media3's playlist); next/previous always work.
+- Songs play one at a time (no gapless join yet; that arrives with Panda Mix).
+- Car artwork for downloaded songs needs the server once (it's cached after).
+- Voice requests depend on what Google Assistant passes to media apps.
