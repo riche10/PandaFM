@@ -13,7 +13,7 @@ export function RadioCards() {
         <h2 id="radio-title" className="section-title">Panda Radio</h2>
       </div>
       {error && <p className="hint">{error}</p>}
-      <ul className="radio-cards">
+      <ul className="shelf-row radio-cards">
         {(presets ?? []).map((p) => {
           const on = active?.presetId === p.id
           return (
