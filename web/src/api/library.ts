@@ -1,3 +1,5 @@
+import { currentStreamQuality } from '../platform/network.ts'
+import { withQuality } from '../player/streamQuality.ts'
 import { apiGet, apiSend, apiUrl } from './client'
 
 // Mirrors api/app/schemas/library.py. Ids are Navidrome ids in Stage 2.
@@ -191,4 +193,4 @@ export const coverUrl = (coverArtId: string, size: CoverSize) =>
   apiUrl(`/covers/${id(coverArtId)}?size=${size}`)
 
 /** Same-origin audio URL. Navidrome credentials are added server-side. */
-export const streamUrl = (trackId: string) => apiUrl(`/tracks/${id(trackId)}/stream`)
+export const streamUrl = (trackId: string) => withQuality(apiUrl(`/tracks/${id(trackId)}/stream`), currentStreamQuality())

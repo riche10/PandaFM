@@ -7,8 +7,10 @@ import androidx.annotation.OptIn;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.util.UnstableApi;
+import java.util.Collections;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.session.MediaSession;
@@ -59,8 +61,16 @@ public class PlaybackService extends MediaSessionService {
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(30_000)
             .setAllowCrossProtocolRedirects(false);
+        // 5.0: PandaFM streams carry the device's access token as a header (never in the URL), and
+        // only to the PandaFM server's own origin. Same-protocol redirects are followed by Android's
+        // HTTP stack, which drops Authorization when the host changes; cross-protocol ones are refused.
+        Context app = getApplicationContext();
+        ResolvingDataSource.Factory signedIn = new ResolvingDataSource.Factory(http, spec -> {
+            String authorization = AuthStore.get(app).authorizationFor(spec.uri.toString());
+            return authorization == null ? spec : spec.withAdditionalHeaders(Collections.singletonMap("Authorization", authorization));
+        });
         // http(s) streams from the PandaFM server, content:// downloads in the chosen folder.
-        DefaultDataSource.Factory sources = new DefaultDataSource.Factory(this, http);
+        DefaultDataSource.Factory sources = new DefaultDataSource.Factory(this, signedIn);
         AudioAttributes music = new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build();
         player = new ExoPlayer.Builder(this)
             .setAudioAttributes(music, /* handleAudioFocus= */ true) // standard focus: pause for calls, duck for navigation

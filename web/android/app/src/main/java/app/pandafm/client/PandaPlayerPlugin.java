@@ -172,12 +172,15 @@ public class PandaPlayerPlugin extends Plugin {
             .setArtist(call.getString("artist", ""))
             .setAlbumTitle(call.getString("album", null));
         String artwork = call.getString("artworkUrl");
-        if (artwork != null && PlaybackErrors.allowedSource(artwork)) meta.setArtworkUri(Uri.parse(artwork)); // lock screen loads it natively
+        String trackId = call.getString("trackId", "");
+        boolean signedArtwork = artwork != null && artwork.startsWith("http") && PlaybackErrors.allowedSource(artwork);
+        if (artwork != null && !signedArtwork && PlaybackErrors.allowedSource(artwork)) meta.setArtworkUri(Uri.parse(artwork)); // saved artwork (content://)
         MediaItem item = new MediaItem.Builder()
-            .setMediaId(call.getString("trackId", ""))
+            .setMediaId(trackId)
             .setUri(Uri.parse(url))
             .setMediaMetadata(meta.build())
             .build();
+        if (signedArtwork) loadArtwork(artwork, trackId, url, meta, requested == null ? 0 : requested);
         withPlayer(call, player -> {
             gen = requested == null ? 0 : requested;
             endedSent = false;
@@ -248,6 +251,43 @@ public class PandaPlayerPlugin extends Plugin {
             MediaItem current = player.getCurrentMediaItem();
             o.put("mediaId", current == null ? null : current.mediaId);
             call.resolve(o);
+        });
+    }
+
+    private final java.util.concurrent.ExecutorService artworkIo = java.util.concurrent.Executors.newSingleThreadExecutor();
+
+    /** Server artwork needs the sign-in, which Media3's own bitmap loader doesn't have: fetch it here. */
+    private void loadArtwork(String artworkUrl, String trackId, String url, MediaMetadata.Builder meta, int forGen) {
+        android.content.Context ctx = getContext();
+        artworkIo.execute(() -> {
+            byte[] bytes = null;
+            java.net.HttpURLConnection c = null;
+            try {
+                c = AuthHttp.open(ctx, artworkUrl, java.util.Collections.<String, String>emptyMap(), 10_000, 15_000);
+                if (c.getResponseCode() == 200) {
+                    try (java.io.InputStream in = c.getInputStream(); java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while ((n = in.read(buf)) > 0 && out.size() < 4 << 20) out.write(buf, 0, n);
+                        bytes = out.toByteArray();
+                    }
+                }
+            } catch (java.io.IOException ignored) {
+                // no artwork: the lock screen shows the app icon
+            } finally {
+                if (c != null) c.disconnect();
+            }
+            if (bytes == null || bytes.length == 0) return;
+            byte[] art = bytes;
+            main.post(() -> {
+                ExoPlayer player = PlaybackService.player();
+                if (player == null || gen != forGen) return; // a newer song was loaded meanwhile
+                MediaItem current = player.getCurrentMediaItem();
+                if (current == null || !trackId.equals(current.mediaId)) return;
+                MediaItem withArt = new MediaItem.Builder().setMediaId(trackId).setUri(Uri.parse(url))
+                    .setMediaMetadata(meta.setArtworkData(art, MediaMetadata.PICTURE_TYPE_FRONT_COVER).build()).build();
+                player.replaceMediaItem(player.getCurrentMediaItemIndex(), withArt);
+            });
         });
     }
 }

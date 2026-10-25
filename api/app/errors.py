@@ -26,8 +26,8 @@ from app.navidrome.client import (
 log = logging.getLogger(__name__)
 
 
-def error_response(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"error": {"code": code, "message": message}})
+def error_response(status_code: int, code: str, message: str, headers: dict[str, str] | None = None) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"error": {"code": code, "message": message}}, headers=headers)
 
 
 async def navidrome_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -80,3 +80,14 @@ def register_error_handlers(app: FastAPI) -> None:
     from app.services.presets import PresetError
 
     app.add_exception_handler(PresetError, preset_error_handler)
+    from app.auth.guard import AuthError
+
+    async def auth_error_handler(request, exc: AuthError):
+        response = error_response(exc.status, exc.code, str(exc))
+        if exc.retry_after:
+            response.headers["Retry-After"] = str(exc.retry_after)
+        if exc.status == 401:
+            response.headers["WWW-Authenticate"] = 'Bearer realm="PandaFM"'
+        return response
+
+    app.add_exception_handler(AuthError, auth_error_handler)

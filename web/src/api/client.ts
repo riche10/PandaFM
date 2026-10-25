@@ -4,6 +4,7 @@
 // server. apiUrl() is the only place that decides.
 
 import { platform } from '../platform/state.ts'
+import { authFetch } from './auth.ts'
 
 export const apiUrl = (path: string) => `${platform.server}/api${path}`
 
@@ -39,7 +40,7 @@ export async function readApiError(response: Response): Promise<ApiError> {
 export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   let response: Response
   try {
-    response = await fetch(apiUrl(path), { signal, headers: { Accept: 'application/json' } })
+    response = await authFetch(apiUrl(path), { signal, headers: { Accept: 'application/json' } })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     throw new ApiError(0, 'The PandaFM server could not be reached.')
@@ -61,7 +62,7 @@ export async function apiSend<T = null>(
 ): Promise<T> {
   let response: Response
   try {
-    response = await fetch(apiUrl(path), {
+    response = await authFetch(apiUrl(path), {
       method,
       headers: body === undefined ? { Accept: 'application/json' } : { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),

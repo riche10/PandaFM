@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: the sign-in stays on this device (no cloud backup, no device-to-device transfer). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="pandafm.auth.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="pandafm.auth.xml" />
+    </device-transfer>
+</data-extraction-rules>

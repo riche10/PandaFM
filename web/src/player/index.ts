@@ -4,6 +4,7 @@ import { artworkSrc, nativeArtworkUri, onReconnect, resolveSource } from '../off
 import { platform } from '../platform/state'
 import { createPlaybackEngine, usesBrowserMediaSession } from './engineSelect'
 import { NativePlaybackEngine } from './nativeEngine'
+import { authFetch } from '../api/auth'
 import { apiUrl } from '../api/client'
 import { radioApi } from '../api/radio'
 import { createReporter, type ListeningEvent, snapshot } from './events'
@@ -15,6 +16,8 @@ import { uuid } from './uuid'
 import { explainPlaybackError } from './explain'
 import { connectMediaSession } from './mediaSession'
 import * as Q from './queue'
+import { apiGet } from '../api/client'
+import { parseSnapshot, SESSION_KEY, snapshotOf } from './session'
 import { createPlayerStore, currentTrack, hasNext, type PlaybackReport, type PlayerStoreState } from './store'
 
 // The app's one player: one engine, one store, created once.
@@ -36,7 +39,7 @@ const EVENTS_KEY = 'pandafm.pending-events'
 /** Listening events go to the API in batches; unsent ones survive a closed tab. */
 export const reporter = createReporter({
   send: async (events) => {
-    const response = await fetch(apiUrl('/events'), {
+    const response = await authFetch(apiUrl('/events'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ events }),
@@ -77,6 +80,41 @@ export const playerStore = createPlayerStore({
   newId: uuid,
   onQueueEnd: () => void autoplay.onQueueEnd(),
 })
+
+// 5.0: the playback session survives a restart on this device (restored paused; never plays by itself).
+{
+  const saved = typeof localStorage === 'undefined' ? null : parseSnapshot(localStorage.getItem(SESSION_KEY))
+  if (saved) {
+    playerStore.getState().restore(saved)
+    const radio = saved.source?.radio
+    if (radio?.sessionId) {
+      // Keep the songs; drop the radio link if that session has ended on the server.
+      apiGet(`/radio/sessions/${encodeURIComponent(radio.sessionId)}`).catch(() => {
+        const s = playerStore.getState()
+        if (s.source?.radio?.sessionId === radio.sessionId) playerStore.setState({ source: { ...s.source, radio: undefined } })
+      })
+    }
+  }
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let lastPositionSave = 0
+  playerStore.subscribe((state, prev) => {
+    if (typeof localStorage === 'undefined') return
+    const onlyPosition = state.items === prev.items && state.index === prev.index && state.source === prev.source && state.shuffle === prev.shuffle && state.repeat === prev.repeat
+    if (onlyPosition && Date.now() - lastPositionSave < 5000) return
+    if (timer) return // a write is already on its way (a throttle: playback's constant position updates mustn't postpone it forever)
+    timer = setTimeout(() => {
+      timer = null
+      lastPositionSave = Date.now()
+      const snap = snapshotOf(playerStore.getState())
+      try {
+        if (snap) localStorage.setItem(SESSION_KEY, JSON.stringify(snap))
+        else localStorage.removeItem(SESSION_KEY)
+      } catch {
+        // storage full: the session just won't survive a restart
+      }
+    }, 800)
+  })
+}
 
 // Listening while offline is buffered; send it the moment the server is reachable again.
 onReconnect(() => void reporter.flush())

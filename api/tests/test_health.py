@@ -9,6 +9,7 @@ from app.db import create_engine
 from app.deps import get_db_engine, get_navidrome
 from app.main import create_app
 from app.navidrome.client import NavidromeClient
+from tests.fakes import sign_in_without_db
 from tests.test_navidrome_client import PING_OK, failed
 
 # Port 1 on localhost refuses connections immediately: a "database is down" stand-in.
@@ -21,8 +22,10 @@ SETTINGS = Settings(
 )
 
 
-def client_with_navidrome(body: dict) -> TestClient:
-    app = create_app(SETTINGS)
+def client_with_navidrome(body: dict, signed_in: bool = True, settings: Settings = SETTINGS) -> TestClient:
+    app = create_app(settings)
+    if signed_in:  # the owner sees why something is down; anonymous callers only whether it is
+        sign_in_without_db(app)
     fake = NavidromeClient(
         "http://navidrome:4533",
         "panda",
@@ -55,9 +58,22 @@ def test_health_explains_bad_navidrome_credentials():
     assert "NAVIDROME_USER" in body["navidrome"]["detail"]
 
 
-def test_api_docs_schema_builds():
-    # /api/docs renders from this schema; a route FastAPI can't describe breaks it.
+def test_anonymous_health_says_whether_not_how():
+    with client_with_navidrome(failed(40, "Wrong username or password"), signed_in=False) as client:
+        body = client.get("/api/health").json()
+    assert body["navidrome"] == {"ok": False, "detail": None, "server_type": None, "server_version": None, "open_subsonic": None}
+    assert body["database"] == {"ok": False, "detail": None, "server_version": None}
+
+
+def test_api_docs_are_off_by_default_and_owner_only_when_on():
     with client_with_navidrome(PING_OK) as client:
+        assert client.get("/api/openapi.json").status_code == 404
+        assert client.get("/api/docs").status_code == 404
+    docs_on = SETTINGS.model_copy(update={"api_docs": True})
+    with client_with_navidrome(PING_OK, signed_in=False, settings=docs_on) as client:
+        assert client.get("/api/openapi.json").status_code == 401
+        assert client.get("/api/docs").status_code == 401
+    with client_with_navidrome(PING_OK, settings=docs_on) as client:
         response = client.get("/api/openapi.json")
-    assert response.status_code == 200
-    assert "/api/tracks/{track_id}/stream" in response.json()["paths"]
+        assert response.status_code == 200 and "/api/radio/stations" in response.json()["paths"]
+        assert client.get("/api/docs").status_code == 200

@@ -274,3 +274,26 @@ sources above 16-bit or 48 kHz.
 20. In the browser, Home › Recently played and /stats include those plays.
 21. Lock the screen: title, artist, artwork, play/pause, next/previous and seeking work, online and offline.
 22. Online: start Panda Radio from Home; it plays and steers as before.
+
+
+## Signing in (5.0)
+
+First run: **Server address → Test connection → Sign in** (or, on a brand-new
+server, **Set up PandaFM** with the administrator's setup token).
+
+- The app signs in as a *device*: it gets a refresh token and short-lived
+  access tokens. The refresh token is encrypted with an AES-GCM key kept in
+  the Android Keystore and is excluded from Android backups and
+  device-to-device transfers; access tokens stay in memory.
+- Native playback (Media3), lock-screen artwork and background downloads
+  authenticate by themselves (`AuthStore`), so they work without the app's
+  screen open. The token is sent only as an `Authorization` header and only to
+  your PandaFM server's own address; downloads follow redirects only within
+  that address, and Media3 never forwards it to another host.
+- If the session ends (signed out from Settings › Account & devices, password
+  changed), the app shows sign-in again. **Continue offline** keeps downloaded
+  music playable; downloads are never deleted by signing out.
+- `adb logcat -s PandaFM.Auth PandaFM.Download` shows sign-in and download
+  events without passwords or tokens.
+
+Android Auto and native queue ownership are planned for the next release.

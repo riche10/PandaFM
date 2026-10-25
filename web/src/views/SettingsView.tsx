@@ -10,6 +10,8 @@ import { ServerSetupView } from './ServerSetupView'
 import { AppearanceSettings } from './settings/AppearanceSettings'
 import { RadioSettings } from './settings/RadioSettings'
 import { Diagnostics } from './settings/Diagnostics'
+import { AccountSettings } from './settings/AccountSettings'
+import { StreamingQuality } from './settings/StreamingQuality'
 import { StorageLimit } from './settings/StorageLimit'
 import { useAutoplaySettings, autoplaySettings } from '../player/autoplay'
 import { usePresets } from '../library/presets'
@@ -57,16 +59,18 @@ export function SettingsView() {
       <PageHeader />
       <h1 className="page-title">Settings</h1>
       <nav className="settings-nav" aria-label="Settings sections">
-        {[['appearance', 'Appearance'], ['radio', 'Radio'], ['playback', 'Playback'], ...(isNative() ? [['offline', 'Offline']] : []), ['server', 'Server']].map(([id, label]) => (
+        {[['account', 'Account'], ['appearance', 'Appearance'], ['radio', 'Radio'], ['playback', 'Playback'], ...(isNative() ? [['offline', 'Offline']] : []), ['server', 'Server']].map(([id, label]) => (
           <button key={id} type="button" className="chip" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{label}</button>
         ))}
       </nav>
 
+      <AccountSettings />
       <AppearanceSettings />
       <RadioSettings />
 
       <section className="settings-block" id="playback">
         <h2 className="section-title">Playback</h2>
+        <StreamingQuality />
         <label className="check-option">
           <input type="checkbox" checked={autoplay.enabled} onChange={(e) => autoplaySettings.setState({ enabled: e.target.checked })} />
           Autoplay: continue with Panda Radio when my music ends

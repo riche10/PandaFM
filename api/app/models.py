@@ -45,7 +45,33 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(120))
     # Shared across devices: e.g. {"radio_names": {"study": "Lock In"}} (Stage 4.1).
     preferences: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    # 5.0: the owner's Argon2id password hash (None until setup).
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _now()
+
+
+class AuthSession(Base):
+    """A signed-in browser or device. Only token hashes are stored."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(16))  # browser | device
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # browser cookie, or device refresh token
+    access_hash: Mapped[str | None] = mapped_column(String(64), unique=True)  # device access token
+    access_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    csrf_token: Mapped[str | None] = mapped_column(String(64))
+    device_name: Mapped[str] = mapped_column(String(80))
+    platform: Mapped[str] = mapped_column(String(24))
+    user_agent: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = _now()
+    last_seen_at: Mapped[datetime] = _now()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (Index("ix_auth_sessions_user", "user_id"),)
 
 
 class Track(Base):

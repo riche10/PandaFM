@@ -93,6 +93,7 @@ def api_client(fake: FakeNavidrome) -> TestClient:
     app = create_app(settings)
     client = fake.client()
     app.dependency_overrides[get_navidrome] = lambda: client
+    sign_in_without_db(app)  # these tests are about the library, not sign-in (see test_auth*.py)
     return TestClient(app)
 
 
@@ -100,3 +101,35 @@ def assert_no_secrets(fake: FakeNavidrome, response: httpx.Response) -> None:
     exposed = response.text + " " + " ".join(f"{k}: {v}" for k, v in response.headers.items())
     for secret in fake.secrets_sent():
         assert secret not in exposed, "a Navidrome credential leaked into an API response"
+
+
+def sign_in_without_db(app, user_id: int = 1) -> None:
+    """Tests that aren't about authentication (and have no database): a signed-in owner."""
+    import uuid
+
+    from app.auth.guard import AuthContext
+    from app.deps import optional_auth, require_auth
+
+    async def fake() -> AuthContext:
+        return AuthContext(user_id, uuid.UUID(int=1), "bearer")
+
+    app.dependency_overrides[require_auth] = fake
+    app.dependency_overrides[optional_auth] = fake
+
+
+def sign_in_as_first_user(app) -> None:
+    """Database tests that aren't about authentication: signed in as the first user (the
+    pre-5.0 default user, which setup turns into the owner)."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.auth.guard import AuthContext
+    from app.deps import SessionDep, optional_auth, require_auth
+    from app.models import User
+
+    async def fake(session: SessionDep) -> AuthContext:
+        return AuthContext(await session.scalar(select(User.id).order_by(User.id).limit(1)), uuid.UUID(int=1), "bearer")
+
+    app.dependency_overrides[require_auth] = fake
+    app.dependency_overrides[optional_auth] = fake

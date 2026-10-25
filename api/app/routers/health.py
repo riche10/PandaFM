@@ -9,13 +9,13 @@ import asyncio
 import logging
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app import __version__
 from app.db import ping_database
-from app.deps import get_db_engine, get_navidrome
+from app.deps import get_db_engine, get_navidrome, optional_auth
 from app.navidrome.client import NavidromeAuthError, NavidromeClient, NavidromeError
 
 log = logging.getLogger(__name__)
@@ -47,18 +47,24 @@ class HealthResponse(BaseModel):
 
 @router.get("/health", response_model=HealthResponse)
 async def health(
+    auth: Annotated[object | None, Depends(optional_auth)],
     engine: Annotated[AsyncEngine, Depends(get_db_engine)],
     navidrome: Annotated[NavidromeClient, Depends(get_navidrome)],
 ) -> HealthResponse:
     database, navidrome_status = await asyncio.gather(
         _check_database(engine), _check_navidrome(navidrome)
     )
-    return HealthResponse(
+    result = HealthResponse(
         status="ok" if database.ok and navidrome_status.ok else "degraded",
         version=__version__,
         database=database,
         navidrome=navidrome_status,
     )
+    signed_in = auth is not None
+    if not signed_in:  # anonymous callers learn whether it works, not how it's built
+        result.database = DatabaseStatus(ok=result.database.ok)
+        result.navidrome = NavidromeStatus(ok=result.navidrome.ok)
+    return result
 
 
 async def _check_database(engine: AsyncEngine) -> DatabaseStatus:

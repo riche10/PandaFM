@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, text
 from app.deps import get_navidrome
 from app.main import create_app
 from app.migrate import upgrade
-from tests.fakes import FakeNavidrome
+from tests.fakes import sign_in_as_first_user, FakeNavidrome
 from tests.test_db_stage3 import TEST_DB, settings
 
 pytestmark = [
@@ -92,6 +92,7 @@ def server(media, tmp_path):
     app = create_app(settings().model_copy(update={"cache_dir": str(tmp_path / "cache"), "cache_max_gb": 1.0}))
     fake = srv.fake().client()
     app.dependency_overrides[get_navidrome] = lambda: fake
+    sign_in_as_first_user(app)  # not about sign-in (see test_db_auth.py)
     client = TestClient(app)
     client.__enter__()
     app.state.conversions._navidrome = fake

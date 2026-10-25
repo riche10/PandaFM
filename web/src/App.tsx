@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router'
 import { isNative, platform } from './platform/state'
 import { AndroidBack } from './shell/AndroidBack'
 import { AppShell } from './shell/AppShell'
+import { AuthGate } from './shell/AuthGate'
 import { OfflineView } from './views/OfflineView'
 import { GenreView } from './views/GenreView'
 import { DecadeView } from './views/DecadeView'
@@ -32,6 +33,7 @@ export default function App() {
     )
   }
   return (
+    <AuthGate>
     <AppShell>
       {isNative() && <AndroidBack />}
       <Routes>
@@ -56,5 +58,6 @@ export default function App() {
         <Route path="*" element={<NotFoundView />} />
       </Routes>
     </AppShell>
+    </AuthGate>
   )
 }

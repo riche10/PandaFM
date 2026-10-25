@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # Browsers using PandaFM on its own address don't need this.
     cors_origins: list[str] = ["https://localhost", "http://localhost", "capacitor://localhost"]
 
+    # 5.0 security. The setup token lets the administrator (and only them) create the
+    # owner account once; it stops working as soon as an owner exists.
+    setup_token: str | None = None
+    # Proxies whose X-Forwarded-For / X-Forwarded-Proto are believed (pandafm-web and
+    # your LAN reverse proxy). Private ranges by default: the API itself must not be public.
+    trusted_proxies: list[str] = ["127.0.0.1/32", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+    # Interactive API docs: off by default; when on, owner-only.
+    api_docs: bool = False
+
     @property
     def database_url(self) -> URL:
         # URL.create escapes special characters in the password, which a
