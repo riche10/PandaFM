@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { Cover } from '../components/Cover'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { Icon } from '../components/Icon'
+import { MarqueeText } from '../components/MarqueeText'
 import { QualityBadge } from '../components/QualityBadge'
 import { RepeatToggle, ShuffleToggle } from '../components/PlaybackModes'
 import { QueueButton } from '../components/QueueButton'
@@ -31,6 +32,9 @@ export function NowPlayingView() {
   const backdrop = useCoverSrc(track?.cover_art_id ?? null, 300)
   const close = () => (location.key === 'default' ? navigate('/') : navigate(-1))
 
+  const radioLine = activeRadio
+    ? `${activeRadio.autoplay ? 'Autoplay · ' : ''}${activeRadio.modeLabel}${activeRadio.stationId ? ' station' : ''}${activeRadio.seedName ? ` · based on ${activeRadio.seedName}` : ''}`
+    : ''
   const header = (
     <div className="np-header">
       <button type="button" className="icon-button" onClick={close} aria-label="Close Now Playing">
@@ -41,13 +45,14 @@ export function NowPlayingView() {
         {activeRadio ? (
           <span className="np-header-source np-radio">
             <Icon name="radio" />
-            {activeRadio.autoplay ? 'Autoplay · ' : ''}
-            {activeRadio.modeLabel}
-            {activeRadio.stationId ? ' station' : ''}
-            {activeRadio.seedName ? ` · based on ${activeRadio.seedName}` : ''}
+            <MarqueeText title={radioLine}>{radioLine}</MarqueeText>
           </span>
         ) : (
-          source && <span className="np-header-source">from {source.name}</span>
+          source && (
+            <span className="np-header-source">
+              <MarqueeText title={`from ${source.name}`}>from {source.name}</MarqueeText>
+            </span>
+          )
         )}
       </div>
       {track ? <TrackMenu track={track} onPlay={player.play} /> : <span className="icon-button" />}
@@ -88,7 +93,9 @@ export function NowPlayingView() {
               <QualityBadge track={track} />
               {track.album && (
                 <p className="np-album">
-                  {track.album_id ? <Link to={`/albums/${encodeURIComponent(track.album_id)}`}>{track.album}</Link> : track.album}
+                  <MarqueeText title={track.album}>
+                    {track.album_id ? <Link to={`/albums/${encodeURIComponent(track.album_id)}`}>{track.album}</Link> : track.album}
+                  </MarqueeText>
                 </p>
               )}
             </div>
