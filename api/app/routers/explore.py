@@ -47,7 +47,7 @@ async def genre(key: GenreKey, db: SessionDep):
     if found is None:
         return error_response(404, "genre_not_found", "There’s no music with that genre in your library.")
     g, artists, related = found
-    return GenreDetail(genre=explore.summary(g), artists=[ArtistInGenre(**a) for a in artists], related=[explore.summary(o) for o in related])
+    return GenreDetail(genre=explore.summary(g), tags=sorted(g.raws), artists=[ArtistInGenre(**a) for a in artists], related=[explore.summary(o) for o in related])
 
 
 @router.get("/browse/albums", response_model=AlbumPage)

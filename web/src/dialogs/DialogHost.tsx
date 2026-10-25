@@ -8,6 +8,8 @@ import { playlists, toast, usePlaylists } from '../library'
 import { DownloadDialog } from './DownloadDialog'
 import { PresetDialog } from './PresetDialog'
 import { StationDialog } from './StationDialog'
+import { AlbumInfo, TrackInfo } from './InfoDialog'
+import { FiltersDialog } from './FiltersDialog'
 import { closeDialog, type DialogRequest, openDialog, useDialog } from './store'
 
 const songs = (count: number) => (count === 1 ? '1 song' : `${count} songs`)
@@ -22,7 +24,10 @@ export function DialogHost() {
       {request?.type === 'rename-playlist' && <PlaylistNameForm mode="rename" playlist={request.playlist} />}
       {request?.type === 'download' && <DownloadDialog target={request.target} />}
       {request?.type === 'preset' && <PresetDialog preset={request.preset} />}
-      {request?.type === 'station' && <StationDialog station={request.station} />}
+      {request?.type === 'station' && <StationDialog station={request.station} prefill={request.prefill} />}
+      {request?.type === 'track-info' && <TrackInfo track={request.track} />}
+      {request?.type === 'album-info' && <AlbumInfo album={request.album} />}
+      {request?.type === 'filters' && <FiltersDialog kind={request.kind} value={request.value} onApply={request.onApply} />}
       {request?.type === 'why' && <WhyThisSong track={request.track} reasons={request.reasons} modeLabel={request.modeLabel} />}
       {request?.type === 'delete-playlist' && (
         <DeletePlaylist playlist={request.playlist} onDeleted={request.onDeleted} />
@@ -49,6 +54,11 @@ function labelFor(request: DialogRequest): string {
       return 'Radio preset'
     case 'station':
       return 'Station'
+    case 'track-info':
+    case 'album-info':
+      return 'Info'
+    case 'filters':
+      return 'Filters'
   }
 }
 

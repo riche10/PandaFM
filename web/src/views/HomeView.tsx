@@ -6,6 +6,8 @@ import { AlbumCard, ArtistCard, PlaylistCard, QuickTile, Shelf, TrackCard } from
 import { Cover } from '../components/Cover'
 import { Icon } from '../components/Icon'
 import { RadioCards } from '../components/RadioCards'
+import { GenreChips } from '../components/GenreChips'
+import { exploreApi } from '../api/explore'
 import { StationCards } from '../components/StationCards'
 import { ErrorNotice } from '../components/States'
 import { TrackList } from '../components/TrackList'
@@ -24,6 +26,8 @@ const HOME_SECTIONS: { id: string; Section: ComponentType }[] = [
   { id: 'panda-modes', Section: PandaModes },
   { id: 'my-stations', Section: StationCards },
   { id: 'history', Section: HistorySections },
+  { id: 'your-genres', Section: YourGenres },
+  { id: 'explore', Section: ExploreLibrary },
   { id: 'recently-added', Section: RecentlyAdded },
   { id: 'favorites', Section: FavoriteSections },
   { id: 'playlists', Section: YourPlaylists },
@@ -234,5 +238,42 @@ function ArtistsShelf() {
         <ArtistCard key={artist.id} artist={artist} />
       ))}
     </Shelf>
+  )
+}
+
+/** Your genres from listening history (or, before there is any, what your library holds most). */
+function YourGenres() {
+  const [resource] = useApi('home:genres', (signal) => exploreApi.topGenres(8, signal))
+  if (resource.state !== 'ready' || resource.data.genres.length === 0) return null
+  return (
+    <section className="shelf" aria-labelledby="your-genres">
+      <div className="shelf-head">
+        <h2 id="your-genres" className="section-title">{resource.data.source === 'history' ? 'Your genres' : 'Genres in your library'}</h2>
+        <Link to="/library/genres" className="text-button">All genres</Link>
+      </div>
+      <GenreChips tags={resource.data.genres} limit={8} label="Your genres" />
+    </section>
+  )
+}
+
+const EXPLORE_LINKS = [
+  { to: '/library/genres', label: 'Genres' },
+  { to: '/library/decades', label: 'Decades' },
+  { to: '/collections/unplayed', label: 'Unplayed' },
+  { to: '/collections/lossless', label: 'Lossless' },
+  { to: '/collections/hires', label: 'Hi-Res' },
+]
+
+/** A few doors into your own library. */
+function ExploreLibrary() {
+  return (
+    <section className="shelf" aria-labelledby="explore-title">
+      <h2 id="explore-title" className="section-title">Explore your library</h2>
+      <ul className="genre-chips explore-links" aria-label="Explore your library">
+        {EXPLORE_LINKS.map((l) => (
+          <li key={l.to}><Link className="genre-chip" to={l.to}>{l.label}</Link></li>
+        ))}
+      </ul>
+    </section>
   )
 }

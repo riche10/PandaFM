@@ -3,6 +3,8 @@ import { type Album, getAlbum, getArtist } from '../api/library'
 import { AlbumCard, PlayCircle, Shelf, ShuffleButton } from '../components/Cards'
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
+import { GenreChips } from '../components/GenreChips'
+import { exploreApi } from '../api/explore'
 import { FavoriteButton } from '../components/FavoriteButton'
 import { MenuButton, MenuItem } from '../components/Menu'
 import { ErrorNotice, Loading } from '../components/States'
@@ -34,7 +36,7 @@ export function AlbumView() {
   if (!album) return <div className="page"><Loading label="Loading album…" /></div>
 
   const source: QueueSource = { kind: 'album', id: album.id, name: album.name }
-  const facts = [album.year, album.genres[0], countOf(album.tracks.length, 'song', 'songs'), formatLength(album.duration_seconds)].filter(Boolean)
+  const facts = [album.year, countOf(album.tracks.length, 'song', 'songs'), formatLength(album.duration_seconds)].filter(Boolean)
   return (
     <div className="page page--detail">
       <DetailHero
@@ -67,14 +69,17 @@ export function AlbumView() {
                   <MenuItem icon="queue" label="Add to queue" onSelect={() => { close(); player.addToQueue(album.tracks); toast(`Added ${album.name} to the queue`) }} />
                   <MenuItem icon="playlist" label="Add album to playlist" onSelect={() => { close(); openDialog({ type: 'add-to-playlist', tracks: album.tracks }) }} />
                   <MenuItem icon="radio" label="Start Panda Radio" onSelect={() => { close(); void startRadio('panda', { kind: 'album', id: album.id, name: album.name }) }} />
+                  <MenuItem icon="info" label="Info" onSelect={() => { close(); openDialog({ type: 'album-info', album }) }} />
                 </>
               )}
             </MenuButton>
           </>
         }
       />
+      <GenreChips tags={album.genre_tags} />
       <TrackList tracks={album.tracks} variant="album" albumArtist={album.artist} onPlay={(i) => player.playCollection(album.tracks, { startIndex: i, source })} />
       {album.artist_id && <MoreByArtist album={album} artistId={album.artist_id} />}
+      <MoreLikeThis albumId={album.id} />
     </div>
   )
 }
@@ -88,6 +93,19 @@ function MoreByArtist({ album, artistId }: { album: Album; artistId: string }) {
     <Shelf title={`More by ${album.artist}`} to={`/artists/${encodeURIComponent(artistId)}`}>
       {others.map((other) => (
         <AlbumCard key={other.id} album={other} subtitle="year" />
+      ))}
+    </Shelf>
+  )
+}
+
+/** Albums from your library that sound like this one (genre first, then era and your taste). Hidden if none really do. */
+function MoreLikeThis({ albumId }: { albumId: string }) {
+  const [resource] = useApi(`album:${albumId}:related`, (signal) => exploreApi.related(albumId, signal))
+  if (resource.state !== 'ready' || resource.data.length === 0) return null
+  return (
+    <Shelf title="More like this">
+      {resource.data.map(({ album }) => (
+        <AlbumCard key={album.id} album={album} />
       ))}
     </Shelf>
   )

@@ -21,6 +21,7 @@ class ArtistInGenre(BaseModel):
 
 class GenreDetail(BaseModel):
     genre: GenreSummary
+    tags: list[str]  # the library's own tag spellings for this genre (to prefill a station)
     artists: list[ArtistInGenre]
     related: list[GenreSummary]  # close genres in your library (same family)
 

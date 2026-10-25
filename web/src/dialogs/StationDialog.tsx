@@ -6,10 +6,10 @@ import { filterGenres, reloadStations } from '../library/stations'
 import { closeDialog } from './store'
 
 /** Create or edit a station: a name, the genres it stays in, and its radio style. */
-export function StationDialog({ station }: { station: RadioStation | null }) {
+export function StationDialog({ station, prefill }: { station: RadioStation | null; prefill?: { name: string; genres: string[] } }) {
   const { presets } = usePresets()
-  const [name, setName] = useState(station?.name ?? '')
-  const [chosen, setChosen] = useState<string[]>(station?.genres ?? [])
+  const [name, setName] = useState(station?.name ?? prefill?.name ?? '')
+  const [chosen, setChosen] = useState<string[]>(station?.genres ?? prefill?.genres ?? [])
   const [style, setStyle] = useState(station?.preset ?? 'panda')
   const [all, setAll] = useState<LibraryGenre[] | null>(null)
   const [query, setQuery] = useState('')

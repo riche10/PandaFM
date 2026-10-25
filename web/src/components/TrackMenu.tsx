@@ -60,6 +60,7 @@ export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay:
               onSelect={run(() => void toggleFavorite('track', track.id, favorite))}
             />
             <MenuItem icon="playlist" label="Add to playlist" onSelect={run(() => openDialog({ type: 'add-to-playlist', tracks: [track] }))} />
+            <MenuItem icon="info" label="Info" onSelect={run(() => openDialog({ type: 'track-info', track }))} />
             <MenuItem
               icon="radio"
               label="Start Panda Radio"

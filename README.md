@@ -366,3 +366,45 @@ In the Android app, the system Back button now closes an open dialog or
 menu first, then goes back through PandaFM's pages, and only leaves the app
 from Home. With music queued, it moves PandaFM to the background so the
 music keeps going.
+
+## Library explorer (Stage 4.5)
+
+Everything here comes from **your own Navidrome library and PandaFM's
+listening history**; no external recommendation, metadata or catalogue
+service is involved.
+
+- **Genres** (Library › Genres): every genre in your library, once. Spellings
+  like "Pop-Punk", "pop punk" and "Pop Punk" are one genre (the Stage 4.3
+  genre model in `api/app/radio/genres.py`), shown with your library's most
+  common spelling. Related genres (Pop Punk, Alternative Rock) stay separate.
+- **Genre pages** (`/genres/<genre>`): artists, albums and songs, Play,
+  Shuffle and **Genre Radio** ("Rock Radio", or with any built-in or custom
+  preset from the menu). Genre Radio is a normal Panda Radio session with the
+  same genre anchor My Stations use, without saving a station; "Save as
+  station" prefills one.
+- **Album and artist genres**: albums show their genres as chips (deduplicated,
+  wrapping on small screens); artists show their 1-3 dominant genres.
+- **More like this** on album pages: other albums from your library by genre
+  similarity (then era and your genre taste). Albums by the same artist and
+  albums that aren't genuinely alike are left out; with no real match the
+  shelf is hidden.
+- **Decades** (Library › Decades): only decades you have music from; songs
+  without a year are left out.
+- **Smart Collections** (Library › Collections), generated live: Recently
+  Added, Unplayed (no PandaFM play history), Favorites, Rediscover (the
+  existing listening-history rule), Lossless and Hi-Res (PandaFM's own quality
+  rules), and Downloaded in the Android app.
+- **Filters** on Albums (genre, decade, favorites) and Songs (also lossless,
+  hi-res, and downloaded on this device in the app). They're in the URL, so
+  Back undoes them, and the server does the filtering and paging.
+- **Info** in song and album menus: only facts PandaFM actually has (codec,
+  sample rate, bit depth, …). An album gets one quality line only when it's
+  true of every song; otherwise "Lossless · mixed formats" or "Mixed quality".
+- **Search** also finds genres ("pop punk"), and **Home** shows your genres
+  and a few ways into your library.
+
+API: `GET /api/genres`, `/api/genres/top`, `/api/genres/{genre}`,
+`/api/browse/albums`, `/api/browse/tracks`, `/api/library/decades`,
+`/api/albums/{id}/related`, `/api/collections`, `/api/collections/{id}/tracks`.
+They read PandaFM's synced track cache (refreshed by the library sync);
+Navidrome stays the source of truth.

@@ -4,6 +4,7 @@ import { searchLibrary } from '../api/library'
 import { AlbumCard, ArtistCard, CardGrid, QuickTile } from '../components/Cards'
 import { Icon } from '../components/Icon'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
+import { GenreChips } from '../components/GenreChips'
 import { TrackList } from '../components/TrackList'
 import { useApi } from '../hooks/useApi'
 import { useIsDesktop } from '../hooks/useMediaQuery'
@@ -105,7 +106,7 @@ function SearchResults({ query }: { query: string }) {
   const results = resource.state === 'ready' ? resource.data : resource.previous
   if (!results) return <Loading label="Searching…" />
 
-  const nothing = !results.tracks.length && !results.albums.length && !results.artists.length
+  const nothing = !results.tracks.length && !results.albums.length && !results.artists.length && !results.genres?.length
   if (nothing && resource.state === 'ready') {
     return (
       <EmptyState icon="search" title={`No results for “${query}”`}>
@@ -117,6 +118,12 @@ function SearchResults({ query }: { query: string }) {
   const songs = allSongs ? results.tracks : results.tracks.slice(0, SONGS_PREVIEW)
   return (
     <div className="results" aria-busy={resource.state === 'loading'}>
+      {(results.genres?.length ?? 0) > 0 && (
+        <section className="search-section" aria-labelledby="search-genres">
+          <h2 id="search-genres" className="section-title">Genres</h2>
+          <GenreChips tags={results.genres} label="Matching genres" />
+        </section>
+      )}
       {results.tracks.length > 0 && (
         <section className="shelf" aria-label="Songs">
           <div className="section-head">

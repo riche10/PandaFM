@@ -49,6 +49,7 @@ export interface AlbumSummary {
   duration_seconds: number | null
   genres: string[]
   favorite: boolean
+  genre_tags?: GenreTag[] // deduplicated, for chips
 }
 
 export interface Album extends AlbumSummary {
@@ -65,6 +66,20 @@ export interface ArtistSummary {
 
 export interface Artist extends ArtistSummary {
   albums: AlbumSummary[]
+  genres?: GenreTag[] // dominant genres
+}
+
+/** A genre as PandaFM knows it: canonical key (for /genres/:key) and the library's own spelling. */
+export interface GenreTag {
+  key: string
+  name: string
+}
+
+export interface GenreSummary extends GenreTag {
+  songs: number
+  albums: number
+  artists: number
+  cover_art_ids: string[]
 }
 
 export type AlbumListKind = 'newest' | 'recent' | 'frequent' | 'random' | 'alphabetical'
@@ -80,6 +95,7 @@ export interface SearchResults {
   tracks: Track[]
   albums: AlbumSummary[]
   artists: ArtistSummary[]
+  genres?: GenreSummary[]
 }
 
 const id = encodeURIComponent
