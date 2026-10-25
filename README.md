@@ -293,6 +293,9 @@ card. Downloads can be the original files or portable conversions made on
 the server (Lossless Portable, High Quality AAC 256, Space Saver AAC 128).
 Lossy files are never converted to FLAC. See [docs/android.md](docs/android.md)
 for building the APK, how storage and sync work, and a test checklist.
+On the build server, `scripts/build-android-apk.sh [branch]` updates the
+checkout and builds the APK in one command; the launcher icon (a panda with
+headphones) is generated from `web/assets/` with `npm run android:icons`.
 
 Server side, Stage 4 adds:
 
