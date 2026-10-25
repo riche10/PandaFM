@@ -50,6 +50,38 @@ final class AuthHttp {
         throw new IOException("Too many redirects");
     }
 
+    /** A signed JSON POST to the PandaFM server (no redirects at all: a POST is never forwarded). */
+    static HttpURLConnection post(Context ctx, String url, String json, int connectMs, int readMs) throws IOException {
+        AuthCore auth = AuthStore.get(ctx);
+        for (int attempt = 0; attempt < 2; attempt++) {
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            c.setInstanceFollowRedirects(false);
+            c.setConnectTimeout(connectMs);
+            c.setReadTimeout(readMs);
+            c.setRequestMethod("POST");
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setRequestProperty("Accept", "application/json");
+            String authorization = auth.authorizationFor(url);
+            if (authorization != null) c.setRequestProperty("Authorization", authorization);
+            try (java.io.OutputStream out = c.getOutputStream()) {
+                out.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            int code = c.getResponseCode();
+            if (code == 401 && authorization != null && attempt == 0) {
+                c.disconnect();
+                auth.expireAccess();
+                continue;
+            }
+            if (code >= 300 && code < 400) {
+                c.disconnect();
+                throw new IOException("Refused a redirect");
+            }
+            return c;
+        }
+        throw new IOException("Not signed in");
+    }
+
     /** The redirect's absolute URL if it stays on the same origin; null otherwise. */
     static String redirectTarget(String from, String location) {
         if (location == null || location.isEmpty()) return null;

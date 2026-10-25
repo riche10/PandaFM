@@ -3,38 +3,57 @@ package app.pandafm.client;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.annotation.OptIn;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
+import androidx.media3.common.MediaItem;
 import androidx.media3.common.util.UnstableApi;
-import java.util.Collections;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaSession;
-import androidx.media3.session.MediaSessionService;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Random;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 
 /**
- * PandaFM's playback lives here, not in the Activity: a Media3
- * MediaSessionService owning one ExoPlayer and one MediaSession. Media3 shows
- * the media notification and keeps the service in the foreground while music
- * plays, so it continues with the screen locked or another app open.
- * Everything runs on the main thread.
+ * PandaFM's Android playback service (5.0.1): one ExoPlayer, one
+ * MediaLibrarySession and the native queue that decides what plays. The
+ * phone UI, the lock screen and notification, Bluetooth and headset buttons,
+ * and Android Auto all control the same service. It works without the app's
+ * screen: songs advance, radio refills and Autoplay continue natively.
  */
 @OptIn(markerClass = UnstableApi.class)
-public class PlaybackService extends MediaSessionService {
+public class PlaybackService extends MediaLibraryService {
     private static PlaybackService instance;
     private static final List<Runnable> waiting = new ArrayList<>();
-    private static RemoteAwarePlayer.Remote remote;
+    private static final long SAVE_EVERY_MS = 10_000;
 
     private ExoPlayer player;
-    private MediaSession session;
+    private MediaLibrarySession session;
+    private QueueController controller;
+    private ExoEngine engine;
+    private LibraryTree tree;
+    private NativePlatform.Catalog catalog;
+    private ExecutorService io;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final Runnable saver = new Runnable() {
+        @Override
+        public void run() {
+            if (controller != null && "playing".equals(controller.status)) controller.save(); // the position, in case the process dies
+            main.postDelayed(this, SAVE_EVERY_MS);
+        }
+    };
 
-    /** Run once the service and its player exist (starting the service if needed). Main thread only. */
+    /** Run on the main thread once the service (and its queue) exist; starts the service if needed. */
     static void whenReady(Context ctx, Runnable task) {
         if (instance != null) {
             task.run();
@@ -44,13 +63,16 @@ public class PlaybackService extends MediaSessionService {
         if (waiting.size() == 1) ctx.startService(new Intent(ctx, PlaybackService.class));
     }
 
-    static ExoPlayer player() {
-        return instance == null ? null : instance.player;
+    static QueueController controller() {
+        return instance == null ? null : instance.controller;
     }
 
-    /** Where system media-control commands go (the PandaPlayer plugin, then the web app's queue). */
-    static void setRemote(RemoteAwarePlayer.Remote listener) {
-        remote = listener;
+    static ExoEngine engine() {
+        return instance == null ? null : instance.engine;
+    }
+
+    static NativePlatform.Catalog catalog() {
+        return instance == null ? null : instance.catalog;
     }
 
     @Override
@@ -61,59 +83,105 @@ public class PlaybackService extends MediaSessionService {
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(30_000)
             .setAllowCrossProtocolRedirects(false);
-        // 5.0: PandaFM streams carry the device's access token as a header (never in the URL), and
-        // only to the PandaFM server's own origin. Same-protocol redirects are followed by Android's
-        // HTTP stack, which drops Authorization when the host changes; cross-protocol ones are refused.
+        // PandaFM streams carry the device's access token as a header (never in the URL), only to the
+        // PandaFM server's own origin; Android's HTTP stack drops it on cross-host redirects.
         Context app = getApplicationContext();
         ResolvingDataSource.Factory signedIn = new ResolvingDataSource.Factory(http, spec -> {
             String authorization = AuthStore.get(app).authorizationFor(spec.uri.toString());
             return authorization == null ? spec : spec.withAdditionalHeaders(Collections.singletonMap("Authorization", authorization));
         });
-        // http(s) streams from the PandaFM server, content:// downloads in the chosen folder.
-        DefaultDataSource.Factory sources = new DefaultDataSource.Factory(this, signedIn);
+        DefaultDataSource.Factory sources = new DefaultDataSource.Factory(this, signedIn); // streams, and content:// downloads
         AudioAttributes music = new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build();
         player = new ExoPlayer.Builder(this)
-            .setAudioAttributes(music, /* handleAudioFocus= */ true) // standard focus: pause for calls, duck for navigation
+            .setAudioAttributes(music, /* handleAudioFocus= */ true) // pause for calls, duck for navigation
             .setHandleAudioBecomingNoisy(true) // headphones unplugged: pause
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setMediaSourceFactory(new DefaultMediaSourceFactory(sources))
             .build();
-        RemoteAwarePlayer sessionPlayer = new RemoteAwarePlayer(player, (action, position) -> {
-            RemoteAwarePlayer.Remote r = remote;
-            if (r != null) r.command(action, position);
-        });
-        MediaSession.Builder builder = new MediaSession.Builder(this, sessionPlayer);
+
+        io = NativePlatform.newIo();
+        catalog = new NativePlatform.Catalog(this);
+        NativePlatform.Api api = new NativePlatform.Api(this);
+        engine = new ExoEngine(this, player, io);
+        controller = new QueueController(new NativeQueue(() -> UUID.randomUUID().toString(), new Random()), engine,
+            new NativePlatform.Sources(this, catalog), new NativePlatform.QueueFile(this), new NativePlatform.Events(this, api, io),
+            new NativePlatform.Radio(api, io), new NativePlatform.Env(this));
+        engine.attach(controller);
+        applyPreferences();
+        controller.restore(); // paused: nothing plays by itself after a restart
+        tree = new LibraryTree(api, catalog);
+
+        QueuePlayer sessionPlayer = new QueuePlayer(player, controller, this::resolveAndPlay);
+        MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer, new LibraryCallback(this, tree, io));
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (open != null) {
             builder.setSessionActivity(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         }
         session = builder.build();
-        addSession(session); // notification and foreground handling even before any controller connects
         instance = this;
+        main.postDelayed(saver, SAVE_EVERY_MS);
         List<Runnable> ready = new ArrayList<>(waiting);
         waiting.clear();
-        for (Runnable task : ready) task.run();
+        for (Runnable r : ready) r.run();
+    }
+
+    void applyPreferences() {
+        android.content.SharedPreferences p = NativePlatform.Prefs.of(this);
+        controller.autoplayEnabled = p.getBoolean("autoplayEnabled", true);
+        controller.autoplayPreset = p.getString("autoplayPreset", "panda");
+    }
+
+    /** Something Android Auto (or another media controller) asked to play: an id from the tree, or a voice query. */
+    void resolveAndPlay(List<MediaItem> items, int startIndex) {
+        if (items.isEmpty()) return;
+        MediaItem chosen = items.get(Math.min(startIndex, items.size() - 1));
+        String mediaId = chosen.mediaId;
+        String query = chosen.requestMetadata == null ? null : chosen.requestMetadata.searchQuery;
+        boolean signedIn = AuthStore.get(this).signedIn(), online = NetworkState.of(this).connected;
+        io.execute(() -> {
+            LibraryTree.Resolution r;
+            String failure = null;
+            try {
+                r = (mediaId == null || mediaId.isEmpty()) ? tree.resolveVoice(query == null ? "" : query, signedIn, online) : tree.resolve(mediaId, signedIn, online);
+            } catch (LibraryTree.ApiError e) {
+                r = null;
+                failure = e.status == 401 ? LibraryTree.SIGN_IN : e.getMessage();
+            }
+            LibraryTree.Resolution res = r;
+            String error = failure;
+            main.post(() -> {
+                if (res == null) controller.showError(error);
+                else if (res.error != null) controller.showError(res.error);
+                else if (res.resume) controller.play();
+                else if (res.isRadio()) controller.startRadio(res.radioPreset, res.radioSeedKind, res.radioSeedId);
+                else controller.replace(res.tracks, res.start, res.source, false, true);
+            });
+        });
     }
 
     @Override
-    public MediaSession onGetSession(MediaSession.ControllerInfo controllerInfo) {
+    public MediaLibrarySession onGetSession(MediaSession.ControllerInfo controllerInfo) {
         return session;
     }
 
+    /**
+     * The app's screen was swiped away. The queue lives here now, so music that's playing keeps
+     * going (and advancing); a paused or empty player lets the service go.
+     */
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        // The queue lives in the app. Swiped away, nothing could choose the next song, so stop cleanly.
-        if (player != null) player.stop();
-        stopSelf();
+        if (controller != null) controller.save();
+        if (player == null || !player.getPlayWhenReady() || controller == null || controller.queue.current() == null) stopSelf();
     }
 
     @Override
     public void onDestroy() {
-        instance = null;
+        main.removeCallbacks(saver);
+        if (controller != null) controller.save();
         if (session != null) session.release();
         if (player != null) player.release();
-        session = null;
-        player = null;
+        if (io != null) io.shutdown();
+        instance = null;
         super.onDestroy();
     }
 }

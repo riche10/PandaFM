@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PandaFM in Android Auto: browse and play through the car's own media UI. -->
+<automotiveApp>
+    <uses name="media" />
+</automotiveApp>

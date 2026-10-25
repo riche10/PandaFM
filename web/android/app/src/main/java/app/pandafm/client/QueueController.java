@@ -108,6 +108,32 @@ final class QueueController {
         listeners.add(l);
     }
 
+    void removeListener(Listener l) {
+        listeners.remove(l);
+    }
+
+    /** Something the user asked for couldn't happen (e.g. a car request while offline). */
+    void showError(String message) {
+        fail(message);
+    }
+
+    /**
+     * 5.0 → 5.0.1: adopt the web app's saved queue once, if the native queue is empty
+     * and the snapshot is valid. Anything doubtful is ignored (the native queue starts empty).
+     */
+    boolean migrateFromWeb(Map<String, Object> web) {
+        if (queue.current() != null || web == null) return false;
+        Map<String, Object> m = new LinkedHashMap<>(web);
+        Object pos = web.get("position");
+        m.put("positionMs", pos instanceof Number ? Math.round(((Number) pos).doubleValue() * 1000) : 0L);
+        if (!queue.restore(m)) return false;
+        resumeAtMs = Json.num(m, "positionMs") == null ? 0 : Json.num(m, "positionMs");
+        resumeUid = queue.current() == null ? null : queue.current().uid;
+        status = "idle";
+        changed("restore");
+        return true;
+    }
+
     // ── restoring after a restart: always paused ──
     void restore() {
         String saved = store.load();
@@ -138,7 +164,7 @@ final class QueueController {
         start(queue.index, play);
     }
 
-    /** Radio picks fetched by the phone UI or by us; keepCurrent follows the playing song. */
+    /** A radio session the server started (from the phone or from us): picks, seed song, session. */
     void applyRadioStart(Map<String, Object> out, boolean keepCurrent, boolean autoplay) {
         Map<String, Object> session = Json.map(out.get("session"));
         String sid = Json.str(session, "id");
@@ -155,16 +181,24 @@ final class QueueController {
         source.put("kind", "radio");
         source.put("name", Json.str(session, "mode_label"));
         source.put("radio", radioInfo);
-        List<QueueItem> picks = queue.wrapRadio(Json.maps(out.get("picks")), sid);
+        applyRadioPicks(Json.maps(out.get("picks")), source, Json.map(out.get("seed_track")), keepCurrent, autoplay);
+    }
+
+    /** Radio picks ({selection_id, track}) with their radio source: the one path for every radio start. */
+    void applyRadioPicks(List<Map<String, Object>> rawPicks, Map<String, Object> source, Map<String, Object> seedTrack, boolean keepCurrent, boolean autoplay) {
+        String sid = Json.str(Json.map(source == null ? null : source.get("radio")), "sessionId");
+        if (sid == null) return;
+        List<QueueItem> picks = queue.wrapRadio(rawPicks, sid);
         if (autoplay) {
             queue.appendRadio(picks, source);
             Integer next = queue.nextIndex();
             if (next != null) start(next, true);
+            else changed("radio");
             return;
         }
         boolean continuing = keepCurrent && queue.current() != null && !"idle".equals(status);
         if (!continuing) leaveCurrent();
-        queue.startRadio(picks, source, Json.map(out.get("seed_track")), keepCurrent);
+        queue.startRadio(picks, source, seedTrack, keepCurrent);
         if (continuing) changed("radio");
         else start(queue.index, true);
     }
