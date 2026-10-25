@@ -61,6 +61,82 @@ builds also allow plain `http://192.168.x.x:PORT` and user-installed
 certificate authorities. Don't distribute those; prefer HTTPS through your
 external Nginx.
 
+## App icon
+
+PandaFM's launcher icon is a panda face with headphones on a Walkman-orange
+background. It is an Android adaptive icon (every launcher shape) with a
+monochrome layer for Android 13+ themed icons.
+
+The artwork lives in `web/assets/` (1024 × 1024 PNGs, plus the SVGs they were
+drawn from):
+
+| File | What it is |
+|---|---|
+| `app-icon-background.png` | Full-bleed background; launchers crop it to their shape |
+| `app-icon-foreground.png` | The panda, on transparency |
+| `app-icon-monochrome.png` | One colour on transparency; Android tints it for themed icons |
+| `app-icon.png` | The composed icon (generated; for previews and store listings) |
+
+Keep everything important inside the central circle of the foreground and
+monochrome layers: radius 313 px around the centre of the 1024 canvas (66dp of
+108dp). Launchers may cut off anything outside it.
+
+**Replace the artwork:** drop new PNGs over the three layer files (or edit
+the SVGs), then regenerate:
+
+```bash
+cd web
+npm run android:icons              # from the PNGs
+npm run android:icons -- --from-svg  # re-export the PNGs from the SVGs first
+```
+
+This writes every mipmap density (legacy square and round icons for Android
+7, adaptive layers and `mipmap-anydpi-v26/ic_launcher*.xml` with the
+monochrome layer) under `web/android/app/src/main/res/`. Commit the artwork
+and the generated files. It uses `sharp` 0.35.5, installed on demand (not a
+project dependency, so normal web builds are unaffected). The build script
+below regenerates the icons automatically whenever the artwork is present.
+
+## One-command build on the server
+
+`scripts/build-android-apk.sh` updates the checkout and builds the APK:
+
+```bash
+scripts/build-android-apk.sh              # main
+scripts/build-android-apk.sh feature/x    # another branch
+```
+
+It fetches `origin`, checks out the branch and **hard-resets this checkout
+to `origin/<branch>`** (local changes to tracked files there are discarded:
+use a checkout dedicated to building). It regenerates the icons if
+`web/assets` has artwork, runs `PANDAFM_ANDROID_ALLOW_HTTP=1
+./web/android/build-apk.sh` (signed with the same persistent key, so the APK
+installs over the previous one), and prints the APK path:
+
+```
+PandaFM 0.4.2 (main @ 5b93ade) APK:
+/home/you/PandaFM/web/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Options: `PANDAFM_ANDROID_ALLOW_HTTP=0` for an HTTPS-only build,
+`PANDAFM_ANDROID_ICONS=0` to skip icon generation (`1` forces it). Only one
+build runs at a time.
+
+A short command on the server:
+
+```bash
+mkdir -p ~/bin
+cat > ~/bin/build-pandafm-apk <<'SH'
+#!/usr/bin/env bash
+exec "$HOME/PandaFM/scripts/build-android-apk.sh" "$@"
+SH
+chmod +x ~/bin/build-pandafm-apk
+```
+
+Ubuntu adds `~/bin` to `PATH` at your next login (or run `source ~/.profile`).
+Then `build-pandafm-apk` builds `main` and `build-pandafm-apk feature/x`
+builds a branch. Adjust `$HOME/PandaFM` if your checkout lives elsewhere.
+
 ## How it works
 
 - **Server:** the first screen asks for your PandaFM address, checks

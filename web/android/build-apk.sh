@@ -4,6 +4,7 @@
 #   ./web/android/build-apk.sh                 HTTPS-only build (recommended)
 #   PANDAFM_ANDROID_ALLOW_HTTP=1 ./web/android/build-apk.sh
 #                                              also allows a plain-http LAN server
+#   PANDAFM_ANDROID_ICONS=1 ...                 regenerate launcher icons from web/assets first
 #
 # Result: web/android/app/build/outputs/apk/debug/app-debug.apk
 # The Android SDK and Gradle caches live in Docker volumes, so later builds are quick.
@@ -19,8 +20,9 @@ OWNER="$(id -u):$(id -g)"
 SIGNING="${PANDAFM_SIGNING_DIR:-pandafm-android-signing}"
 
 echo "==> Building the web app and copying it into the Android project"
-docker run --rm -v "$PWD":/app -w /app -e PANDAFM_ANDROID_ALLOW_HTTP="$ALLOW_HTTP" node:22 \
-  sh -c "npm install --no-audit --no-fund && npm run build && npx cap sync android && chown -R $OWNER /app/dist /app/android /app/node_modules"
+ICONS="${PANDAFM_ANDROID_ICONS:-0}"  # 1: regenerate launcher icons from web/assets first
+docker run --rm -v "$PWD":/app -w /app -e PANDAFM_ANDROID_ALLOW_HTTP="$ALLOW_HTTP" -e PANDAFM_ANDROID_ICONS="$ICONS" node:22 \
+  sh -c "npm install --no-audit --no-fund && if [ \"\$PANDAFM_ANDROID_ICONS\" = 1 ]; then npm run android:icons; fi && npm run build && npx cap sync android && chown -R $OWNER /app/dist /app/android /app/node_modules && (chown -R $OWNER /app/assets 2>/dev/null || true)"
 
 echo "==> Building the APK"
 docker run --rm -v "$PWD":/app -w /app/android \
