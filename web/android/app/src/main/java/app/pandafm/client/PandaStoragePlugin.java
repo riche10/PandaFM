@@ -40,6 +40,8 @@ public class PandaStoragePlugin extends Plugin {
                 // never thrown for our own fields
             }
         });
+        // After process death, pick up the persisted queue now that PandaFM is open (in the foreground).
+        DownloadQueue.get(getContext()).schedule();
         ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) {
             NetworkRequest request = new NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build();

@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.net.wifi.WifiManager;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.util.Log;
 import androidx.core.app.NotificationChannelCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -23,9 +24,12 @@ public class DownloadService extends Service {
     private WifiManager.WifiLock wifiLock;
     private PowerManager.WakeLock wakeLock;
 
+    private static final String TAG = DownloadQueue.TAG;
+
     @Override
     public void onCreate() {
         super.onCreate();
+        Log.i(TAG, "Download service created");
         NotificationManagerCompat.from(this).createNotificationChannel(
             new NotificationChannelCompat.Builder(CHANNEL, NotificationManagerCompat.IMPORTANCE_LOW).setName("Downloads").build());
         WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
@@ -42,13 +46,38 @@ public class DownloadService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, build(), TYPE_DATA_SYNC);
+        DownloadQueue queue = DownloadQueue.get(this);
+        // Promote first: every startForegroundService() must be followed by startForeground() promptly.
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, build(), TYPE_DATA_SYNC);
+        } catch (RuntimeException e) {
+            // e.g. Android 12+ refusing a start that arrived while PandaFM was in the background
+            Log.w(TAG, "Couldn't enter the foreground (" + e.getClass().getSimpleName() + "); stopping the download service");
+            queue.serviceStopped();
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         synchronized (DownloadService.class) {
             current = this;
         }
-        DownloadQueue.get(this).schedule();
-        if (!DownloadQueue.get(this).hasWork()) stopNow();
-        return START_STICKY;
+        queue.serviceStarted();
+        int[] c = queue.counts();
+        Log.i(TAG, "onStartCommand #" + startId + ": " + c[0] + " active, " + c[1] + " running");
+        queue.scheduleWorkers(); // never requests another service start (that was the loop)
+        if (!queue.hasWork()) stopNow();
+        // Not sticky: after process death the persisted queue resumes when PandaFM opens or the network changes.
+        return START_NOT_STICKY;
+    }
+
+    /** Android 15+: a dataSync service has a daily time limit; stop cleanly when it's reached. */
+    public void onTimeout(int startId, int fgsType) {
+        Log.w(TAG, "Download service time limit reached; stopping (the queue resumes later)");
+        stopNow();
+    }
+
+    /** Android 14 form of the same callback. */
+    public void onTimeout(int startId) {
+        onTimeout(startId, TYPE_DATA_SYNC);
     }
 
     /** Update the notification, or stop when nothing is left to download. */
@@ -90,6 +119,8 @@ public class DownloadService extends Service {
         synchronized (DownloadService.class) {
             if (current == this) current = null;
         }
+        DownloadQueue.get(this).serviceStopped();
+        Log.i(TAG, "Download service stopping");
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
@@ -101,6 +132,8 @@ public class DownloadService extends Service {
         synchronized (DownloadService.class) {
             if (current == this) current = null;
         }
+        DownloadQueue.get(this).serviceStopped();
+        Log.i(TAG, "Download service destroyed");
         super.onDestroy();
     }
 

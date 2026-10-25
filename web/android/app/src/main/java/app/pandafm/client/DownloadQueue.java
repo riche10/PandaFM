@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.util.Log;
 import androidx.core.content.ContextCompat;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -29,12 +30,14 @@ final class DownloadQueue {
 
     private static DownloadQueue instance;
     private static final String PREFS = "pandafm.downloads";
+    static final String TAG = "PandaFM.Download";
 
     private final Context ctx;
     private final Map<String, DownloadJob> jobs = new LinkedHashMap<>();
     private final Set<String> running = new HashSet<>();
     private final Set<String> cancelled = new HashSet<>();
     private final ExecutorService pool = Executors.newCachedThreadPool();
+    private final ServiceGate gate = new ServiceGate();
     private Listener listener;
     private int concurrency = 2;
     private boolean allowMetered = false;
@@ -69,14 +72,18 @@ final class DownloadQueue {
     synchronized void enqueue(List<DownloadJob> incoming, int concurrency, boolean allowMetered) {
         this.concurrency = Math.max(1, Math.min(4, concurrency));
         this.allowMetered = allowMetered;
+        int added = 0;
         for (DownloadJob job : incoming) {
             DownloadJob existing = jobs.get(job.id);
             if (existing != null && ("queued".equals(existing.status) || "running".equals(existing.status))) continue; // already on its way
             cancelled.remove(job.id);
             jobs.put(job.id, job);
+            added++;
         }
         persist();
-        schedule();
+        Log.i(TAG, "Enqueued " + added + " of " + incoming.size() + " songs (" + counts()[0] + " active, concurrency " + this.concurrency
+            + (allowMetered ? ", any network)" : ", Wi-Fi only)"));
+        schedule(); // one service request for the whole album/playlist, not one per song
     }
 
     synchronized List<DownloadJob> all() {
@@ -126,9 +133,21 @@ final class DownloadQueue {
         return net.connected && (allowMetered || !net.metered || net.wifi);
     }
 
-    /** Start as many queued jobs as allowed right now. */
+    /**
+     * For events from outside the service (enqueue, network change, resume,
+     * folder chosen, app start): make sure the foreground service runs, then
+     * start workers. Never call this from the service itself.
+     */
     synchronized void schedule() {
-        if (hasWork()) startService();
+        ensureService();
+        scheduleWorkers();
+    }
+
+    /**
+     * Start as many queued jobs as allowed right now. Never asks for the
+     * service: the service's onStartCommand() and finishing jobs use this.
+     */
+    synchronized void scheduleWorkers() {
         if (paused || !networkAllowed()) return;
         Uri tree = Storage.tree(ctx);
         if (tree == null || !Storage.hasPermission(ctx, tree)) return;
@@ -174,7 +193,7 @@ final class DownloadQueue {
             emit(job);
         }
         persist();
-        schedule();
+        scheduleWorkers(); // the next songs; the running service (if any) stays as it is
     }
 
     private void emit(DownloadJob job) {
@@ -183,12 +202,33 @@ final class DownloadQueue {
         DownloadService.refresh(ctx);
     }
 
-    private void startService() {
+    /** Ask Android for the foreground service, once, only when there is work and it isn't running or requested. */
+    private void ensureService() {
+        boolean work = hasWork();
+        if (!gate.shouldRequest(work)) {
+            if (work) Log.d(TAG, gate.isRunning() ? "Service already running" : "Service start already requested");
+            return;
+        }
+        int[] c = counts();
+        Log.i(TAG, "Requesting the download service (" + c[0] + " active, " + c[1] + " running)");
         try {
             ContextCompat.startForegroundService(ctx, new Intent(ctx, DownloadService.class));
         } catch (RuntimeException e) {
-            // Android may refuse from the background; downloads still run while the app is open.
+            // Android may refuse from the background; downloads still run while PandaFM is open,
+            // and a later event (app opened, network back) may request it again.
+            gate.requestFailed();
+            Log.w(TAG, "Android didn't start the download service now: " + e.getClass().getSimpleName());
         }
+    }
+
+    /** DownloadService is in the foreground. */
+    void serviceStarted() {
+        gate.started();
+    }
+
+    /** DownloadService stopped or was destroyed; new work may request it again. */
+    void serviceStopped() {
+        gate.stopped();
     }
 
     private void persist() {
