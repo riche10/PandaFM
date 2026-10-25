@@ -11,6 +11,7 @@ import { AppearanceSettings } from './settings/AppearanceSettings'
 import { RadioSettings } from './settings/RadioSettings'
 import { Diagnostics } from './settings/Diagnostics'
 import { AccountSettings } from './settings/AccountSettings'
+import { StreamingQuality } from './settings/StreamingQuality'
 import { StorageLimit } from './settings/StorageLimit'
 import { useAutoplaySettings, autoplaySettings } from '../player/autoplay'
 import { usePresets } from '../library/presets'
@@ -69,6 +70,7 @@ export function SettingsView() {
 
       <section className="settings-block" id="playback">
         <h2 className="section-title">Playback</h2>
+        <StreamingQuality />
         <label className="check-option">
           <input type="checkbox" checked={autoplay.enabled} onChange={(e) => autoplaySettings.setState({ enabled: e.target.checked })} />
           Autoplay: continue with Panda Radio when my music ends

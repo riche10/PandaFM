@@ -5,3 +5,6 @@
 import { initPlatform } from './runtime'
 
 initPlatform()
+
+import { startNetworkWatch } from './network'
+startNetworkWatch()

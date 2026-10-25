@@ -38,6 +38,8 @@ export interface PlaybackReport {
 export interface PlayerActions {
   /** Replace the queue with a collection (album, playlist, results…) and play it. */
   playCollection(tracks: Track[], options?: PlayOptions): void
+  /** Put back a saved session, paused (nothing loads or plays until play()). */
+  restore(snapshot: import('./session').SessionSnapshot): void
   playNext(tracks: Track[]): void
   addToQueue(tracks: Track[]): void
   removeFromQueue(uid: string): void
@@ -147,6 +149,9 @@ export function createPlayerStore({
       })
     }
 
+    /** A restored session's position, used once when its song is played. */
+    let resume: { uid: string; position: number } | null = null
+
     /** Make queue position `index` current and start it from the top. */
     const start = (index: number) => {
       const item = get().items[index]
@@ -161,14 +166,17 @@ export function createPlayerStore({
         set({ index, status: 'error', position: 0, duration: item.track.duration_seconds ?? 0, error: OFFLINE_UNAVAILABLE })
         return
       }
+      const resumeAt = resume !== null && resume.uid === item.uid ? resume.position : 0
+      resume = null
       set({
         index,
         status: 'loading',
-        position: 0,
+        position: resumeAt,
         duration: item.track.duration_seconds ?? 0,
         error: null,
       })
       engine.load(source, item.track)
+      if (resumeAt > 0) engine.seek(resumeAt) // a restored session continues where it was
       startPlayback()
     }
 
@@ -187,6 +195,13 @@ export function createPlayerStore({
       error: null,
       volume: initialVolume,
       muted: false,
+
+      restore(snapshot) {
+        const item = snapshot.items[snapshot.index]
+        resume = snapshot.position > 0 ? { uid: item.uid, position: snapshot.position } : null
+        set({ items: snapshot.items, index: snapshot.index, source: snapshot.source, shuffle: snapshot.shuffle, ordered: null, repeat: snapshot.repeat,
+              status: 'idle', position: snapshot.position, duration: item.track.duration_seconds ?? 0, error: null })
+      },
 
       playCollection(tracks, { startIndex, source = null, shuffle } = {}) {
         if (tracks.length === 0) return
