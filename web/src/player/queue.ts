@@ -22,6 +22,7 @@ export interface RadioInfo {
   seedName: string | null
   presetId?: string // "study" or a custom preset's id
   autoplay?: boolean // started automatically when your music ended
+  stationId?: string // started from one of your saved stations
 }
 
 export interface QueueSource {

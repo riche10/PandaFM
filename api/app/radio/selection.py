@@ -8,6 +8,7 @@ import random
 from dataclasses import dataclass
 
 from app.radio.config import ModeProfile
+from app.radio.genres import OFF_GENRE, STATION_MIN, affinity
 from app.radio.scoring import Candidate, Profile, Recent, Seed, effective_weights, score
 from app.radio.session import SessionState
 
@@ -17,6 +18,17 @@ class Pick:
     candidate: Candidate
     score: float
     breakdown: dict[str, float]
+
+
+def station_pool(candidates: list[Candidate], anchor: frozenset[str], count: int) -> list[Candidate]:
+    """A saved station plays inside its neighbourhood. Only if that runs dry (a tiny
+    library) may the nearest songs below it join; clearly unrelated ones never do."""
+    fits = [(affinity(c.genres, anchor), c) for c in candidates]
+    inside = [c for f, c in fits if f >= STATION_MIN]
+    if len(inside) >= count:
+        return inside
+    nearby = sorted(((f, c) for f, c in fits if OFF_GENRE <= f < STATION_MIN), key=lambda x: -x[0])
+    return inside + [c for _, c in nearby[: count - len(inside)]]
 
 
 def choose(
@@ -30,7 +42,9 @@ def choose(
     recent: Recent,
     rng: random.Random,
 ) -> list[Pick]:
-    weights, temperature = effective_weights(mode, session.exploration)
+    weights, temperature = effective_weights(mode, session.exploration, seed.strict)
+    if seed.strict and seed.anchor:
+        candidates = station_pool(candidates, seed.anchor, count)
     # One noise value per candidate for this whole batch, so re-scoring between
     # picks (as repetition rules change) stays consistent.
     noise = {c.track_id: rng.random() for c in candidates}

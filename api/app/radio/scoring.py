@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from app.radio import config
+from app.radio.genres import OFF_GENRE
+from app.radio.genres import affinity as genre_affinity
 from app.radio.config import ModeProfile, Weights
 from app.radio.session import SessionState
 
@@ -47,6 +49,10 @@ class Seed:
     album_id: str | None = None
     genres: frozenset[str] = frozenset()
     year: int | None = None
+    # Stage 4.3: the canonical genres the radio stays near, how firmly, and how much of that pull is left.
+    anchor: frozenset[str] = frozenset()
+    strict: bool = False  # a saved station: the anchor never fades
+    strength: float = 1.0  # song seeds fade gently (genres.anchor_strength)
 
 
 @dataclass(frozen=True)
@@ -67,13 +73,13 @@ class Recent:
     genres: frozenset[str] = frozenset()  # of the previous pick
 
 
-PENALTIES = ("recent_track", "recent_artist", "recent_album", "skip_history", "session_skip")
+PENALTIES = ("recent_track", "recent_artist", "recent_album", "skip_history", "session_skip", "off_genre")
 
 
-def effective_weights(mode: ModeProfile, exploration: float) -> tuple[Weights, float]:
+def effective_weights(mode: ModeProfile, exploration: float, strict: bool = False) -> tuple[Weights, float]:
     """Exploration (raised by skips) loosens the seed and widens the net."""
     e = max(0.0, min(1.0, exploration))
-    relief = 1 - config.EXPLORATION_SEED_RELIEF * e
+    relief = 1.0 if strict else 1 - config.EXPLORATION_SEED_RELIEF * e  # a station's identity doesn't loosen
     w = mode.weights
     weights = replace(
         w,
@@ -112,12 +118,14 @@ def raw_terms(c: Candidate, seed: Seed, profile: Profile, session: SessionState,
     history_n = plays + config.TRACK_HISTORY_PRIOR
     session_genre = sum(session.genre_weights.get(g, 0.0) for g in genres) / len(genres) if genres else 0.0
     session_artist = session.artist_weights.get(c.artist_id or "", 0.0)
+    fit = genre_affinity(c.genres, seed.anchor) if seed.anchor else 0.0
     recent_artists = recent.artist_ids
     gap = mode.artist_gap
 
     return {
         "seed_artist": 1.0 if c.artist_id and c.artist_id == seed.artist_id else 0.0,
-        "seed_genre": _jaccard(genres, seed.genres),
+        # Genre fit uses the shared genre model (similarity, not exact tags), scaled by how much seed pull is left.
+        "seed_genre": (fit * seed.strength) if seed.anchor else _jaccard(genres, seed.genres),
         "seed_era": math.exp(-abs(c.year - seed.year) / 8) if c.year and seed.year else 0.0,
         "genre_affinity": sum(profile.genre_affinity.get(g, 0.0) for g in genres) / len(genres) if genres else 0.0,
         "artist_affinity": profile.artist_affinity.get(c.artist_id or "", 0.0),
@@ -142,6 +150,8 @@ def raw_terms(c: Candidate, seed: Seed, profile: Profile, session: SessionState,
         "recent_album": 1.0 if c.album_id and c.album_id in recent.album_ids[-mode.album_gap :] else 0.0,
         "skip_history": _weighted_skips(c) / history_n,
         "session_skip": 1.0 if c.artist_id and c.artist_id in session.skipped_artist_ids else 0.0,
+        # Clearly unrelated to the anchor (e.g. a film score on a rock radio): keeps discovery from wandering off.
+        "off_genre": seed.strength if seed.anchor and c.genres and fit < OFF_GENRE else 0.0,
     }
 
 

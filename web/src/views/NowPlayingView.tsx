@@ -43,6 +43,7 @@ export function NowPlayingView() {
             <Icon name="radio" />
             {activeRadio.autoplay ? 'Autoplay · ' : ''}
             {activeRadio.modeLabel}
+            {activeRadio.stationId ? ' station' : ''}
             {activeRadio.seedName ? ` · based on ${activeRadio.seedName}` : ''}
           </span>
         ) : (

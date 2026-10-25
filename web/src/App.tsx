@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router'
 import { isNative, platform } from './platform/state'
+import { AndroidBack } from './shell/AndroidBack'
 import { AppShell } from './shell/AppShell'
 import { OfflineView } from './views/OfflineView'
 import { ServerSetupView } from './views/ServerSetupView'
@@ -22,6 +23,7 @@ export default function App() {
   if (isNative() && !platform.server) return <ServerSetupView />
   return (
     <AppShell>
+      {isNative() && <AndroidBack />}
       <Routes>
         <Route path="/" element={<HomeView />} />
         <Route path="/search" element={<SearchView />} />

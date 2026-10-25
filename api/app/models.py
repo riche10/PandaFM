@@ -161,6 +161,22 @@ class RadioPreset(Base):
     __table_args__ = (Index("ix_radio_presets_user", "user_id"),)
 
 
+class RadioStation(Base):
+    """A saved station: a musical neighbourhood (genres) played with a radio behaviour (preset)."""
+
+    __tablename__ = "radio_stations"
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    name: Mapped[str] = mapped_column(String(40))
+    genres: Mapped[list[str]] = mapped_column(JSONB)  # library genre tags as chosen
+    preset: Mapped[str | None] = mapped_column(String(64))  # built-in mode id or custom preset id; None = Panda
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (Index("ix_radio_stations_user", "user_id"),)
+
+
 class RadioSession(Base):
     __tablename__ = "radio_sessions"
 
@@ -172,6 +188,7 @@ class RadioSession(Base):
     # Stage 4.1: which preset started it, the name shown, and the profile it used.
     preset_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), ForeignKey("radio_presets.id", ondelete="SET NULL"))
     display_name: Mapped[str | None] = mapped_column(String(80))
+    station_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), ForeignKey("radio_stations.id", ondelete="SET NULL"))
     profile: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))  # SQL NULL for built-ins
     status: Mapped[str] = mapped_column(String(16), server_default=text("'active'"))
     state: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))  # short-term taste

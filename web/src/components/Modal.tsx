@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from 'react'
+import { useBackLayer } from '../hooks/useBackLayer'
 
 interface ModalProps {
   open: boolean
@@ -15,6 +16,7 @@ interface ModalProps {
  */
 export function Modal({ open, onClose, label, className = '', children }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null)
+  useBackLayer(open, onClose) // Android Back closes it first
 
   useEffect(() => {
     const dialog = ref.current

@@ -1,3 +1,4 @@
+import { useBackLayer } from '../hooks/useBackLayer'
 import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 
@@ -56,6 +57,7 @@ function MenuDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const close = () => ref.current?.close()
+  useBackLayer(true, close) // mounted only while open; Android Back closes it first
 
   useLayoutEffect(() => {
     const dialog = ref.current

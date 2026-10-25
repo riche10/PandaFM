@@ -6,6 +6,7 @@ import { AlbumCard, ArtistCard, PlaylistCard, QuickTile, Shelf, TrackCard } from
 import { Cover } from '../components/Cover'
 import { Icon } from '../components/Icon'
 import { RadioCards } from '../components/RadioCards'
+import { StationCards } from '../components/StationCards'
 import { ErrorNotice } from '../components/States'
 import { TrackList } from '../components/TrackList'
 import { Wordmark } from '../components/Wordmark'
@@ -21,6 +22,7 @@ import { player } from '../player'
 const HOME_SECTIONS: { id: string; Section: ComponentType }[] = [
   { id: 'quick-access', Section: QuickAccess },
   { id: 'panda-modes', Section: PandaModes },
+  { id: 'my-stations', Section: StationCards },
   { id: 'history', Section: HistorySections },
   { id: 'recently-added', Section: RecentlyAdded },
   { id: 'favorites', Section: FavoriteSections },

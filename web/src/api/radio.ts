@@ -82,3 +82,30 @@ export const presetsApi = {
   duplicate: (id: string) => apiSend<RadioPreset>('POST', `/radio/presets/${encodeURIComponent(id)}/duplicate`),
   rename: (mode: string, name: string | null) => apiSend<RadioPreset>('PATCH', `/radio/modes/${encodeURIComponent(mode)}`, { name }),
 }
+
+/** A saved station: WHAT music to stay near (genres), played with a radio style (preset). */
+export interface RadioStation {
+  id: string
+  name: string
+  genres: string[]
+  families: string[]
+  preset: string
+  preset_name: string
+  preset_missing: boolean
+  label: string // "Rock" or "Rock · Familiar"
+}
+
+export interface LibraryGenre {
+  name: string
+  songs: number
+  family: string | null
+}
+
+export const stationsApi = {
+  list: () => apiGet<RadioStation[]>('/radio/stations'),
+  genres: () => apiGet<LibraryGenre[]>('/radio/genres'),
+  create: (body: { name: string; genres: string[]; preset: string | null }) => apiSend<RadioStation>('POST', '/radio/stations', body),
+  update: (id: string, body: { name?: string; genres?: string[]; preset?: string | null }) => apiSend<RadioStation>('PATCH', `/radio/stations/${encodeURIComponent(id)}`, body),
+  remove: (id: string) => apiSend<null>('DELETE', `/radio/stations/${encodeURIComponent(id)}`),
+  duplicate: (id: string) => apiSend<RadioStation>('POST', `/radio/stations/${encodeURIComponent(id)}/duplicate`),
+}
