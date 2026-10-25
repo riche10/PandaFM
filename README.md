@@ -367,6 +367,29 @@ menu first, then goes back through PandaFM's pages, and only leaves the app
 from Home. With music queued, it moves PandaFM to the background so the
 music keeps going.
 
+## PandaFM 5.0: sign-in and remote access
+
+> **Do not expose a PandaFM build older than 5.0 to the internet.** It has no sign-in.
+
+5.0 adds an owner account and makes PandaFM safe to reach from outside your
+home through an HTTPS reverse proxy. See **[docs/security.md](docs/security.md)**
+for the full model, reverse-proxy recipes and upgrade steps.
+
+- **Secure first-time setup** with `PANDAFM_SETUP_TOKEN` (from Portainer). Only
+  works until the owner exists; your existing history becomes the owner's.
+- **Owner sign-in:** Argon2id passwords; HttpOnly session cookies with CSRF
+  protection in browsers; Keystore-protected device sign-in in the Android app.
+  Every library, media and radio API needs sign-in; API docs are off.
+- **Settings › Account & devices:** see where you're signed in, sign out a
+  device or all others, change your password.
+- **Streaming quality** per device: Auto (app: original on Wi-Fi, AAC 256 on
+  mobile data), Original, High (AAC ~256 kbps), Data Saver (AAC ~128 kbps).
+- **Your queue survives a restart**, restored paused.
+
+Recommended public topology: Internet → HTTPS :443 → your reverse proxy →
+`pandafm-web` :8086 → PandaFM API → PostgreSQL / Navidrome. Publish only the
+reverse proxy.
+
 ## Library explorer (Stage 4.5)
 
 Everything here comes from **your own Navidrome library and PandaFM's

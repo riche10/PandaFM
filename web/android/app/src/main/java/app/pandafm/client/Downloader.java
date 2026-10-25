@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URL;
+import java.util.Collections;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -56,13 +56,12 @@ final class Downloader {
             String serverSha = null;
             for (int waits = 0; ; waits++) {
                 if (cancelled.get()) throw new Failure("Cancelled", false);
-                HttpURLConnection conn = (HttpURLConnection) new URL(job.url).openConnection();
-                conn.setConnectTimeout(20_000);
-                conn.setReadTimeout(60_000);
-                conn.setInstanceFollowRedirects(true);
-                if (have > 0) conn.setRequestProperty("Range", "bytes=" + have + "-");
+                // Signed in (5.0): Authorization only for the PandaFM server, redirects only within it.
+                HttpURLConnection conn = AuthHttp.open(ctx, job.url,
+                    have > 0 ? Collections.singletonMap("Range", "bytes=" + have + "-") : Collections.<String, String>emptyMap(), 20_000, 60_000);
                 try {
                     int code = conn.getResponseCode();
+                    if (code == 401) throw new Failure("Sign in to PandaFM to keep downloading", false);
                     if (code == 202) { // the server is still converting this song
                         if (waits >= MAX_CONVERT_WAITS) throw new Failure("The server is still converting this song", true);
                         Thread.sleep(retryAfterMs(conn));
