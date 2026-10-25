@@ -1,10 +1,11 @@
+import { authFetch } from '../api/auth'
 import { useEffect, useState } from 'react'
 import { type CoverSize, coverUrl } from '../api/library'
 import { directArtworkSrc, isOnline } from '../offline'
 import { createArtworkCache } from '../platform/artwork'
 
 const cache = createArtworkCache({
-  fetcher: (url) => fetch(url),
+  fetcher: (url) => authFetch(url), // Android: artwork needs the Bearer token too
   createUrl: (blob) => URL.createObjectURL(blob),
   revokeUrl: (url) => URL.revokeObjectURL(url),
 })

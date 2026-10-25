@@ -68,3 +68,12 @@ export interface PandaPlayerPlugin {
   addListener(event: 'state', listener: (event: NativePlayerEvent) => void): Promise<{ remove: () => Promise<void> }>
   addListener(event: 'remote', listener: (command: NativeRemoteCommand) => void): Promise<{ remove: () => Promise<void> }>
 }
+
+/** Android sign-in (web/android/.../PandaAuthPlugin.java). The refresh token stays native, Keystore-encrypted. */
+export interface PandaAuthPlugin {
+  status(): Promise<{ signedIn: boolean; username: string | null }>
+  signIn(options: { server: string; username: string; password: string; deviceName?: string }): Promise<{ username: string }>
+  setup(options: { server: string; setupToken: string; username: string; password: string; deviceName?: string }): Promise<{ username: string }>
+  accessToken(options?: { forceRefresh?: boolean }): Promise<{ token: string | null }>
+  signOut(): Promise<void>
+}

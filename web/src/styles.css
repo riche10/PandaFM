@@ -3972,3 +3972,85 @@ body {
 .style-actions .text-button {
   min-height: 2.75rem;
 }
+
+/* ── 5.0: sign-in and devices ── */
+.sign-in {
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+.sign-in-mark {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+}
+
+.sign-in-mark .icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.device-list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.device-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.1rem 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.device-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.device-badge {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-selected);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.device-sub {
+  grid-column: 1;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.device-row .text-button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.password-form {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 26rem;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}

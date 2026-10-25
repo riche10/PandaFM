@@ -4,6 +4,7 @@ import { artworkSrc, nativeArtworkUri, onReconnect, resolveSource } from '../off
 import { platform } from '../platform/state'
 import { createPlaybackEngine, usesBrowserMediaSession } from './engineSelect'
 import { NativePlaybackEngine } from './nativeEngine'
+import { authFetch } from '../api/auth'
 import { apiUrl } from '../api/client'
 import { radioApi } from '../api/radio'
 import { createReporter, type ListeningEvent, snapshot } from './events'
@@ -36,7 +37,7 @@ const EVENTS_KEY = 'pandafm.pending-events'
 /** Listening events go to the API in batches; unsent ones survive a closed tab. */
 export const reporter = createReporter({
   send: async (events) => {
-    const response = await fetch(apiUrl('/events'), {
+    const response = await authFetch(apiUrl('/events'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ events }),

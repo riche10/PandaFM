@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import type { PandaPlayerPlugin, PandaStoragePlugin } from './native'
+import type { PandaPlayerPlugin, PandaStoragePlugin, PandaAuthPlugin } from './native'
 import { savedServer } from './server'
 import { configurePlatform } from './state'
 
@@ -12,5 +12,6 @@ export function initPlatform(): void {
     localFileUrl: (uri) => Capacitor.convertFileSrc(uri), // served (with Range) by Capacitor's local server
     storage: registerPlugin<PandaStoragePlugin>('PandaStorage'),
     player: registerPlugin<PandaPlayerPlugin>('PandaPlayer'),
+    auth: registerPlugin<PandaAuthPlugin>('PandaAuth'),
   })
 }

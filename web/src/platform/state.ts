@@ -13,6 +13,8 @@ export interface PlatformState {
   storage: PandaStoragePlugin | null
   /** Native Media3 playback (Android). When set, the player uses it instead of <audio>. */
   player: PandaPlayerPlugin | null
+  /** Native sign-in (Android). Null in browsers, which use an HttpOnly session cookie. */
+  auth: import('./native').PandaAuthPlugin | null
 }
 
 export const platform: PlatformState = {
@@ -21,6 +23,7 @@ export const platform: PlatformState = {
   localFileUrl: (uri) => uri,
   storage: null,
   player: null,
+  auth: null,
 }
 
 export const isNative = () => platform.kind === 'android'

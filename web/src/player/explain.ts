@@ -1,3 +1,4 @@
+import { authFetch } from '../api/auth'
 import { readApiError } from '../api/client'
 import { streamUrl } from '../api/library'
 import { PLAYBACK_ERROR_MESSAGES } from './store'
@@ -11,7 +12,7 @@ import type { PlaybackErrorKind } from './types'
  */
 export async function explainPlaybackError(trackId: string, kind: PlaybackErrorKind, fallback = PLAYBACK_ERROR_MESSAGES[kind]): Promise<string> {
   try {
-    const response = await fetch(streamUrl(trackId), { headers: { Range: 'bytes=0-1' } })
+    const response = await authFetch(streamUrl(trackId), { headers: { Range: 'bytes=0-1' } })
     if (!response.ok) return (await readApiError(response)).message
     await response.body?.cancel()
   } catch {

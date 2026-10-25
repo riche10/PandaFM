@@ -1,3 +1,4 @@
+import { authFetch } from '../api/auth'
 import { useStore } from 'zustand'
 import { apiSend, apiUrl } from '../api/client'
 import { type CoverSize, coverUrl, streamUrl } from '../api/library'
@@ -98,7 +99,7 @@ export async function cacheArtwork(coverArtIds: (string | null)[]): Promise<void
   for (const id of new Set(coverArtIds)) {
     if (!id || known[id]) continue
     try {
-      const blob = await (await fetch(apiUrl(`/covers/${encodeURIComponent(id)}?size=600`))).blob()
+      const blob = await (await authFetch(apiUrl(`/covers/${encodeURIComponent(id)}?size=600`))).blob()
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
