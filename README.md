@@ -304,7 +304,7 @@ Server side, Stage 4 adds:
 - CORS for the app's WebView origin (`https://localhost`).
 
 After redeploying, `docker logs pandafm-api 2>&1 | grep "schema is at revision"`
-should show the latest revision (`0003` after Stage 4.1). Quality badges appear once the next library sync (within
+should show the latest revision (`0004` after Stage 4.3). Quality badges appear once the next library sync (within
 a minute of start-up) has stored the new audio facts.
 
 ## Personalisation and Autoplay (Stage 4.1)
@@ -330,3 +330,36 @@ on radio sessions.
 album, artist, playlist or other finite queue ends naturally, PandaFM
 continues with Panda Radio seeded from it, in the same queue. Repeat, songs
 you queued, End Radio, and being offline all keep the normal ending.
+
+## Radio coherence and My Stations (Stage 4.3)
+
+**One genre model** (`api/app/radio/genres.py`) is used by all radio:
+genre tags are normalized ("Pop-Punk" = "pop punk", "Alt. Rock" =
+"alternative rock"), grouped into families (rock, punk, metal, pop,
+electronic, hip hop, r&b, jazz, classical, soundtrack, ambient, folk...),
+and compared by similarity (same 1, family root/child 0.85, siblings 0.7,
+neighbouring families less, unrelated 0).
+
+**Song-seeded Panda Radio stays coherent.** It fits songs to the seed by
+genre similarity rather than exact tags, and a clearly unrelated song (a
+film score on rock radio) gets a penalty. The seed's pull fades gently as
+the session goes on (92% per song, never below 35%), so radio drifts
+towards what you actually listen to without forgetting where it started.
+This stage also fixes a Stage 3 bug: a skip used to make a session forget
+its seed entirely.
+
+**My Stations** (on Home) are music neighbourhoods you create: a name, one
+or more genres from your library, and a radio style (any built-in or custom
+preset). A station is anchored for its whole session: it only plays songs
+close to its genres (Rock includes Alternative Rock, Pop Punk, J-Rock and
+rock-adjacent Metal; not Film Score or Classical), however much the radio
+explores. Stations live on the server (migration `0004`), so every device
+sees them. Edit, duplicate or delete them from a station's ⋯ menu.
+Deleting one never stops it if it's playing, and never touches songs,
+presets or history. If a station's custom radio style is deleted, it plays
+as Panda.
+
+In the Android app, the system Back button now closes an open dialog or
+menu first, then goes back through PandaFM's pages, and only leaves the app
+from Home. With music queued, it moves PandaFM to the background so the
+music keeps going.

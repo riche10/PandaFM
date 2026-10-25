@@ -3498,3 +3498,53 @@ body {
   height: 2.25rem;
   accent-color: var(--accent);
 }
+
+/* My Stations: the radio shelf's cards, plus a quiet "New station" card and a ⋯ menu per station. */
+.station-card {
+  position: relative;
+}
+
+.station-more {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+}
+
+.station-card .radio-card {
+  padding-right: 2.75rem;
+}
+
+.radio-card--new {
+  border-style: dashed;
+  background: transparent;
+}
+
+.genre-search {
+  margin: 0.5rem 0;
+}
+
+.genre-list {
+  max-height: min(40vh, 20rem);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  padding: 0 0.6rem;
+}
+
+.genre-option {
+  border-bottom: 1px solid var(--border);
+}
+
+.genre-option:last-child {
+  border-bottom: 0;
+}
+
+.genre-name {
+  flex: 1;
+}
+
+.genre-count {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}

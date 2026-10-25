@@ -25,7 +25,7 @@ export const playPlaylist = (id: string, name: string, shuffle = false) =>
 /** Start Panda Radio (optionally from a song, album or artist) with a short confirmation. */
 export async function startRadio(
   mode: string,
-  seed: { kind: 'track' | 'album' | 'artist'; id: string; name: string } | null,
+  seed: { kind: 'track' | 'album' | 'artist' | 'station'; id: string; name: string } | null,
   options: { keepCurrent?: boolean } = {},
 ) {
   try {
@@ -33,5 +33,15 @@ export async function startRadio(
     toast(seed ? `Panda Radio based on ${seed.name}` : 'Panda Radio started')
   } catch (err) {
     toast(err instanceof Error ? err.message : 'Couldn’t start Panda Radio.', 'error')
+  }
+}
+
+/** Play one of your saved stations (a normal Panda Radio session anchored to its genres). */
+export async function startStation(station: { id: string; label: string }) {
+  try {
+    await radio.start('panda', { kind: 'station', id: station.id })
+    toast(`${station.label} station`)
+  } catch (err) {
+    toast(err instanceof Error ? err.message : 'Couldn’t start the station.', 'error') // once; no retries
   }
 }
