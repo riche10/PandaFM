@@ -4,6 +4,7 @@ import { player, radio, usePlayer, type QueueItem } from '../player'
 import { Cover } from './Cover'
 import { Equalizer } from './Equalizer'
 import { Icon } from './Icon'
+import { MarqueeText } from './MarqueeText'
 import { MenuButton, MenuItem } from './Menu'
 
 /** Very long queues (a whole library) render this many upcoming rows. */
@@ -39,6 +40,9 @@ export function QueueList({ limit, showCurrent = true }: { limit?: number; showC
     )
   }
 
+  const nextFrom = source?.radio
+    ? `${source.radio.autoplay ? 'Autoplay · ' : 'Next from '}${source.radio.modeLabel}${source.radio.seedName ? ` · based on ${source.radio.seedName}` : ''}`
+    : `Next from: ${source?.name ?? 'your selection'}`
   return (
     <div className="queue">
       {showCurrent && (
@@ -66,7 +70,7 @@ export function QueueList({ limit, showCurrent = true }: { limit?: number; showC
         <section className="queue-section" aria-label="Next from the collection">
           <div className="queue-heading-row">
             <h3 className="queue-heading">
-              {source?.radio ? `${source.radio.autoplay ? 'Autoplay · ' : 'Next from '}${source.radio.modeLabel}${source.radio.seedName ? ` · based on ${source.radio.seedName}` : ''}` : `Next from: ${source?.name ?? 'your selection'}`}
+              <MarqueeText title={nextFrom}>{nextFrom}</MarqueeText>
             </h3>
             {limit === undefined &&
               (source?.radio ? (

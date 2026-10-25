@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { NativeJobState, PandaStoragePlugin } from '../platform/native'
-import { planCollection, release } from './planner.ts'
+import { budgetOf, checkFits, type Budget } from './budget.ts'
+import { type CollectionPlan, planCollection, release } from './planner.ts'
 import type { OfflineSettings } from './settings'
 import type { ManifestStore } from './store'
 import { type CollectionKind, collectionKey, type Manifest, type ManifestItem, type OfflineCollection, type OfflineTrack } from './types.ts'
@@ -29,7 +30,14 @@ export interface ManagerDeps {
   absoluteUrl: (path: string) => string
   settings: () => OfflineSettings
   setTimer?: (fn: () => void, ms: number) => unknown
+  /** Free bytes on the chosen storage (null if unknown). Without it only a fixed limit is enforced. */
+  freeSpace?: () => Promise<number | null>
 }
+
+/** A download that doesn't fit this device's storage budget. */
+export class BudgetError extends Error {}
+
+const itemBytes = (item: ManifestItem) => item.size_bytes ?? item.plan.estimated_bytes ?? 0
 
 export interface OfflineState {
   ready: boolean
@@ -38,12 +46,13 @@ export interface OfflineState {
   artwork: Record<string, string>
   progress: Record<string, { bytes: number; total: number | null }>
   paused: boolean
+  budgetNotice: string | null // why the last download or sync couldn't add songs
 }
 
 const MIME: Record<string, string> = { flac: 'audio/flac', mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg', opus: 'audio/ogg', wav: 'audio/wav' }
 
 export class DownloadManager {
-  readonly state: StoreApi<OfflineState> = createStore<OfflineState>()(() => ({ ready: false, tracks: {}, collections: {}, artwork: {}, progress: {}, paused: false }))
+  readonly state: StoreApi<OfflineState> = createStore<OfflineState>()(() => ({ ready: false, tracks: {}, collections: {}, artwork: {}, progress: {}, paused: false, budgetNotice: null }))
   private deps: ManagerDeps
   private retryAt = new Map<string, number>()
 
@@ -81,6 +90,18 @@ export class DownloadManager {
     for (const job of jobs) await this.onJob(job)
   }
 
+  /** Storage this device lets PandaFM use: downloaded songs once each, queued ones too. */
+  async budget(): Promise<Budget> {
+    let usedBytes = 0
+    let pendingBytes = 0
+    for (const t of Object.values(this.state.getState().tracks)) {
+      if (t.status === 'downloaded' || t.status === 'outdated') usedBytes += t.sizeBytes ?? t.expectedBytes ?? 0
+      else if (t.status === 'queued' || t.status === 'downloading') pendingBytes += t.expectedBytes ?? t.sizeBytes ?? 0
+    }
+    const freeBytes = this.deps.freeSpace ? await this.deps.freeSpace().catch(() => null) : null
+    return budgetOf({ usedBytes, pendingBytes, freeBytes }, this.deps.settings())
+  }
+
   /** Download a song, album, playlist or Favorites (optionally keeping it in sync). */
   async download(target: { kind: CollectionKind; id: string | null; name?: string }, profile: string, keepSynced: boolean): Promise<OfflineCollection> {
     const manifest = await this.deps.prepare({
@@ -97,10 +118,28 @@ export class DownloadManager {
       trackIds: manifest.items.map((i) => i.track.id), coverArtId: manifest.items[0]?.track.cover_art_id ?? null,
       durationSeconds: manifest.duration_seconds, updatedAt: new Date().toISOString(),
     }
-    await this.deps.store.putCollection(collection)
-    this.state.setState((s) => ({ collections: { ...s.collections, [key]: collection } }))
-    await this.apply(collection, manifest, previous?.trackIds ?? [])
+    const plan = planCollection(previous?.trackIds ?? [], manifest, this.local())
+    // Songs that left a kept collection go first: that frees space.
+    if (plan.unref.length) await this.releaseFrom(key, plan.unref)
+    const tracks = this.state.getState().tracks
+    const needed =
+      plan.download.reduce((n, i) => n + itemBytes(i), 0) +
+      plan.refresh.reduce((n, i) => n + Math.max(0, itemBytes(i) - (tracks[i.track.id]?.sizeBytes ?? 0)), 0)
+    const verdict = checkFits(await this.budget(), needed)
+    if (!verdict.ok) {
+      this.state.setState({ budgetNotice: verdict.message })
+      if (previous) await this.saveCollection(collection) // a sync: keep following the server, add songs once there is room
+      throw new BudgetError(verdict.message ?? 'Not enough storage for this download.')
+    }
+    await this.saveCollection(collection)
+    await this.apply(collection, plan)
+    this.state.setState({ budgetNotice: null })
     return collection
+  }
+
+  private async saveCollection(collection: OfflineCollection) {
+    await this.deps.store.putCollection(collection)
+    this.state.setState((s) => ({ collections: { ...s.collections, [collection.key]: collection } }))
   }
 
   /** Re-check a collection against the server: new songs come, removed songs go (if unused elsewhere). */
@@ -110,14 +149,19 @@ export class DownloadManager {
     await this.download({ kind: c.kind, id: c.id, name: c.name }, c.profile, c.keepSynced)
   }
 
+  /** Keep every kept collection in sync; one that doesn't fit the storage budget doesn't stop the others. */
   async syncAll(): Promise<void> {
     for (const c of Object.values(this.state.getState().collections)) {
-      if (c.keepSynced) await this.sync(c.key)
+      if (!c.keepSynced) continue
+      try {
+        await this.sync(c.key)
+      } catch (err) {
+        if (!(err instanceof BudgetError)) throw err
+      }
     }
   }
 
-  private async apply(collection: OfflineCollection, manifest: Manifest, previous: string[]) {
-    const plan = planCollection(previous, manifest, this.local())
+  private async apply(collection: OfflineCollection, plan: CollectionPlan) {
     const key = collection.key
     for (const id of plan.link) {
       const entry = this.state.getState().tracks[id]
@@ -130,10 +174,9 @@ export class DownloadManager {
     }
     for (const item of plan.refresh) {
       const entry = this.state.getState().tracks[item.track.id]
-      await this.saveTrack({ ...entry, status: 'outdated' }) // keeps playing the old copy until the new one is verified
+      await this.saveTrack({ ...entry, status: 'outdated', expectedBytes: itemBytes(item) }) // keeps playing the old copy until the new one is verified
     }
     await this.enqueue(queue)
-    if (plan.unref.length) await this.releaseFrom(key, plan.unref)
   }
 
   private entryFor(item: ManifestItem, refs: string[]): OfflineTrack {
@@ -141,6 +184,7 @@ export class DownloadManager {
       trackId: item.track.id, track: item.track, profile: item.plan.profile, relativePath: item.relative_path, localUri: null,
       sizeBytes: item.size_bytes, sha256: item.sha256, sourceRevision: item.source_revision, codec: item.plan.codec,
       lossless: item.plan.lossless, qualityBadge: item.track.quality?.badge ?? null, qualityDetail: item.track.quality?.detail ?? null,
+      expectedBytes: itemBytes(item),
       bitrateKbps: item.plan.bitrate_kbps, status: 'queued', attempts: 0, error: null, downloadedAt: null, refs,
     }
   }

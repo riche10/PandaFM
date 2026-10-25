@@ -21,6 +21,7 @@ export function OfflineView() {
   const collections = useOffline((s) => Object.values(s.collections))
   const tracks = useOffline((s) => Object.values(s.tracks))
   const paused = useOffline((s) => s.paused)
+  const budgetNotice = useOffline((s) => s.budgetNotice)
   const downloaded = tracks.filter((t) => t.status === 'downloaded')
   const failed = tracks.filter((t) => t.status === 'failed').length
   const used = downloaded.reduce((sum, t) => sum + (t.sizeBytes ?? 0), 0)
@@ -34,6 +35,7 @@ export function OfflineView() {
         {downloaded.length} songs · {formatBytes(used)} on this device
         {failed ? ` · ${failed} failed` : ''}
       </p>
+      {budgetNotice && <p className="field-error" role="status">{budgetNotice}</p>}
       <div className="offline-actions">
         {busy && (
           <button type="button" className="button button--quiet" onClick={() => void (paused ? offline()?.resume() : offline()?.pause())}>

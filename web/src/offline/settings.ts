@@ -9,10 +9,17 @@ export interface OfflineSettings {
   concurrency: number
   preferLocal: boolean // play the downloaded file when there is one
   streamFallback: boolean // otherwise stream from the server
+  // Storage budget for this device (offline/budget.ts).
+  storageMode: 'fixed' | 'available'
+  storageLimitGb: number
+  reserveGb: number
 }
 
 const KEY = 'pandafm.offline-settings'
-export const DEFAULT_SETTINGS: OfflineSettings = { defaultProfile: 'original', syncPolicy: 'wifi', concurrency: 2, preferLocal: true, streamFallback: true }
+export const DEFAULT_SETTINGS: OfflineSettings = {
+  defaultProfile: 'original', syncPolicy: 'wifi', concurrency: 2, preferLocal: true, streamFallback: true,
+  storageMode: 'available', storageLimitGb: 64, reserveGb: 2,
+}
 
 function load(): OfflineSettings {
   try {

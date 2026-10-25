@@ -3548,3 +3548,199 @@ body {
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Stage 4.4: dialogs that fit small screens, calm marquees, storage meter ── */
+
+/* A dialog or sheet never grows past the visible screen (minus Android's
+   system bars); its body scrolls instead, without dragging the page behind,
+   and its actions stay in reach at the bottom. */
+.modal[open],
+.menu[open] {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2rem);
+  overflow: hidden;
+}
+
+.modal-body,
+.menu-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modal-body {
+  scroll-padding-bottom: 6rem; /* controls scrolled into view stay above the sticky actions */
+}
+
+.modal-actions {
+  position: sticky;
+  bottom: -1.5rem;
+  z-index: 1;
+  margin: 1.25rem -1.5rem -1.5rem;
+  padding: 0.85rem 1.5rem 1.5rem;
+  background: var(--background-elevated);
+  box-shadow: 0 -1px 0 var(--border);
+}
+
+@media (max-width: 899px) {
+  .modal[open],
+  .menu[open] {
+    max-height: calc(100vh - 1rem);
+    max-height: calc(100dvh - var(--safe-top) - 0.5rem);
+  }
+
+  .modal-body,
+  .menu-body {
+    padding-bottom: calc(var(--safe-bottom) + 1rem);
+  }
+
+  .modal-actions {
+    bottom: calc(-1 * (var(--safe-bottom) + 1rem));
+    margin-bottom: calc(-1 * (var(--safe-bottom) + 1rem));
+    padding-bottom: calc(var(--safe-bottom) + 1rem);
+  }
+}
+
+/* MarqueeText: still when it fits; a calm glide to the end and back when it doesn't. */
+.marquee {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.marquee-inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.marquee[data-animate] .marquee-inner {
+  animation: pandafm-marquee var(--marquee-duration, 8s) ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes pandafm-marquee {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+  50%,
+  65% {
+    transform: translateX(var(--marquee-shift, 0));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Reduced motion (or before measuring): a plain ellipsis. */
+.marquee[data-overflow]:not([data-animate]) {
+  text-overflow: ellipsis;
+}
+
+/* The inner box stays inline-block (so it keeps reporting the text's full
+   width for measuring) and is capped to the line with its own ellipsis. */
+.marquee[data-overflow]:not([data-animate]) .marquee-inner {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee .marquee-inner {
+    animation: none !important;
+  }
+}
+
+/* Long metadata can't widen its row or push buttons off screen. */
+.np-header {
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+}
+
+.np-header-source {
+  min-width: 0;
+  text-overflow: clip;
+}
+
+.np-header-source.np-radio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.np-header-source.np-radio > .icon {
+  flex: none;
+}
+
+.np-header-source.np-radio > .marquee {
+  flex: 0 1 auto;
+}
+
+.np-meta .np-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.np-meta > :not(.np-text) {
+  flex: none;
+}
+
+.np-album {
+  min-width: 0;
+  text-overflow: clip;
+}
+
+.queue-heading-row {
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.queue-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.queue-heading-row > button {
+  flex: none;
+}
+
+.storage-limit {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 32rem;
+}
+
+.storage-meter {
+  width: 100%;
+  height: 6px;
+  appearance: none;
+  border: 0;
+  border-radius: 3px;
+  background: var(--control-track);
+}
+
+.storage-meter::-webkit-progress-bar {
+  border-radius: 3px;
+  background: var(--control-track);
+}
+
+.storage-meter::-webkit-progress-value {
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+/* Now Playing's grid tracks may shrink to the screen: without this a long
+   album name stretched the panel past a phone's width (and pushed the
+   favourite button off screen). */
+.np-body > *,
+.np-panel > * {
+  min-width: 0;
+}
