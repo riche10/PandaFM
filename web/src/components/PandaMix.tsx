@@ -45,19 +45,32 @@ export function useMixPlaylist(playlistId: string) {
 /** The playlist's tracks in Panda Mix order (songs the order doesn't know yet keep their place at the end). */
 export function inMixOrder(tracks: Track[], order: string[] | undefined): Track[] {
   if (!order?.length) return tracks
-  const byId = new Map(tracks.map((t) => [t.id, t]))
-  const seen = new Set<string>()
+  // Preserve repeated playlist entries: consume matching original positions one at a time.
+  const positions = new Map<string, number[]>()
+  tracks.forEach((t, i) => {
+    const list = positions.get(t.id) ?? []
+    list.push(i)
+    positions.set(t.id, list)
+  })
+  const used = new Set<number>()
   const out: Track[] = []
   for (const id of order) {
-    const t = byId.get(id)
-    if (t && !seen.has(id)) { out.push(t); seen.add(id) }
+    const i = positions.get(id)?.shift()
+    if (i !== undefined) {
+      used.add(i)
+      out.push(tracks[i])
+    }
   }
-  return [...out, ...tracks.filter((t) => !seen.has(t.id))]
+  tracks.forEach((t, i) => {
+    if (!used.has(i)) out.push(t)
+  })
+  return out
 }
 
 /**
  * Playlist pages: Panda Mix as a lasting setting (5.3). Turning it on analyses the whole playlist once
- * and gives it a stable mixed order; the playlist itself (and normal Play) stays exactly as it is.
+ * and gives it a stable mixed order. While enabled, the primary Play action uses that mix until the
+ * user turns Panda Mix off; the original Navidrome order is still available explicitly.
  */
 export function PandaMixControls({ playlist, source, mix, view, onView }: {
   playlist: Playlist
@@ -118,6 +131,7 @@ export function PandaMixControls({ playlist, source, mix, view, onView }: {
               <MenuItem key={m.id} icon={state.mode === m.id ? 'check' : 'radio'} label={`${m.label} · ${m.hint}`} onSelect={() => { close(); void turnOn(m.id, false) }} />
             ))}
             <MenuItem icon="queue" label={view === 'mixed' ? 'Show original order' : 'Show mixed order'} onSelect={() => { close(); onView(view === 'mixed' ? 'original' : 'mixed') }} />
+            <MenuItem icon="play" label="Play original order" onSelect={() => { close(); player.playCollection(playlist.tracks, { source, shuffle: false }) }} />
             <MenuItem icon="shuffle" label="Remix" onSelect={() => { close(); void remix() }} />
             {isNative() && <MenuItem icon="download" label="Prepare Panda Mix (offline)" onSelect={() => { close(); prepare() }} />}
             <MenuItem icon="close" label="Turn off Panda Mix" onSelect={() => { close(); void turnOff() }} />
