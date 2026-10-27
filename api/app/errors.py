@@ -14,6 +14,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.navidrome.handle import NavidromeNotConfigured
 from app.navidrome.client import (
     NavidromeAuthError,
     NavidromeError,
@@ -47,9 +48,13 @@ async def navidrome_error_handler(request: Request, exc: Exception) -> JSONRespo
         return error_response(
             503,
             "navidrome_auth",
-            "PandaFM can’t sign in to Navidrome. Check NAVIDROME_USER and "
-            "NAVIDROME_PASSWORD in the stack’s environment variables.",
+            "PandaFM can’t sign in to your music server. The owner can update its username and "
+            "password in Settings › Music server.",
         )
+
+    if isinstance(exc, NavidromeNotConfigured):
+        return error_response(503, "music_server_not_configured",
+                              "PandaFM isn’t connected to a music server yet. The owner can connect one in Settings › Music server.")
 
     if isinstance(exc, NavidromeUnavailable):
         log.warning("Navidrome unavailable on %s: %s", request.url.path, exc)

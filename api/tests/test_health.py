@@ -61,7 +61,8 @@ def test_health_explains_bad_navidrome_credentials():
 def test_anonymous_health_says_whether_not_how():
     with client_with_navidrome(failed(40, "Wrong username or password"), signed_in=False) as client:
         body = client.get("/api/health").json()
-    assert body["navidrome"] == {"ok": False, "detail": None, "server_type": None, "server_version": None, "open_subsonic": None}
+    assert body["navidrome"] == {"ok": False, "configured": True, "detail": None, "server_type": None, "server_version": None, "open_subsonic": None, "url": None}
+    assert body["service"] == "pandafm"  # 5.3: the apps check they reached a PandaFM server
     assert body["database"] == {"ok": False, "detail": None, "server_version": None}
 
 

@@ -24,9 +24,11 @@ class Settings(BaseSettings):
 
     # ── Navidrome ── (no defaults for credentials: startup fails loudly
     # if they are missing rather than limping along unauthenticated)
-    navidrome_url: str = "http://localhost:4533"
-    navidrome_user: str
-    navidrome_password: SecretStr
+    # Legacy (≤5.2) Navidrome settings: only used once, to import an existing setup when PandaFM
+    # has no saved music server yet. From 5.3 the owner connects the music server in the app.
+    navidrome_url: str | None = None
+    navidrome_user: str | None = None
+    navidrome_password: SecretStr | None = None
     navidrome_timeout_seconds: float = 10.0
 
     log_level: str = "info"
@@ -47,6 +49,11 @@ class Settings(BaseSettings):
     # Proxies whose X-Forwarded-For / X-Forwarded-Proto are believed (pandafm-web and
     # your LAN reverse proxy). Private ranges by default: the API itself must not be public.
     trusted_proxies: list[str] = ["127.0.0.1/32", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+    # 5.3: PandaFM's own persistent configuration (its installation key lives here).
+    config_dir: str = "/config"
+    # Optional: supply the installation key yourself (32 bytes, base64 or hex) instead of the file.
+    config_key: SecretStr | None = None
+
     # Interactive API docs: off by default; when on, owner-only.
     api_docs: bool = False
 
