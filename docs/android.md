@@ -188,7 +188,7 @@ platform boundary (`web/src/player/engineSelect.ts`).
 - **What plays next vs. how it plays.** `QueueController` decides what plays;
   `ExoEngine` plays one song. Each load has a generation number, so a late
   "song ended" after you pressed Next can't advance the queue twice. (This
-  split is what PandaFM 5.1's two decks will build on.)
+  split is what Panda DJ's two-deck engine builds on.)
 - **Media controls** (lock screen, notification, Bluetooth, headsets, Walkman
   buttons, the car) all go through `QueuePlayer` straight to the native queue.
   Audio focus and "headphones unplugged" use Media3's standard handling.
@@ -401,7 +401,7 @@ Sign-in
 
 - The car's "up next" list shows the current song (PandaFM's queue is in the
   service, not in Media3's playlist); next/previous always work.
-- Songs play one at a time (no gapless join yet; that arrives with Panda Mix).
+- Regular playback uses one native deck; Panda Mix uses two decks for overlapping transitions.
 - Car artwork for downloaded songs needs the server once (it's cached after).
 - Voice requests depend on what Google Assistant passes to media apps.
 
@@ -505,18 +505,20 @@ Play downloaded tracks with the network off. The timeline and advancement stay
 stable.
 
 
-## Panda Mix on Android (5.2)
+## Panda Mix on Android (5.3)
 
 `PandaDjEngine` gives the playback service two decks, each the 5.1
 `EngineCore` over its own ExoPlayer. Normal Play uses one deck exactly as in
 5.1. During a Panda Mix the next song is preloaded on the standby deck about
-12 s before the transition, the blend runs on the outgoing deck's own clock
+20 s before the transition, the blend runs on the outgoing deck's own clock
 (equal-power gains), the current song (history, lock screen, Android Auto)
 changes at the midpoint and the session follows that deck, and the old deck
 stops afterwards. Only the current deck holds audio focus. If the incoming
-song can't load or isn't ready in time, the transition is dropped and the
-current song ends normally. Plans are cached in `files/mix-plans.json` for
-offline use. See [panda-mix.md](panda-mix.md).
+song becomes ready late, Panda DJ shortens the remaining overlap instead of
+dropping the mix immediately; if it never becomes ready, the current song
+finishes normally and Diagnostics records why. Seeking safely re-arms an
+upcoming transition instead of forgetting it. Plans are cached in
+`files/mix-plans.json` for offline use. See [panda-mix.md](panda-mix.md).
 
 
 ## Connecting to the server (5.3)
