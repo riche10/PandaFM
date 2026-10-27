@@ -34,7 +34,7 @@ final class PandaDjEngine implements QueueController.Engine {
         long nowMs();
     }
 
-    static final long PRELOAD_MS = 12_000, TICK_MS = 40, READY_GRACE_MS = 1_500;
+    static final long PRELOAD_MS = 20_000, TICK_MS = 40, MIN_OVERLAP_MS = 1_500;
 
     private final EngineCore[] cores;
     private final EngineCore.PlayerPort[] ports;
@@ -52,9 +52,13 @@ final class PandaDjEngine implements QueueController.Engine {
     private int queuedGen;
     private boolean preloaded, running, handedOff, paused, ticking, released, followerHeld;
     private int outDeck, inDeck;
-    private long waitedMs;
+    private long effStart, effOverlap; // a late start (incoming not ready, or a seek into the blend) shortens the overlap
     private double progress;
     private int transitions;
+    // 5.3 diagnostics: what actually happened, so a deliberately subtle transition can't be mistaken for a failure
+    private int smart, fallbacks, manual, intentional, cancelled, notReady;
+    private String lastReason, lastPlan;
+    private final float[] vol = {1f, 0f};
     private final ArrayDeque<String> history = new ArrayDeque<>();
 
     PandaDjEngine(EngineCore a, EngineCore.PlayerPort pa, EngineCore b, EngineCore.PlayerPort pb, EngineCore.Scheduler scheduler, Host host) {
@@ -78,6 +82,11 @@ final class PandaDjEngine implements QueueController.Engine {
 
     private int other() {
         return 1 - primary;
+    }
+
+    private void setVol(int deck, float v) {
+        vol[deck] = v;
+        ports[deck].setVolume(v);
     }
 
     /** Deck events: only the logical current deck speaks for the player (incoming buffering never pauses it). */
@@ -148,10 +157,22 @@ final class PandaDjEngine implements QueueController.Engine {
         if (running) cores[outDeck == primary ? inDeck : outDeck].pause(); // the automation freezes where it is
     }
 
+    /**
+     * A seek re-arms the pending transition (5.2 dropped it, so that song ended with a plain handoff):
+     * a blend in progress is cancelled cleanly, then planned again from the new position.
+     */
     @Override
     public void seekTo(long ms) {
-        cancel("seek"); // correctness over a clever transition: re-planned from the new position
+        Map<String, Object> keepPlan = handedOff ? null : plan;
+        QueueItem keepNext = handedOff ? null : nextItem;
+        int keepGen = planGen;
+        cancel("seek");
         cores[primary].seekTo(ms);
+        if (keepNext != null && keepPlan != null) {
+            nextItem = keepNext;
+            plan = keepPlan;
+            planGen = keepGen;
+        }
         tickSoon();
     }
 
@@ -167,7 +188,7 @@ final class PandaDjEngine implements QueueController.Engine {
 
     void setUserVolume(float v) {
         userVolume = Math.max(0f, Math.min(1f, v));
-        if (!running) ports[primary].setVolume(userVolume);
+        if (!running) setVol(primary, userVolume);
     }
 
     @Override
@@ -229,10 +250,21 @@ final class PandaDjEngine implements QueueController.Engine {
         } else if (nextItem != null && plan != null && PlaybackStateModel.intendsToPlay(cores[primary].state())) {
             long pos = cores[primary].positionMs();
             long start = num("outgoing_start_ms", Long.MAX_VALUE);
-            if (!preloaded && pos >= start - PRELOAD_MS) preload();
-            if (preloaded && pos >= start) {
-                if (cores[other()].ready()) begin(pos);
-                else if ((waitedMs += TICK_MS) >= READY_GRACE_MS) cancel("incoming not ready in time"); // A just plays to its end
+            long overlap = num("overlap_ms", 0);
+            long latest = start + Math.max(0, overlap - MIN_OVERLAP_MS); // past this there's no room left for a blend
+            if (pos > latest && overlap > MIN_OVERLAP_MS && !preloaded) { // e.g. a seek past the transition
+                note("seeked past the transition; this song ends normally");
+                nextItem = null;
+                plan = null;
+            } else {
+                if (!preloaded && pos >= start - PRELOAD_MS) preload();
+                if (preloaded && pos >= start) {
+                    if (cores[other()].ready()) begin(pos);
+                    else if (pos > latest) { // A just plays to its end; the queue advances the ordinary way
+                        notReady++;
+                        cancel("incoming deck not ready");
+                    }
+                }
             }
         }
         tickSoon();
@@ -241,13 +273,12 @@ final class PandaDjEngine implements QueueController.Engine {
     private void preload() {
         String uri = host.uriFor(nextItem);
         preloaded = true;
-        waitedMs = 0;
         if (uri == null) { // offline and not downloaded: no transition; the queue handles it at A's end
             record("no source for the next song; normal handoff");
             nextItem = null;
             return;
         }
-        ports[other()].setVolume(0f);
+        setVol(other(), 0f);
         cores[other()].load(planGen, nextItem, uri, num("incoming_start_ms", 0), false);
         host.log("PandaDJ preload deck=" + (other() == 0 ? "A" : "B") + " track=" + nextItem.trackId());
         record("preload " + nextItem.trackId() + " (" + plan.get("type") + ")");
@@ -259,11 +290,22 @@ final class PandaDjEngine implements QueueController.Engine {
         outDeck = primary;
         inDeck = other();
         progress = 0;
+        long start = num("outgoing_start_ms", 0), overlap = num("overlap_ms", 0);
+        effStart = Math.max(start, pos);
+        effOverlap = Math.max(0, overlap - (effStart - start)); // late: the same ending, a shorter blend
+        String source = String.valueOf(plan.get("source"));
+        boolean deliberate = Boolean.TRUE.equals(plan.get("intentional"));
+        if (deliberate) intentional++;
+        else if ("manual".equals(source)) manual++;
+        else if ("smart".equals(source)) smart++;
+        else fallbacks++;
+        lastPlan = plan.get("summary") + " (" + (deliberate ? "intentional" : source) + ")";
         cores[inDeck].play();
         followerHeld = false;
         transitions++;
-        host.log("PandaDJ transition_start " + cores[outDeck].item().trackId() + "→" + nextItem.trackId() + " type=" + plan.get("type") + " overlap=" + num("overlap_ms", 0));
-        record("transition_start " + plan.get("type") + " overlap=" + num("overlap_ms", 0) + "ms");
+        host.log("PandaDJ transition_start " + cores[outDeck].item().trackId() + "→" + nextItem.trackId() + " type=" + plan.get("type") + " source=" + source
+            + " overlap=" + effOverlap + (effOverlap < overlap ? " (late, planned " + overlap + ")" : ""));
+        record("transition_start " + lastPlan + " overlap=" + effOverlap + "ms" + (effOverlap < overlap ? " (late start)" : ""));
         automate();
     }
 
@@ -280,13 +322,11 @@ final class PandaDjEngine implements QueueController.Engine {
             followerHeld = false;
         }
         if (!leadAudible) return; // the automation runs on the outgoing deck's clock: frozen while silent
-        long overlap = num("overlap_ms", 0);
-        long start = num("outgoing_start_ms", 0);
         long pos = cores[outDeck].positionMs();
-        progress = overlap <= 0 ? 1.0 : Math.max(0, Math.min(1, (pos - start) / (double) overlap));
+        progress = effOverlap <= 0 ? 1.0 : Math.max(0, Math.min(1, (pos - effStart) / (double) effOverlap));
         float[] g = gains(progress, String.valueOf(plan.get("curve")));
-        ports[outDeck].setVolume(userVolume * g[0]);
-        ports[inDeck].setVolume(userVolume * g[1]);
+        setVol(outDeck, userVolume * g[0]);
+        setVol(inDeck, userVolume * g[1]);
         if (progress >= 0.5 && !handedOff) handoffNow();
         if (running && progress >= 1.0) finish();
     }
@@ -308,6 +348,7 @@ final class PandaDjEngine implements QueueController.Engine {
             primary = before;
             host.onLogicalDeck(primary);
             record("handoff refused (queue changed)");
+            cancelled++;
             cancel("queue changed");
             return;
         }
@@ -318,8 +359,8 @@ final class PandaDjEngine implements QueueController.Engine {
     private void finish() {
         if (!running) return;
         cores[outDeck].stop(); // the outgoing deck stops and becomes the standby (its decoder is released)
-        ports[outDeck].setVolume(userVolume);
-        ports[inDeck].setVolume(userVolume);
+        setVol(outDeck, userVolume);
+        setVol(inDeck, userVolume);
         running = false;
         preloaded = false;
         handedOff = false;
@@ -340,39 +381,41 @@ final class PandaDjEngine implements QueueController.Engine {
     void cancel(String why) {
         queuedNext = null;
         queuedPlan = null;
+        boolean listener = "load".equals(why) || "seek".equals(why) || "stop".equals(why);
         if (running) {
             int stray = primary == outDeck ? inDeck : outDeck;
             cores[stray].stop();
-            ports[stray].setVolume(0f);
+            setVol(stray, 0f);
             record("transition cancelled: " + why);
+            if (!listener) cancelled++;
         } else if (preloaded) {
             cores[other()].stop();
             record("preload dropped: " + why);
         }
+        if (!listener && (running || preloaded || nextItem != null)) note(why);
         running = false;
         preloaded = false;
         handedOff = false;
-        waitedMs = 0;
         progress = 0;
-        if (!"load".equals(why) && !"seek".equals(why) && !"stop".equals(why)) {
-            nextItem = null; // this pair is done for now; the queue re-plans on its next change
-            plan = null;
-        } else {
-            nextItem = null;
-            plan = null;
-        }
-        ports[primary].setVolume(userVolume);
+        nextItem = null; // seekTo re-arms its own pair; otherwise the queue re-plans on its next change
+        plan = null;
+        setVol(primary, userVolume);
     }
 
     private void resetStandby() {
         if (preloaded && !running) cores[other()].stop();
         preloaded = false;
-        waitedMs = 0;
+    }
+
+    private void note(String reason) {
+        lastReason = reason;
+        record(reason);
+        host.log("PandaDJ " + reason);
     }
 
     private void volumes(float primaryGain, float standbyGain) {
-        ports[primary].setVolume(userVolume * primaryGain);
-        ports[other()].setVolume(userVolume * standbyGain);
+        setVol(primary, userVolume * primaryGain);
+        setVol(other(), userVolume * standbyGain);
     }
 
     private void record(String what) {
@@ -392,18 +435,32 @@ final class PandaDjEngine implements QueueController.Engine {
     /** Settings › Diagnostics: the logical deck's facts plus the mix (no URLs, no tokens). */
     Map<String, Object> diagnostics() {
         Map<String, Object> m = new LinkedHashMap<>(cores[primary].diagnostics());
-        m.put("pandaMix", plan != null || running ? "active" : "idle");
+        m.put("pandaMix", plan != null || running ? "active" : nextItem == null ? "idle" : "active");
         m.put("logicalDeck", primary == 0 ? "A" : "B");
         for (int d = 0; d < 2; d++) {
             QueueItem it = cores[d].item();
-            m.put("deck" + (d == 0 ? "A" : "B"), it == null ? "idle" : it.trackId() + " · " + cores[d].state() + " · " + cores[d].positionMs() / 1000 + "s");
+            m.put("deck" + (d == 0 ? "A" : "B"), it == null ? "idle" : it.trackId() + " · " + cores[d].state() + " · " + cores[d].positionMs() / 1000 + "s · vol "
+                + Math.round(vol[d] * 100) + "%");
         }
+        m.put("standbyReady", preloaded && cores[other()].ready());
+        m.put("transitionRunning", running);
         if (plan != null) {
+            QueueItem cur = cores[running ? outDeck : primary].item();
+            m.put("currentPair", (cur == null ? "?" : cur.trackId()) + " → " + (nextItem == null ? "?" : nextItem.trackId()));
             m.put("transition", plan.get("summary"));
+            m.put("planSource", Boolean.TRUE.equals(plan.get("intentional")) ? plan.get("source") + " (intentional " + plan.get("label") + ")" : plan.get("source"));
             m.put("transitionConfidence", plan.get("confidence"));
+            m.put("bpmOut", plan.get("bpm_out"));
+            m.put("bpmIn", plan.get("bpm_in"));
+            m.put("transitionStartMs", num("outgoing_start_ms", 0));
+            m.put("overlapMs", running ? effOverlap : num("overlap_ms", 0));
             m.put("transitionProgress", running ? Math.round(progress * 100) + "%" : preloaded ? "preloaded" : "planned");
         }
+        m.put("lastTransition", lastPlan);
+        m.put("lastReason", lastReason);
         m.put("transitionsDone", (long) transitions);
+        m.put("transitionKinds", "smart " + smart + " · fallback " + fallbacks + " · manual " + manual + " · intentional " + intentional
+            + " · cancelled " + cancelled + " · not ready " + notReady);
         java.util.List<Object> events = new ArrayList<>(Json.list(m.get("events")) == null ? new ArrayList<>() : Json.list(m.get("events")));
         events.addAll(history);
         m.put("events", events);
