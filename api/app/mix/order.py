@@ -34,14 +34,13 @@ def cost(a_meta: dict, b_meta: dict, aa: dict | None, ba: dict | None) -> float:
 
 def mixed_order(ids: list[str], meta: dict[str, dict], analyses: dict[str, dict], seed: int = 0) -> list[str]:
     """Greedy chaining from the playlist's first song (or a seeded start for a Remix), then bounded 2-opt."""
-    ids = list(dict.fromkeys(ids))  # a song listed twice plays once in the mixed order
+    ids = list(ids)  # preserve repeated playlist entries; each occurrence still plays
     n = len(ids)
     if n < 3:
         return ids
     rng = random.Random(seed)
     jitter = {i: (rng.random() * 0.15 if seed else 0.0) for i in ids}
     m = [[cost(meta.get(a, {}), meta.get(b, {}), analyses.get(a), analyses.get(b)) + jitter[b] for b in ids] for a in ids]
-    pos = {i: k for k, i in enumerate(ids)}
     start = 0 if seed == 0 else rng.randrange(n)
     order, left = [start], set(range(n)) - {start}
     while left:
@@ -59,14 +58,11 @@ def mixed_order(ids: list[str], meta: dict[str, dict], analyses: dict[str, dict]
                     improved = True
         if not improved:
             break
-    _ = pos
     return [ids[k] for k in order]
 
 
 def insert(order: list[str], new: str, meta: dict[str, dict], analyses: dict[str, dict]) -> list[str]:
     """A song added to the playlist goes where it fits best; everything else keeps its place."""
-    if new in order:
-        return order
     if not order:
         return [new]
     c = lambda x, y: cost(meta.get(x, {}), meta.get(y, {}), analyses.get(x), analyses.get(y))  # noqa: E731
