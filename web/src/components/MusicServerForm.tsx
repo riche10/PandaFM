@@ -43,7 +43,7 @@ export function MusicServerForm({ initial, editing = false, onSaved, saveLabel =
     <form className="music-server-form" onSubmit={(e) => void test(e)}>
       <label className="field">
         <span className="field-label">Music server address</span>
-        <input className="field-input" type="url" inputMode="url" autoComplete="url" placeholder="https://navidrome.example.com" required value={url}
+        <input className="field-input" type="text" inputMode="url" autoCapitalize="none" spellCheck={false} autoComplete="url" placeholder="https://navidrome.example.com" required value={url}
           onChange={(e) => { setUrl(e.target.value); changed() }} />
       </label>
       <label className="field">

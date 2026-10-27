@@ -51,7 +51,12 @@ function update() {
     }),
   })
 }
-authStore.subscribe(update)
+// Signing in (or creating the owner) changes what the server will tell us (e.g. owner now exists,
+// music server still missing): fetch the facts again. checkConnection() reuses a run in progress.
+authStore.subscribe((now, before) => {
+  if (now.state === 'signed-in' && before.state !== 'signed-in') void checkConnection()
+  else update()
+})
 
 let running: Promise<void> | null = null
 
