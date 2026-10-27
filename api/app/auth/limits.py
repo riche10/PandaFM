@@ -77,3 +77,22 @@ def is_https(scheme: str, forwarded_proto: str | None, peer: str | None, trusted
     if scheme == "https":
         return True
     return bool(forwarded_proto) and _trusted(peer or "", trusted) and forwarded_proto.split(",")[0].strip().lower() == "https"
+
+
+# Home, LAN and VPN networks (explicit: Python's is_private also counts documentation ranges).
+HOME_NETWORKS = [ipaddress.ip_network(n) for n in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "169.254.0.0/16",
+    "100.64.0.0/10",  # carrier-grade NAT, used by VPNs such as Tailscale
+    "::1/128", "fc00::/7", "fe80::/10",
+)]
+
+
+def private_address(ip: str | None) -> bool:
+    """A home/LAN/VPN address: where tokenless first-run setup is allowed (5.3)."""
+    try:
+        addr = ipaddress.ip_address((ip or "").strip())
+    except ValueError:
+        return False
+    if getattr(addr, "ipv4_mapped", None):
+        addr = addr.ipv4_mapped
+    return any(addr in net for net in HOME_NETWORKS if net.version == addr.version)

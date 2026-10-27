@@ -142,9 +142,9 @@ public class PandaDjEngineTest {
     public void aBlendPreloadsCrossesOverHandsOffAndCompletes() {
         startMix("a", "b", "c");
         assertEquals(Arrays.asList("a→b"), planned);
-        pa.position = 170_000;
+        pa.position = 160_000;
         dj.tick();
-        assertTrue(pb.calls.isEmpty()); // too early to preload
+        assertTrue(pb.calls.isEmpty()); // too early to preload (the lead is 20 s)
         pa.position = 178_500;
         dj.tick();
         assertEquals(Arrays.asList("setMediaItem track:b @2000", "playWhenReady false", "prepare"), pb.calls); // silent, paused, at its planned start
@@ -222,17 +222,44 @@ public class PandaDjEngineTest {
     }
 
     @Test
-    public void anIncomingDeckThatIsntReadyInTimeIsDropped() {
+    public void aLateIncomingDeckGetsAShorterBlendNotACut() {
+        startMix("a", "b");
+        pa.position = 178_500;
+        dj.tick();
+        pb.state = STATE_BUFFERING; // e.g. a first play while the server converts it
+        pa.position = 190_000;
+        dj.tick();
+        assertFalse(dj.running()); // waiting; A carries on at full volume
+        assertEquals(1f, pa.volume, 0f);
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        pa.position = 194_000;
+        dj.tick(); // ready 4 s late: the same ending, a 6 s blend
+        assertTrue(dj.running());
+        pb.playing = true;
+        pa.position = 197_000;
+        dj.tick(); // halfway through the shortened blend
+        assertEquals("b", controller.queue.current().trackId());
+        assertTrue(String.valueOf(dj.diagnostics().get("events")).contains("late start"));
+    }
+
+    @Test
+    public void anIncomingDeckThatNeverGetsReadyIsDroppedAndExplained() {
         startMix("a", "b");
         pa.position = 178_500;
         dj.tick();
         pb.state = STATE_BUFFERING;
         pa.position = 190_000;
-        for (int k = 0; k < 40; k++) dj.tick(); // 1.6 s of waiting
+        dj.tick();
+        pa.position = 199_000; // no room left for a blend
+        dj.tick();
         assertFalse(dj.running());
         assertTrue(pb.calls.contains("stop"));
         assertEquals(1f, pa.volume, 0f);
         assertEquals("a", controller.queue.current().trackId());
+        Map<String, Object> d = dj.diagnostics();
+        assertEquals("incoming deck not ready", d.get("lastReason"));
+        assertTrue(String.valueOf(d.get("transitionKinds")).contains("not ready 1"));
     }
 
     @Test
@@ -316,7 +343,7 @@ public class PandaDjEngineTest {
     }
 
     @Test
-    public void seekingCancelsTheTransition() {
+    public void seekingDuringABlendCancelsItAndReArmsThePair() {
         startMix("a", "b");
         pa.position = 178_500;
         dj.tick();
@@ -329,6 +356,70 @@ public class PandaDjEngineTest {
         assertTrue(pb.calls.contains("stop"));
         assertEquals(1f, pa.volume, 0f);
         assertEquals(60_000, pa.position);
+        pb.calls.clear();
+        pa.position = 178_500;
+        dj.tick(); // the same pair is prepared again (5.2 forgot it: a plain handoff)
+        assertTrue(pb.calls.contains("setMediaItem track:b @2000"));
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        pa.position = 190_000;
+        dj.tick();
+        assertTrue(dj.running());
+    }
+
+    @Test
+    public void seekingPastTheTransitionSkipsItWithAReason() {
+        startMix("a", "b");
+        controller.seekTo(199_500);
+        dj.tick();
+        assertTrue(pb.calls.isEmpty());
+        assertEquals("seeked past the transition; this song ends normally", dj.diagnostics().get("lastReason"));
+    }
+
+    @Test
+    public void withNoSmartPlanTheFallbackCrossfadeReallyPlays() {
+        controller.setMixPlans((from, to, mode, playlist, window) -> MixFallback.plan(from, to, mode)); // offline, nothing analysed
+        startMix("a", "b"); // 200 s songs: a 5 s blend from 192 s (ending 3 s before the end)
+        pa.position = 172_500;
+        dj.tick();
+        assertTrue(pb.calls.contains("setMediaItem track:b @0"));
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        pa.position = 192_000;
+        dj.tick();
+        assertTrue(dj.running());
+        pb.playing = true;
+        pa.position = 193_250;
+        dj.tick(); // a quarter in: both decks clearly audible
+        assertTrue(pa.volume > 0.9f && pb.volume > 0.35f);
+        pa.position = 194_500;
+        dj.tick();
+        assertEquals("b", controller.queue.current().trackId());
+        Map<String, Object> d = dj.diagnostics();
+        assertEquals("fallback", d.get("planSource"));
+        assertTrue(String.valueOf(d.get("transitionKinds")).startsWith("smart 0 · fallback 1"));
+    }
+
+    @Test
+    public void anIntentionalCleanHandoffIsNotAFailure() {
+        controller.setMixPlans((from, to, mode, playlist, window) -> {
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("type", "clean_handoff");
+            p.put("label", "Clean Handoff");
+            p.put("summary", "Clean Handoff · 2 sec");
+            p.put("source", "smart");
+            p.put("intentional", Boolean.TRUE);
+            p.put("outgoing_start_ms", 196_000L);
+            p.put("incoming_start_ms", 0L);
+            p.put("overlap_ms", 2_000L);
+            p.put("curve", "equal_power");
+            return p;
+        });
+        startMix("a", "b");
+        blend(0);
+        assertEquals("b", controller.queue.current().trackId());
+        String kinds = String.valueOf(dj.diagnostics().get("transitionKinds"));
+        assertTrue(kinds, kinds.contains("intentional 1") && kinds.contains("cancelled 0") && kinds.contains("not ready 0"));
     }
 
     @Test
@@ -394,9 +485,10 @@ public class PandaDjEngineTest {
     public void theFallbackPlanIsASafeShortBlend() {
         QueueItem a = new QueueItem("u", NativeQueueTest.track("a"), "context", null, null); // 200 s
         Map<String, Object> p = MixFallback.plan(a, new QueueItem("v", NativeQueueTest.track("b"), "context", null, null), "auto");
-        assertEquals(196_000L, p.get("outgoing_start_ms"));
-        assertEquals(4_000L, p.get("overlap_ms"));
+        assertEquals(192_000L, p.get("outgoing_start_ms")); // 5 s, ending 3 s before the end (out of the tail)
+        assertEquals(5_000L, p.get("overlap_ms"));
         assertEquals(Boolean.FALSE, p.get("ready"));
+        assertEquals("fallback", p.get("source"));
     }
 
     @Test

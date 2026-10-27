@@ -155,3 +155,29 @@ tags `PandaFM.Auth` and `PandaFM.Download`.
 3. Install the 5.0 Android app and sign in on each phone or Walkman. Downloaded
    music stays where it is.
 4. Only then publish PandaFM through your HTTPS reverse proxy.
+
+
+## The music server password (5.3)
+
+PandaFM connects to an external Navidrome/OpenSubsonic server. Its address and
+username are stored in PostgreSQL, the password only as AES-256-GCM ciphertext
+(a fresh nonce per value, bound to its purpose). The 32-byte installation key
+is created on first start in the `pandafm-config` volume
+(`/config/installation.key`, mode 0600), or supplied as `PANDAFM_CONFIG_KEY`.
+The database alone doesn't reveal the password; if the key is lost, the owner
+enters the password again. Only the signed-in owner can see or change the
+music server (session + CSRF, or a device token); the password is never
+returned by the API or written to logs. Testing a server first sends an
+unauthenticated ping, so a mistyped address never receives the password.
+
+## First-run setup (5.3)
+
+With `PANDAFM_SETUP_TOKEN` set, creating the owner always requires it. Without
+one, the owner can be created only from a home, LAN or VPN address (RFC 1918,
+loopback, link-local, IPv6 ULA, 100.64.0.0/10), judged by the
+trusted-proxy-aware client address. If PandaFM is reachable from the internet
+before setup, or a reverse proxy in front of it doesn't send
+`X-Forwarded-For`, set a token.
+
+Anonymous `/api/health` still reveals only booleans and the version (plus
+`service: "pandafm"`); the music server's URL is shown only to the owner.

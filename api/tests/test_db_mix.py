@@ -55,7 +55,7 @@ def test_only_the_lookahead_is_analysed_and_results_are_reused(mixer):
     assert not again["preparing"] and mixer.app.state.mix.analysed == done  # cached, not analysed again
     plans = {(p["from"], p["to"]): p for p in again["transitions"]}
     assert plans[("s1", "s2")]["ready"] and plans[("s2", "s3")]["ready"]
-    assert plans[("s3", "x4")]["ready"] is False and plans[("s3", "x4")]["type"] == "smooth_blend"  # failed analysis: the safe fallback
+    assert plans[("s3", "x4")]["ready"] is False and plans[("s3", "x4")]["source"] == "fallback"  # failed analysis: the safe fallback
     a = mixer.client.get("/api/mix/analysis/s1").json()["analysis"]
     assert a["duration_ms"] > 0 and len(a["waveform"]) == 512 and "integrated_lufs" in a
 
@@ -94,3 +94,37 @@ def test_panda_mix_needs_a_signed_in_owner(mixer):
     mixer.app.dependency_overrides.pop(optional_auth, None)
     assert mixer.client.post("/api/mix/prepare", json={"tracks": [T("s1")]}).status_code == 401
     assert mixer.client.get("/api/mix/analysis/s1").status_code == 401
+    assert mixer.client.put("/api/mix/playlists/pl1", json={"mode": "auto"}).status_code == 401
+
+
+def _playlist(fake, ids):
+    from types import SimpleNamespace
+
+    async def get_playlist(playlist_id):
+        return SimpleNamespace(id=playlist_id, tracks=[SimpleNamespace(id=i, album_id=None, track_number=None) for i in ids])
+
+    fake.get_playlist = get_playlist
+
+
+def test_a_persistent_panda_mix_playlist(mixer):
+    fake = mixer.app.state.mix._navidrome
+    mixer.app.dependency_overrides  # (the router's Navidrome dependency is the same fake)
+    _playlist(fake, ["s1", "s2", "s3", "x4", "x5"])
+    on = mixer.client.put("/api/mix/playlists/pl1", json={"mode": "flow"}).json()
+    assert on["enabled"] and on["status"] == "preparing" and on["order"] == ["s1", "s2", "s3", "x4", "x5"]  # the playlist's own order until analysed
+    assert all(mixer.app.state.mix.state_of(i) in ("queued", "running") or i in ("s1",) for i in ["s2", "s3", "x4", "x5"])  # the WHOLE playlist
+    settle(mixer, ["s1", "s2", "s3", "x4", "x5"])
+    ready = mixer.client.get("/api/mix/playlists/pl1").json()
+    assert ready["status"] == "ready" and sorted(ready["order"]) == ["s1", "s2", "s3", "x4", "x5"] and ready["analysed"] == 5
+    assert mixer.client.get("/api/mix/playlists/pl1").json()["order"] == ready["order"]  # stable
+    _playlist(fake, ["s1", "s3", "x4", "x5", "s2b"])  # s2 removed, s2b added in Navidrome
+    edited = mixer.client.get("/api/mix/playlists/pl1").json()["order"]
+    assert "s2" not in edited and "s2b" in edited
+    assert [i for i in edited if i != "s2b"] == [i for i in ready["order"] if i != "s2"]  # the rest keep their place
+    assert mixer.client.get("/api/mix/playlists").json()["playlists"] == [{"playlist_id": "pl1", "mode": "flow", "status": "ready"}]
+    remixed = mixer.client.post("/api/mix/playlists/pl1/remix").json()
+    assert remixed["seed"] != ready["seed"]
+    assert mixer.client.delete("/api/mix/playlists/pl1").status_code == 204
+    assert mixer.client.get("/api/mix/playlists/pl1").json() == {"playlist_id": "pl1", "enabled": False}
+    with mixer.engine.begin() as conn:
+        assert conn.execute(text("SELECT count(*) FROM mix_track_analysis")).scalar() >= 5  # analyses are kept

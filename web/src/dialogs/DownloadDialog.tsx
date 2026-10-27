@@ -14,10 +14,10 @@ import { closeDialog } from './store'
 const BIG_DOWNLOAD = 5 * 1024 ** 3
 
 /** "Download Flight Mix": choose a quality, see what it costs, check it fits. */
-export function DownloadDialog({ target }: { target: { kind: CollectionKind; id: string | null; name: string } }) {
+export function DownloadDialog({ target }: { target: { kind: CollectionKind | 'tracks'; id: string | null; name: string; ids?: string[] } }) {
   const settings = useOfflineSettings()
   const [profile, setProfile] = useState(settings.defaultProfile)
-  const [keepSynced, setKeepSynced] = useState(target.kind !== 'track')
+  const [keepSynced, setKeepSynced] = useState(target.kind !== 'track' && target.kind !== 'tracks')
   const [preview, setPreview] = useState<Manifest | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [budget, setBudget] = useState<Budget | null>(null)
@@ -26,7 +26,7 @@ export function DownloadDialog({ target }: { target: { kind: CollectionKind; id:
 
   useEffect(() => {
     const kind = target.kind === 'track' ? 'tracks' : target.kind
-    apiSend<Manifest>('POST', '/downloads/prepare', { kind, id: target.kind === 'track' ? null : target.id, track_ids: target.kind === 'track' && target.id ? [target.id] : [], profile: 'original', warm: false })
+    apiSend<Manifest>('POST', '/downloads/prepare', { kind, id: target.kind === 'track' || target.kind === 'tracks' ? null : target.id, track_ids: target.kind === 'tracks' ? (target.ids ?? []) : target.kind === 'track' && target.id ? [target.id] : [], profile: 'original', warm: false })
       .then(setPreview, (err: Error) => setError(err.message))
     offline()?.budget().then(setBudget, () => undefined)
     platform.storage?.getDirectory().then((d) => setFolder(d.writable ? d.name : null)).catch(() => undefined)
@@ -53,7 +53,16 @@ export function DownloadDialog({ target }: { target: { kind: CollectionKind; id:
     setBusy(true)
     try {
       updateSettings({ defaultProfile: profile })
-      const collection = await manager.download(target, profile, keepSynced)
+      if (target.kind === 'tracks') { // bulk (5.3): one estimate and budget check, then each song as its own download
+        let failed = 0
+        for (const id of target.ids ?? []) {
+          await manager.download({ kind: 'track', id }, profile, false).catch(() => { failed++ })
+        }
+        toast(failed ? `Downloaded ${(target.ids?.length ?? 0) - failed} songs; ${failed} couldn’t be downloaded` : `Downloading ${target.ids?.length ?? 0} songs`)
+        closeDialog()
+        return
+      }
+      const collection = await manager.download({ ...target, kind: target.kind as CollectionKind }, profile, keepSynced)
       void cacheArtwork([...new Set(preview?.items.map((i) => i.track.cover_art_id) ?? [])])
       toast(`Downloading ${collection.name}`)
       closeDialog()
@@ -94,7 +103,7 @@ export function DownloadDialog({ target }: { target: { kind: CollectionKind; id:
       </dl>
       {budget?.overLimit && <p className="field-error">PandaFM is over this device’s storage limit. Remove some downloads or raise the limit in Settings.</p>}
       {tooBig && !budget?.overLimit && <p className="field-warning">This may not fit under this device’s storage limit. Songs you already have don’t count again.</p>}
-      {target.kind !== 'track' && (
+      {target.kind !== 'track' && target.kind !== 'tracks' && (
         <label className="check-option">
           <input type="checkbox" checked={keepSynced} onChange={(e) => setKeepSynced(e.target.checked)} />
           Keep downloaded (follow changes to it)

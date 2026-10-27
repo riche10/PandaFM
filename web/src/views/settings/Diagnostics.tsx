@@ -10,8 +10,11 @@ const LABELS: Record<string, string> = {
   playWhenReady: 'playWhenReady', isPlaying: 'isPlaying', trackId: 'Current track id', queueIndex: 'Queue index', queueLength: 'Queue length',
   generation: 'Generation', source: 'Source', quality: 'Stream quality', streamQualitySetting: 'Quality setting', network: 'Network',
   positionMs: 'Position', durationMs: 'Duration', lastError: 'Last playback error',
-  pandaMix: 'Panda Mix', mixMode: 'Mix mode', logicalDeck: 'Current deck', deckA: 'Deck A', deckB: 'Deck B', transition: 'Transition',
-  transitionProgress: 'Transition progress', transitionConfidence: 'Transition confidence', transitionsDone: 'Transitions this session',
+  pandaMix: 'Panda Mix', mixPlaylist: 'Playlist', mixMode: 'Mix mode', currentPair: 'Current pair', transition: 'Plan', planSource: 'Plan source',
+  transitionConfidence: 'Confidence', bpmOut: 'Outgoing BPM', bpmIn: 'Incoming BPM', transitionStartMs: 'Transition start', overlapMs: 'Overlap',
+  logicalDeck: 'Current deck', deckA: 'Deck A', deckB: 'Deck B', standbyReady: 'Standby ready', transitionRunning: 'Transition running',
+  transitionProgress: 'Transition progress', lastTransition: 'Last transition', lastReason: 'Last cancellation / fallback reason',
+  transitionsDone: 'Completed transitions', transitionKinds: 'Transition outcomes',
 }
 
 const ms = (v: unknown) => (typeof v === 'number' ? `${Math.floor(v / 60000)}:${String(Math.floor((v % 60000) / 1000)).padStart(2, '0')}` : '—')
@@ -44,7 +47,7 @@ export function Diagnostics() {
     for (const [key, label] of Object.entries(LABELS)) {
       if (!(key in native)) continue
       const v = native[key]
-      rows.push([label, key === 'positionMs' || key === 'durationMs' ? ms(v) : v === null || v === undefined ? '—' : String(v)])
+      rows.push([label, key === 'positionMs' || key === 'durationMs' || key === 'transitionStartMs' ? ms(v) : key === 'overlapMs' && typeof v === 'number' ? `${(v / 1000).toFixed(1)} s` : v === null || v === undefined ? '—' : String(v)])
     }
   }
   const events = (native?.events as string[] | undefined) ?? []

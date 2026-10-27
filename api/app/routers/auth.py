@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from app.auth import service
+from app.auth.limits import private_address
 from app.auth.guard import CSRF_COOKIE, SESSION_COOKIE, AuthContext, AuthError, authenticate_request
 from app.auth.limits import LoginLimiter, client_ip, is_https, parse_networks
 from app.auth.passwords import weakness
@@ -43,7 +44,7 @@ class Credentials(BaseModel):
 
 
 class SetupIn(BaseModel):
-    setup_token: Annotated[str, Field(min_length=1, max_length=256)]
+    setup_token: Annotated[str, Field(max_length=256)] = ""  # needed only when PANDAFM_SETUP_TOKEN is set (5.3)
     username: Username
     password: Annotated[str, Field(min_length=1, max_length=256)]
     client: Literal["browser", "device"] = "browser"
@@ -150,11 +151,13 @@ async def setup(body: SetupIn, request: Request, response: Response, db: Session
     if wait := limiter.retry_after(ip, "setup"):
         raise AuthError(429, "too_many_attempts", "Too many attempts. Wait a moment and try again.", retry_after=wait)
     expected = _settings(request).setup_token
-    if not expected:
-        raise AuthError(403, "setup_disabled", "Set PANDAFM_SETUP_TOKEN for the API container, then try again.")
     if await service.owner(db) is not None:
         raise AuthError(409, "already_set_up", "PandaFM already has an owner. Sign in instead.")
-    if not hmac.compare_digest(body.setup_token.encode(), expected.encode()):
+    if not expected and not private_address(ip):
+        # 5.3: without a setup token, the first owner can only be created from a private network
+        # (your home network, a VPN). From the internet, a token is still required.
+        raise AuthError(403, "setup_disabled", "To set up PandaFM from outside your home network, set PANDAFM_SETUP_TOKEN for the API container (or open PandaFM from your home network).")
+    if expected and not hmac.compare_digest(body.setup_token.encode(), expected.encode()):
         limiter.failure(ip, "setup")
         log.warning("Setup attempt with a wrong setup token from %s", ip)
         raise AuthError(403, "bad_setup_token", "That setup token isn’t right.")

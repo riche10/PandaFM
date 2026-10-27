@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     BigInteger,
     DateTime,
     Float,
@@ -317,3 +318,41 @@ class MixTransitionOverride(Base):
     updated_at: Mapped[datetime] = _now()
 
     __table_args__ = (UniqueConstraint("user_id", "playlist_scope", "from_track", "to_track", name="uq_mix_override_pair"),)
+
+
+
+class MusicServerConfig(Base):
+    """The external music server PandaFM reads from (5.3): one row; the password only as AES-GCM ciphertext."""
+
+    __tablename__ = "music_server"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    server_url: Mapped[str] = mapped_column(String(500))
+    username: Mapped[str] = mapped_column(String(200))
+    password_enc: Mapped[str] = mapped_column(String(1000))
+    key_id: Mapped[str] = mapped_column(String(32))
+    server_type: Mapped[str | None] = mapped_column(String(100))
+    server_version: Mapped[str | None] = mapped_column(String(100))
+    api_version: Mapped[str | None] = mapped_column(String(32))
+    open_subsonic: Mapped[bool | None] = mapped_column(Boolean)
+    source: Mapped[str] = mapped_column(String(32))  # setup | settings | environment
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = _now()
+
+
+class MixPlaylist(Base):
+    """A playlist with Panda Mix turned on (5.3): its own stable mixed order. Navidrome's playlist is never changed."""
+
+    __tablename__ = "mix_playlists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    playlist_id: Mapped[str] = mapped_column(String(200))
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    mode: Mapped[str] = mapped_column(String(16))
+    seed: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))  # preparing | ready
+    mixed_order: Mapped[list[Any]] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (UniqueConstraint("user_id", "playlist_id", name="uq_mix_playlist"),)

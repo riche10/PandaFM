@@ -127,7 +127,10 @@ public class PandaPlayerPlugin extends Plugin {
                 d.put("lastError", c.error);
             }
             if (dj != null) d.putAll(dj.diagnostics());
-            if (c != null) d.put("mixMode", c.mixMode());
+            if (c != null) {
+                d.put("mixMode", c.mixMode());
+                d.put("mixPlaylist", c.mixMode() == null ? null : c.queue.source == null ? null : Json.str(c.queue.source, "name"));
+            }
             NetworkState net = NetworkState.of(getContext());
             d.put("network", !net.connected ? "offline" : net.wifi ? "Wi-Fi" : net.metered ? "mobile data" : "unmetered");
             d.put("streamQualitySetting", NativePlatform.Prefs.streamQuality(getContext()));

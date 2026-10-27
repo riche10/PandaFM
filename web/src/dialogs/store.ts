@@ -17,7 +17,7 @@ export type DialogRequest =
   | { type: 'mix-transition'; plan: import('../player/mixPlan').MixPlan; from: Track; to: Track; mode: import('../player/mixPlan').MixMode; playlistId: string | null }
   | { type: 'album-info'; album: import('../api/library').Album }
   | { type: 'filters'; kind: 'albums' | 'songs'; value: import('../api/explore').LibraryFilterState; onApply: (f: import('../api/explore').LibraryFilterState) => void }
-  | { type: 'download'; target: { kind: 'track' | 'album' | 'playlist' | 'favorites'; id: string | null; name: string } }
+  | { type: 'download'; target: { kind: 'track' | 'album' | 'playlist' | 'favorites' | 'tracks'; id: string | null; name: string; ids?: string[] } }
 
 const dialogStore = createStore<{ current: DialogRequest | null }>()(() => ({ current: null }))
 

@@ -14,8 +14,7 @@ from app.deps import require_auth
 from app.config import Settings, get_settings
 from app.db import create_engine, create_session_factory
 from app.errors import register_error_handlers
-from app.navidrome.client import NavidromeClient
-from app.routers import auth, downloads, events, explore, mix, favorites, health, library, me, media, playlists, radio, sync
+from app.routers import auth, downloads, events, explore, mix, setup, favorites, health, library, me, media, playlists, radio, sync
 from app.services.conversions import ConversionCache
 from app.services.library_sync import LibrarySyncer
 
@@ -43,11 +42,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = cfg
         app.state.db_engine = create_engine(cfg)
         app.state.session_factory = create_session_factory(app.state.db_engine)
-        app.state.navidrome = NavidromeClient(
-            cfg.navidrome_url,
-            cfg.navidrome_user,
-            cfg.navidrome_password.get_secret_value(),
-            timeout=cfg.navidrome_timeout_seconds,
+        # 5.3: PandaFM starts without a music server; the owner connects one in the app. Every
+        # component keeps this handle; the client behind it is swapped when the configuration changes.
+        from app.navidrome.handle import NavidromeHandle
+        from app.services.music_server import MusicServerManager
+
+        app.state.navidrome = NavidromeHandle()
+        app.state.music_server = MusicServerManager(
+            app.state.navidrome, app.state.session_factory, cfg.config_dir,
+            getattr(cfg.config_key, "get_secret_value", lambda: cfg.config_key)() if cfg.config_key else None, timeout=cfg.navidrome_timeout_seconds,
         )
         app.state.syncer = LibrarySyncer(app.state.session_factory, app.state.navidrome, lambda: _default_user_id(app))
         sync_task = asyncio.create_task(app.state.syncer.run_periodically()) if cfg.background_sync else None
@@ -62,7 +65,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         app.state.mix = MixAnalyzer(cfg.cache_dir, app.state.session_factory, app.state.navidrome, cfg.mix_analysis_workers)
         app.state.mix.start()  # idle until a Panda Mix asks for something
-        log.info("PandaFM API %s starting (Navidrome at %s)", __version__, cfg.navidrome_url)
+        legacy_password = cfg.navidrome_password
+        await app.state.music_server.load(  # saved configuration, or a one-time import of ≤5.2 environment variables
+            cfg.navidrome_url, cfg.navidrome_user, getattr(legacy_password, "get_secret_value", lambda: legacy_password)() if legacy_password else None
+        )
+        log.info("PandaFM API %s starting (%s)", __version__, "music server connected" if app.state.navidrome.configured else "no music server connected yet")
         try:
             yield
         finally:
@@ -88,11 +95,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Public: the health check (booleans only for anonymous callers) and sign-in/setup.
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
+    app.include_router(setup.public, prefix="/api")  # booleans only: which setup screen to show
     # Everything else needs a signed-in owner (5.0). Routes with a UserId parameter
     # get the same check through it; the router-level dependency covers the rest.
     signed_in = [Depends(require_auth)]
     for module in (library, media, favorites, playlists, events, sync, radio, me, downloads, explore, mix):
         app.include_router(module.router, prefix="/api", dependencies=signed_in)
+    app.include_router(setup.router, prefix="/api", dependencies=signed_in)  # the owner's music server settings
     if (settings or _docs_enabled()) and (settings.api_docs if settings else _docs_enabled()):
         _owner_only_docs(app)
     # The Android app's WebView runs on its own origin (https://localhost) and calls

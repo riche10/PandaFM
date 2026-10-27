@@ -1,119 +1,94 @@
 # PandaFM
 
-PandaFM is a self-hosted Spotify-like radio for your own music library.
-
-The application is packaged as one Portainer stack without its own public
-reverse proxy:
+**PandaFM is a self-hosted music frontend, radio/recommendation engine and
+Android player for an existing Navidrome/OpenSubsonic library.**
 
 ```text
-Existing Nginx / Nginx Proxy Manager
-                 │
-                 ▼
-       Ubuntu host :8085
-                 │
-                 ▼
-         pandafm-web (Nginx)
-          ├── React files
-          └── /api/* ──► pandafm-api
-                          ├──► pandafm-db
-                          └──► pandafm-navidrome
-                                  │
-                                  ▼
-                         UGREEN music library
+Navidrome / OpenSubsonic server   (your music library: you run it, PandaFM reads it)
+              ↓
+           PandaFM                (this project: web app, API, PostgreSQL)
+              ↓
+ Browser · Android app · Android Auto
 ```
 
-The small Nginx inside `pandafm-web` is only the application's static-file
-server and internal `/api` router. TLS, domains, certificates and public
-reverse-proxy duties remain with your existing Nginx installation.
+- **Listen anywhere**: a fast web player and an Android app with a native
+  background player, lock-screen controls, Android Auto and offline downloads.
+- **Panda Radio and Stations**: radio built from your own library and
+  listening history.
+- **Panda Mix**: play a playlist continuously with DJ-style transitions.
+- **Your library, explored**: genres, decades, smart collections, filters.
+- **Private by design**: one owner account, encrypted credentials, nothing
+  leaves your server.
 
-## Containers
+PandaFM never modifies your music; Navidrome stays the source of truth.
 
-| Container | Purpose |
-|---|---|
-| `pandafm-navidrome` | Scans, indexes and streams the music library |
-| `pandafm-db` | PostgreSQL listening history and preferences |
-| `pandafm-api` | FastAPI backend and future Panda Radio engine |
-| `pandafm-web` | React frontend plus internal /api routing |
+## Install
 
-Navidrome stores its database/cache in a Docker named volume. The actual
-music stays on the UGREEN mount and is passed to Navidrome read-only.
+1. **Have a Navidrome (or other OpenSubsonic) server** with your music. Any
+   machine PandaFM can reach is fine. Don't have one?
+   [examples/navidrome-compose.yml](examples/navidrome-compose.yml) is a
+   separate, optional stack.
+2. **Deploy PandaFM** (Docker Compose, or a Portainer stack from this
+   repository):
+   ```bash
+   git clone https://github.com/riche10/PandaFM.git && cd PandaFM
+   cp .env.example .env        # set POSTGRES_PASSWORD; everything else is optional
+   docker compose up -d --build
+   ```
+3. **Open PandaFM** at `http://<your server>:8086`.
+4. **Create the owner account.** From your home network that's all it takes;
+   if PandaFM is reachable from the internet before setup, set
+   `PANDAFM_SETUP_TOKEN` and enter it here.
+5. **Connect your music server**: its address, username and password. PandaFM
+   tests the connection, stores the password encrypted, and imports your
+   library in the background.
+6. **Enjoy.** On Android, install the app and enter PandaFM's address.
 
-## Deploy from Portainer
+Upgrading from 5.2 or earlier (which bundled Navidrome)? Read
+[docs/upgrading-to-5.3.md](docs/upgrading-to-5.3.md) first: your data stays.
 
-Use:
+## Configuration
 
-```text
-Repository:
-https://github.com/riche10/PandaFM.git
+Only `POSTGRES_PASSWORD` is required; see [.env.example](.env.example) for the
+optional settings (web port, setup token, trusted proxies, cache size, log
+level, Panda Mix workers). The music server is configured in the app (setup,
+or Settings › Music server), not in environment variables.
 
-Reference:
-refs/heads/main
+| Volume | Holds | Back up |
+|---|---|---|
+| `pandafm-db` | owner, devices, history, playlists' extras, stations, settings | yes |
+| `pandafm-config` | the installation key that decrypts the saved music server password | yes, with the database |
+| `pandafm-cache` | conversions and scratch space (re-creatable) | no |
 
-Compose path:
-docker-compose.yml
-```
+## Putting PandaFM behind a reverse proxy
 
-Because the repository is private, Portainer needs GitHub repository
-credentials/token.
-
-Add these environment variables:
-
-```text
-MUSIC_DIR=/mnt/ugreen/media/Music
-PUID=1000
-PGID=1000
-
-NAVIDROME_PORT=4533
-NAVIDROME_USER=<choose username>
-NAVIDROME_PASSWORD=<choose password>
-
-POSTGRES_DB=pandafm
-POSTGRES_USER=pandafm
-POSTGRES_PASSWORD=<strong random password>
-
-PANDAFM_WEB_PORT=8085
-PANDAFM_LOG_LEVEL=info
-```
-
-Then deploy the stack.
-
-## First Navidrome setup
-
-Open:
-
-```text
-http://<ubuntu-server-ip>:4533
-```
-
-Create the first Navidrome account with the same username/password configured
-as `NAVIDROME_USER` and `NAVIDROME_PASSWORD` in Portainer.
-
-## PandaFM before adding your external proxy
+### PandaFM before adding your external proxy
 
 The app itself is available at:
 
 ```text
-http://<ubuntu-server-ip>:8085
+http://<ubuntu-server-ip>:8086
 ```
 
 The frontend container automatically forwards `/api/*` to the private
 `pandafm-api` container, so PandaFM works on that one port.
 
-## Existing Nginx / Nginx Proxy Manager
+### Existing Nginx / Nginx Proxy Manager
 
 Your public reverse proxy only needs one upstream:
 
 ```text
-http://<ubuntu-server-ip>:8085
+http://<ubuntu-server-ip>:8086
 ```
 
 For example, a hostname such as `pandafm.example.com` can point entirely to
-port 8085. Do not create a separate public route to FastAPI; the web container
+port 8086. Do not create a separate public route to FastAPI; the web container
 already handles `/api/*` internally.
 
 This keeps PandaFM portable: someone can deploy the Docker stack and use
 whatever edge proxy they already run (Nginx, Traefik, Caddy, Cloudflare
 Tunnel, etc.).
+
 
 ## Using PandaFM
 
@@ -165,13 +140,13 @@ at `/status`.
 
 ### External Nginx / Nginx Proxy Manager settings for audio
 
-PandaFM works behind your proxy with one upstream (port 8085). For smooth
+PandaFM works behind your proxy with one upstream (port 8086). For smooth
 audio, turn off response buffering so songs stream as they arrive and
 seeking starts quickly:
 
 ```nginx
 location / {
-    proxy_pass http://<ubuntu-server-ip>:8085;
+    proxy_pass http://<ubuntu-server-ip>:8086;
     proxy_http_version 1.1;
     proxy_buffering off;
     proxy_set_header Host $host;
@@ -184,7 +159,7 @@ In Nginx Proxy Manager, put `proxy_buffering off;` in the proxy host's
 Advanced tab. Range headers (used for seeking) pass through Nginx by
 default; don't enable response caching for `/api`.
 
-## Panda Radio and listening history (Stage 3)
+## Panda Radio and listening history
 
 PandaFM now remembers how you listen (plays, songs you finish, early and
 late skips, pauses and seeks) in its own PostgreSQL database, and uses
@@ -216,14 +191,14 @@ merging) and **Pull and redeploy**. Do **not** tick anything that removes
 volumes. Then check:
 
 ```bash
-docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0006 (5.2)
-docker exec pandafm-api python -m app.migrate check           # database: 0006, code expects: 0006
+docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0008 (5.3)
+docker exec pandafm-api python -m app.migrate check           # database: 0008, code expects: 0008
 ```
 
 About 20 seconds after start-up, PandaFM copies Navidrome's song list into
 its cache (and again after each Navidrome rescan, or every 6 hours).
 Starting Panda Radio before that simply waits for the first copy. You can
-also run it from `/stats`, or with `curl -X POST http://<server>:8085/api/library/sync`.
+also run it from `/stats`, or with `curl -X POST http://<server>:8086/api/library/sync`.
 
 If a migration ever fails, the API container stops (it won't run on a
 half-updated schema): `docker logs pandafm-api` shows why, and your data
@@ -283,9 +258,9 @@ PandaFM/
                          # Album, Artist, Now Playing, Queue, Status
 ```
 
-Secrets belong in Portainer environment variables and must not be committed.
+Secrets belong in your deployment's environment variables (or Portainer's) and must not be committed.
 
-## Android app and offline downloads (Stage 4)
+## Android app and offline downloads
 
 PandaFM builds as an Android app (Capacitor) for phones and Android
 Walkmans: stream your whole library, or download songs, albums, playlists
@@ -298,7 +273,7 @@ On the build server, `scripts/build-android-apk.sh [branch]` updates the
 checkout and builds the APK in one command; the launcher icon (a panda with
 headphones) is generated from `web/assets/` with `npm run android:icons`.
 
-Server side, Stage 4 adds:
+Server side, offline downloads add:
 
 - migration `0002` (additive): audio facts on cached tracks and a
   `conversions` table;
@@ -308,10 +283,10 @@ Server side, Stage 4 adds:
 - CORS for the app's WebView origin (`https://localhost`).
 
 After redeploying, `docker logs pandafm-api 2>&1 | grep "schema is at revision"`
-should show the latest revision (`0004` after Stage 4.3). Quality badges appear once the next library sync (within
+should show the latest revision (`0008` as of 5.3: `0007` music-server settings, `0008` persistent mixed playlists). Quality badges appear once the next library sync (within
 a minute of start-up) has stored the new audio facts.
 
-## Personalisation and Autoplay (Stage 4.1)
+## Personalisation and Autoplay
 
 **Appearance** (Settings › Appearance) is chosen per device and applied
 instantly: Panda Classic (default), Dark, AMOLED, Light, Walkman Midnight,
@@ -326,7 +301,7 @@ every device shares them. Rename built-in modes (Study → Lock In) without
 changing how they choose songs, or create your own from any built-in with
 six controls: familiarity, discovery, continuity, artist variety, genre
 variety and wildcards. The server turns these into bounded weights for the
-same Stage 3 engine; repeat protection always applies. Migration `0003`
+same radio engine; repeat protection always applies. Migration `0003`
 (additive) adds `radio_presets`, `users.preferences` and preset snapshots
 on radio sessions.
 
@@ -335,7 +310,7 @@ album, artist, playlist or other finite queue ends naturally, PandaFM
 continues with Panda Radio seeded from it, in the same queue. Repeat, songs
 you queued, End Radio, and being offline all keep the normal ending.
 
-## Radio coherence and My Stations (Stage 4.3)
+## Radio coherence and My Stations
 
 **One genre model** (`api/app/radio/genres.py`) is used by all radio:
 genre tags are normalized ("Pop-Punk" = "pop punk", "Alt. Rock" =
@@ -349,7 +324,7 @@ genre similarity rather than exact tags, and a clearly unrelated song (a
 film score on rock radio) gets a penalty. The seed's pull fades gently as
 the session goes on (92% per song, never below 35%), so radio drifts
 towards what you actually listen to without forgetting where it started.
-This stage also fixes a Stage 3 bug: a skip used to make a session forget
+This also fixed an early radio bug: a skip used to make a session forget
 its seed entirely.
 
 **My Stations** (on Home) are music neighbourhoods you create: a name, one
@@ -368,16 +343,18 @@ menu first, then goes back through PandaFM's pages, and only leaves the app
 from Home. With music queued, it moves PandaFM to the background so the
 music keeps going.
 
-## Panda Mix (5.2)
+## Panda Mix
 
-Play a playlist continuously with **Panda DJ** blending each song into the
-next: Auto, Gentle, Flow or Energetic, with transitions chosen from tempo,
-key, loudness and the songs' intros and outros (and conservative when Panda
-isn't sure). PandaFM analyses only the songs a Panda Mix is about to play, not
-your whole library. Adjust any transition, preview it and save it for that
-playlist. See **[docs/panda-mix.md](docs/panda-mix.md)**.
+Turn **Panda Mix** on for a playlist and it stays mixed until you turn it off.
+PandaFM analyses that playlist (never the rest of your library), builds a stable
+playback order from BPM/key/loudness compatibility, and **Panda DJ** blends each
+adjacent pair using Auto, Gentle, Flow or Energetic transitions. The primary
+Play button uses the saved mixed order while Panda Mix is enabled; Remix makes
+a new order, and the original Navidrome playlist/order is never modified.
+Adjust any transition, preview it and save it for that playlist. See
+**[docs/panda-mix.md](docs/panda-mix.md)**.
 
-## PandaFM 5.0: sign-in and remote access
+## Sign-in and remote access
 
 > **Do not expose a PandaFM build older than 5.0 to the internet.** It has no sign-in.
 
@@ -385,7 +362,7 @@ playlist. See **[docs/panda-mix.md](docs/panda-mix.md)**.
 home through an HTTPS reverse proxy. See **[docs/security.md](docs/security.md)**
 for the full model, reverse-proxy recipes and upgrade steps.
 
-- **Secure first-time setup** with `PANDAFM_SETUP_TOKEN` (from Portainer). Only
+- **Secure first-time setup** with `PANDAFM_SETUP_TOKEN` (an environment variable). Only
   works until the owner exists; your existing history becomes the owner's.
 - **Owner sign-in:** Argon2id passwords; HttpOnly session cookies with CSRF
   protection in browsers; Keystore-protected device sign-in in the Android app.
@@ -400,14 +377,14 @@ Recommended public topology: Internet → HTTPS :443 → your reverse proxy →
 `pandafm-web` :8086 → PandaFM API → PostgreSQL / Navidrome. Publish only the
 reverse proxy.
 
-## Library explorer (Stage 4.5)
+## Library explorer
 
 Everything here comes from **your own Navidrome library and PandaFM's
 listening history**; no external recommendation, metadata or catalogue
 service is involved.
 
 - **Genres** (Library › Genres): every genre in your library, once. Spellings
-  like "Pop-Punk", "pop punk" and "Pop Punk" are one genre (the Stage 4.3
+  like "Pop-Punk", "pop punk" and "Pop Punk" are one genre (the radio coherence
   genre model in `api/app/radio/genres.py`), shown with your library's most
   common spelling. Related genres (Pop Punk, Alternative Rock) stay separate.
 - **Genre pages** (`/genres/<genre>`): artists, albums and songs, Play,

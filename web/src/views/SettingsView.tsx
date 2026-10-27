@@ -11,6 +11,7 @@ import { AppearanceSettings } from './settings/AppearanceSettings'
 import { RadioSettings } from './settings/RadioSettings'
 import { Diagnostics } from './settings/Diagnostics'
 import { AccountSettings } from './settings/AccountSettings'
+import { MusicServerSettings } from './settings/MusicServerSettings'
 import { StreamingQuality } from './settings/StreamingQuality'
 import { StorageLimit } from './settings/StorageLimit'
 import { useAutoplaySettings, autoplaySettings } from '../player/autoplay'
@@ -156,6 +157,7 @@ export function SettingsView() {
         <p className="hint">Status: {health}</p>
         {isNative() && <button type="button" className="button button--quiet" onClick={() => setChanging(true)}>Change server</button>}
       </section>
+      <MusicServerSettings />
       <Diagnostics />
     </div>
   )

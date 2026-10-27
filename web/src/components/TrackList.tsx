@@ -1,3 +1,6 @@
+import { type MouseEvent, type PointerEvent, useEffect, useRef, useState } from 'react'
+import { all, empty, extend, type Selection, toggle } from '../library/selection'
+import { SelectionBar } from './SelectionBar'
 import { Link } from 'react-router'
 import type { PlaylistSummary, Track } from '../api/library'
 import { formatTime, useCurrentTrack, usePlayer } from '../player'
@@ -22,6 +25,8 @@ interface TrackListProps {
   header?: boolean
 }
 
+const LONG_PRESS_MS = 500
+
 export function TrackList({
   tracks,
   onPlay,
@@ -33,6 +38,37 @@ export function TrackList({
 }: TrackListProps) {
   const current = useCurrentTrack()
   const status = usePlayer((s) => s.status)
+  // 5.3 multi-select: a checkbox per row, Ctrl/⌘-click and Shift-click, long-press on touch, Esc to clear.
+  const [selection, setSelection] = useState<Selection>(empty)
+  const selecting = selection.picked.size > 0
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; fired: boolean } | null>(null)
+  useEffect(() => setSelection(empty), [tracks])
+  useEffect(() => {
+    if (!selecting) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelection(empty)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selecting])
+  const choose = (index: number, e?: { shiftKey?: boolean }) => setSelection((s) => (e?.shiftKey ? extend(s, index) : toggle(s, index)))
+  const rowPointerDown = (index: number, e: PointerEvent<HTMLLIElement>) => {
+    if (e.pointerType !== 'touch') return
+    const state = { fired: false, timer: setTimeout(() => { state.fired = true; choose(index) }, LONG_PRESS_MS) }
+    press.current = state
+  }
+  const rowPointerEnd = () => {
+    if (press.current) clearTimeout(press.current.timer)
+  }
+  const rowClickCapture = (index: number, e: MouseEvent<HTMLLIElement>) => {
+    const longPressed = press.current?.fired
+    press.current = null
+    const target = e.target as HTMLElement
+    if (target.closest('a, .track-favorite, .menu-button, [role="menu"], .track-select')) return // links and buttons keep their job
+    if (longPressed || selecting || e.ctrlKey || e.metaKey || e.shiftKey) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!longPressed) choose(index, e)
+    }
+  }
 
   return (
     <div className={`tracks tracks--${variant}`} data-album-column={showAlbum ? '' : undefined}>
@@ -53,7 +89,27 @@ export function TrackList({
           const isCurrent = current?.id === track.id
           const showArtist = variant !== 'album' || track.artist !== albumArtist
           return (
-            <li key={`${track.id}-${index}`} className="track-row" data-current={isCurrent ? '' : undefined}>
+            <li
+              key={`${track.id}-${index}`}
+              className="track-row"
+              data-current={isCurrent ? '' : undefined}
+              data-selected={selection.picked.has(index) ? '' : undefined}
+              data-selecting={selecting ? '' : undefined}
+              onPointerDown={(e) => rowPointerDown(index, e)}
+              onPointerUp={rowPointerEnd}
+              onPointerCancel={rowPointerEnd}
+              onPointerMove={(e) => e.pointerType === 'touch' && Math.abs(e.movementY) > 4 && rowPointerEnd()}
+              onClickCapture={(e) => rowClickCapture(index, e)}
+              onContextMenu={(e) => press.current?.fired && e.preventDefault()}
+            >
+              <input
+                type="checkbox"
+                className="track-select"
+                checked={selection.picked.has(index)}
+                aria-label={`Select ${track.title}`}
+                onChange={() => undefined}
+                onClick={(e) => { e.stopPropagation(); choose(index, e) }}
+              />
               <span className="track-index">
                 {isCurrent ? (
                   <Equalizer playing={status === 'playing'} />
@@ -103,6 +159,7 @@ export function TrackList({
           )
         })}
       </ol>
+      <SelectionBar selection={selection} tracks={tracks} playlist={playlist} onClear={() => setSelection(empty)} onSelectAll={() => setSelection(all(tracks.length))} />
     </div>
   )
 }

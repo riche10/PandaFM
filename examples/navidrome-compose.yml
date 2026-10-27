@@ -1,0 +1,35 @@
+# OPTIONAL: a Navidrome server for people who don't have one yet.
+#
+# This is a separate stack: PandaFM does not start, stop or manage it. Run it
+# on any machine; PandaFM only needs to reach it over the network.
+#
+#   MUSIC_DIR=/path/to/your/music docker compose -f examples/navidrome-compose.yml up -d
+#
+# Then open http://<this host>:4533, create Navidrome's admin user, and give
+# PandaFM that address and account in its setup screen.
+#
+# Upgrading from PandaFM ≤5.2 (which bundled Navidrome)? Use the same data
+# volume so nothing is rescanned or lost: see docs/upgrading-to-5.3.md.
+name: navidrome
+
+services:
+  navidrome:
+    image: deluan/navidrome:${NAVIDROME_VERSION:-0.64.2}
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      - "${NAVIDROME_PORT:-4533}:4533"
+    environment:
+      ND_MUSICFOLDER: /music
+      ND_DATAFOLDER: /data
+      ND_SCANSCHEDULE: ${NAVIDROME_SCAN_SCHEDULE:-@every 1h}
+      ND_LOGLEVEL: info
+    volumes:
+      - navidrome-data:/data
+      - ${MUSIC_DIR:?Set MUSIC_DIR to your music folder}:/music:ro
+
+volumes:
+  navidrome-data:
+    # Upgrading from PandaFM ≤5.2: reuse its volume instead (uncomment):
+    # external: true
+    # name: pandafm_navidrome-data

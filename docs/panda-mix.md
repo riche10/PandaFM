@@ -1,23 +1,26 @@
-# Panda Mix and Panda DJ (5.2)
+# Panda Mix and Panda DJ
 
-**Panda Mix** plays one of your playlists continuously, with each song
-blended into the next. **Panda DJ** is the engine that decides *how* Song A
-becomes Song B. Neither ever chooses songs:
+**Panda Mix** is a persistent mode for one of your playlists. It never adds
+or removes songs, but while enabled it keeps a stable, optimized playback order
+of the songs already in that playlist. **Panda DJ** is the engine that decides
+*how* each adjacent Song A becomes Song B.
 
 | | Answers |
 |---|---|
-| Playlist / queue | **What** plays next (and in what order) |
+| Navidrome playlist | **Which songs** belong to the playlist and its original order |
+| **Panda Mix** | **What stable playback order** those same songs use while mixing is enabled |
 | Panda Radio, Stations | **What** to choose from your library |
 | **Panda DJ** | **How** one song becomes the next |
 
-Panda Mix is playlist-scoped in 5.2: the playlist owns the songs, their order
-and identity. Shuffle happens first; Panda DJ plans the resulting neighbours.
-It never inserts songs, never builds a playlist, and **never analyses your
-whole library**: only the songs a Panda Mix is about to play (the current song
-and the next few), or a downloaded playlist you prepare yourself.
+Turning Panda Mix on is the only action that analyses a whole playlist. It
+never scans the rest of your library. The optimized order is saved and reused
+until you explicitly **Remix**, edit the playlist (new/removed songs are handled
+without reshuffling everything), or **Turn off Panda Mix**. Repeated occurrences
+of the same song are preserved.
 
-Start it from a playlist: **Panda Mix** (Auto), or the menu next to it for a
-personality. Normal **Play** is unchanged.
+Start it from a playlist with **Panda Mix** (Auto) or choose a personality from
+the menu. Once enabled, the playlist's primary **Play** uses its mixed order;
+**Play original order** is still available without changing Navidrome.
 
 ## Personalities
 
@@ -38,18 +41,22 @@ Switch** (or, Energetic, a **Filter Glide**); unclear rhythm or sections get a
 time (75 ≈ 150 BPM) count as compatible. Trailing silence is skipped, never
 waited through. Each plan says how sure Panda is and explains itself, e.g.
 "Quick Switch · 2 sec: large tempo difference; a long overlap would sound
-muddy." 5.2 never time-stretches or changes pitch.
+muddy." PandaFM never time-stretches or changes pitch.
 
 The **current song changes at the transition midpoint**: before it, A is the
 current song (history, lock screen, car, Next/Previous); from it, B. Next
 during a blend goes to the song already fading in (without restarting it);
 after the midpoint Next stops the fading song at once. Pause freezes both
-songs and the transition; a seek cancels the transition.
+songs and the transition. A seek cancels the currently running overlap safely
+and re-arms the same pair when the transition still lies ahead; seeking past
+the mix window skips that transition.
 
 ## Analysis
 
-The server analyses a song the first time a Panda Mix needs it, from a
-private temporary copy (your files are never modified): EBU R128 loudness
+When Panda Mix is enabled for a playlist, the server analyses the tracks in
+that playlist from private temporary copies (your files are never modified).
+The per-track results are cached and reused across mixes; the rest of the
+library is not scanned. Analysis includes EBU R128 loudness
 (ffmpeg), a small waveform, leading/trailing silence, BPM and beat grid with
 confidence, musical key with confidence, and intro/outro suitability. Results
 are small metadata, reused until the file or the analysis version changes.
@@ -90,14 +97,48 @@ every plan (no audio is copied).
   transitions run in the playback service on the player's own clock, with the
   app closed, the screen off, through Android Auto. Only the logical deck holds
   audio focus; the other pauses with it (calls, navigation prompts). Bass
-  Handoff and Filter Glide are gain-only on Android in 5.2 (no EQ there yet).
+  Handoff and Filter Glide are gain-only on Android (no EQ there yet).
 - **Browsers**: two decks through Web Audio (gain, low-shelf and high-pass
   automation on the audio clock). Browsers throttle background tabs, so a
   transition can start up to about a second late when the tab is hidden.
 
-## Limitations (5.2)
+## Limitations (5.3)
 
 No time-stretching or pitch shifting; no global learning from your edits;
 Panda Mix works on playlists only (not Radio or Stations yet); Android Auto
 plays Panda Mix normally but has no editor; "Gapless" between two decks can
 leave a gap of a few tens of milliseconds.
+
+
+## What changed from 5.2
+
+**Panda Mix is a setting of a playlist.** Turn it on from the playlist (Auto or
+a personality): that is the only thing that analyses a *whole* playlist. Until
+every song is analysed the playlist plays in its own order with safe blends;
+then Panda arranges a **mixed order** once (neighbours with compatible tempo,
+key and loudness; album runs kept together) and keeps it stable. Songs you
+add to the playlist in Navidrome are slotted in where they fit; removed ones
+drop out; nothing else moves. **Remix** draws a new order; **Turn off Panda
+Mix** goes back to normal (the analyses stay cached). The playlist page shows
+**Play Panda Mix** beside the normal **Play**, and toggles between the mixed
+and the original order. Navidrome's playlist and its order are never changed.
+
+**Why 5.2's transitions were often hard to hear.** Blends were timed against
+the last audible moment of Song A, which for any song that fades out is deep
+inside the fade (the 5.2 fallback blended with A ~22 dB below its normal
+level). 5.3 finds each song's *musical* end (where it falls below its body
+level for good) and ends the blend there, so A is still clearly playing for
+most of it. The fallback (no analysis yet) is a 5 s equal-power blend that
+ends 3 s before the file ends.
+
+**Personalities** now differ clearly: Gentle 3–4 s; Auto 5–8 s (long beat-
+aligned blends for compatible dance tracks); Flow 6–10 s; Energetic 7–12 s,
+plus long Bass Handoffs and Filter Glides for dance music. Songs that really
+don't fit together still get a deliberate **Quick Switch** or **Clean
+Handoff**: marked *intentional*, never counted as a failure.
+
+**Diagnostics** (Settings › Diagnostics, Android) show whether each transition
+was smart, fallback, manual or intentional, and whether one was cancelled or
+dropped because the next song wasn't ready, with the plan, its source,
+confidence, BPMs, start, overlap, both decks' track/state/position/volume,
+progress and the last reason.

@@ -82,7 +82,7 @@ def test_bad_navidrome_credentials_are_a_503_without_leaking_them():
     assert response.status_code == 503
     error = response.json()["error"]
     assert error["code"] == "navidrome_auth"
-    assert "NAVIDROME_PASSWORD" in error["message"]
+    assert "Settings › Music server" in error["message"]  # 5.3: credentials are changed in the app, not the environment
     assert_no_secrets(fake, response)
 
 
