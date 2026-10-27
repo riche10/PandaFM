@@ -14,6 +14,7 @@ export type DialogRequest =
   | { type: 'preset'; preset: import('../api/radio').RadioPreset | null }
   | { type: 'station'; station: import('../api/radio').RadioStation | null; prefill?: { name: string; genres: string[] } }
   | { type: 'track-info'; track: Track }
+  | { type: 'mix-transition'; plan: import('../player/mixPlan').MixPlan; from: Track; to: Track; mode: import('../player/mixPlan').MixMode; playlistId: string | null }
   | { type: 'album-info'; album: import('../api/library').Album }
   | { type: 'filters'; kind: 'albums' | 'songs'; value: import('../api/explore').LibraryFilterState; onApply: (f: import('../api/explore').LibraryFilterState) => void }
   | { type: 'download'; target: { kind: 'track' | 'album' | 'playlist' | 'favorites'; id: string | null; name: string } }

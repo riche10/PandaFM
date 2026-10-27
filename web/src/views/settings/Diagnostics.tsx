@@ -10,6 +10,8 @@ const LABELS: Record<string, string> = {
   playWhenReady: 'playWhenReady', isPlaying: 'isPlaying', trackId: 'Current track id', queueIndex: 'Queue index', queueLength: 'Queue length',
   generation: 'Generation', source: 'Source', quality: 'Stream quality', streamQualitySetting: 'Quality setting', network: 'Network',
   positionMs: 'Position', durationMs: 'Duration', lastError: 'Last playback error',
+  pandaMix: 'Panda Mix', mixMode: 'Mix mode', logicalDeck: 'Current deck', deckA: 'Deck A', deckB: 'Deck B', transition: 'Transition',
+  transitionProgress: 'Transition progress', transitionConfidence: 'Transition confidence', transitionsDone: 'Transitions this session',
 }
 
 const ms = (v: unknown) => (typeof v === 'number' ? `${Math.floor(v / 60000)}:${String(Math.floor((v % 60000) / 1000)).padStart(2, '0')}` : '—')

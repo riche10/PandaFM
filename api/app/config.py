@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # Interactive API docs: off by default; when on, owner-only.
     api_docs: bool = False
 
+    # 5.2 Panda Mix: analysis only for tracks a Panda Mix needs, never the whole library.
+    mix_enabled: bool = True
+    mix_analysis_workers: int = 1  # concurrent analyses (each mostly one ffmpeg + a little numpy), niced
+    mix_lookahead: int = 3  # tracks after the current one to prepare
+
     @property
     def database_url(self) -> URL:
         # URL.create escapes special characters in the password, which a

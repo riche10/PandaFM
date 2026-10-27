@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router'
 import { getPlaylist } from '../api/library'
 import { PlayCircle, ShuffleButton } from '../components/Cards'
+import { PandaMixButton } from '../components/PandaMix'
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
 import { Icon } from '../components/Icon'
@@ -50,6 +51,7 @@ export function PlaylistView() {
               </button>
             )}
             <ShuffleButton label={`Shuffle ${playlist.name}`} disabled={playlist.tracks.length < 2} onShuffle={() => player.playCollection(playlist.tracks, { source, shuffle: true })} />
+            <PandaMixButton playlist={playlist} source={source} />
             {!playlist.readonly && (
               <>
                 <button type="button" className="icon-button icon-button--large" aria-label="Rename playlist" onClick={() => openDialog({ type: 'rename-playlist', playlist })}>

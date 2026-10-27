@@ -33,4 +33,8 @@ export interface PlaybackEngine {
   /** Master volume, 0–1, applied to every deck. */
   setVolume(volume: number): void
   subscribe(listener: (event: EngineEvent) => void): () => void
+  /** Panda Mix (5.2): how the current song should become the next (null clears). onHandoff adopts it at the midpoint. */
+  prepareNext?(src: string | null, plan: import('./mixPlan').MixPlan | null, onHandoff: () => boolean): void
+  inTransitionBeforeHandoff?(): boolean
+  completeTransitionNow?(): void
 }

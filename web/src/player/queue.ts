@@ -31,6 +31,8 @@ export interface QueueSource {
   id?: string
   /** Set while Panda Radio is feeding this queue. */
   radio?: RadioInfo
+  /** Set when this queue plays as a Panda Mix (5.2): Panda DJ blends each song into the next. */
+  mix?: { mode: import('./mixPlan').MixMode; playlistId?: string }
 }
 
 /** Marks a song chosen by Panda Radio, so steering can replace it and "Why this song?" can explain it. */

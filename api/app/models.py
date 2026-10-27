@@ -285,3 +285,35 @@ class Conversion(Base):
         UniqueConstraint("track_id", "profile", "source_revision", name="uq_conversions_track_profile_revision"),
         Index("ix_conversions_last_accessed", "last_accessed_at"),
     )
+
+
+
+class MixTrackAnalysis(Base):
+    """Panda DJ's analysis of one track (5.2): small metadata, versioned, tied to the source revision."""
+
+    __tablename__ = "mix_track_analysis"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    navidrome_id: Mapped[str] = mapped_column(String(200), unique=True)
+    source_revision: Mapped[str | None] = mapped_column(String(64))
+    analysis_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))  # ready | failed
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(String(300))
+    updated_at: Mapped[datetime] = _now()
+
+
+class MixTransitionOverride(Base):
+    """A transition the user adjusted by hand: exactly this pair, in this playlist ('' = any playlist)."""
+
+    __tablename__ = "mix_transition_overrides"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    playlist_scope: Mapped[str] = mapped_column(String(200))
+    from_track: Mapped[str] = mapped_column(String(200))
+    to_track: Mapped[str] = mapped_column(String(200))
+    plan: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = _now()
+
+    __table_args__ = (UniqueConstraint("user_id", "playlist_scope", "from_track", "to_track", name="uq_mix_override_pair"),)

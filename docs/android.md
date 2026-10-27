@@ -503,3 +503,17 @@ must not stutter, restart or stop when it does.
 **Downloaded**
 Play downloaded tracks with the network off. The timeline and advancement stay
 stable.
+
+
+## Panda Mix on Android (5.2)
+
+`PandaDjEngine` gives the playback service two decks, each the 5.1
+`EngineCore` over its own ExoPlayer. Normal Play uses one deck exactly as in
+5.1. During a Panda Mix the next song is preloaded on the standby deck about
+12 s before the transition, the blend runs on the outgoing deck's own clock
+(equal-power gains), the current song (history, lock screen, Android Auto)
+changes at the midpoint and the session follows that deck, and the old deck
+stops afterwards. Only the current deck holds audio focus. If the incoming
+song can't load or isn't ready in time, the transition is dropped and the
+current song ends normally. Plans are cached in `files/mix-plans.json` for
+offline use. See [panda-mix.md](panda-mix.md).

@@ -25,6 +25,7 @@ import java.util.Map;
  */
 final class EngineCore implements QueueController.Engine {
     interface PlayerPort {
+        void setVolume(float volume);
         void setMediaItem(String mediaId, String uri, long startMs, String title, String artist, String album, String artworkUri);
         void prepare();
         void setPlayWhenReady(boolean play);
@@ -65,7 +66,7 @@ final class EngineCore implements QueueController.Engine {
     private final Scheduler scheduler;
     private final Logger log;
     private final Hooks hooks;
-    private QueueController controller;
+    private PlaybackSink controller;
 
     private int gen;
     private String uri = "";
@@ -84,8 +85,30 @@ final class EngineCore implements QueueController.Engine {
         this.hooks = hooks;
     }
 
-    void attach(QueueController c) {
+    void attach(PlaybackSink c) {
         controller = c;
+    }
+
+    /** Panda DJ handed this (already playing) deck the logical current track: it now carries that generation. */
+    @Override
+    public void adopt(int newGen) {
+        gen = newGen;
+    }
+
+    int generation() {
+        return gen;
+    }
+
+    QueueItem item() {
+        return item;
+    }
+
+    String state() {
+        return state;
+    }
+
+    boolean ready() {
+        return item != null && port.playbackState() == PlaybackStateModel.STATE_READY;
     }
 
     void release() {

@@ -41,7 +41,13 @@ public class PlaybackService extends MediaLibraryService {
     private ExoPlayer player;
     private MediaLibrarySession session;
     private QueueController controller;
-    private ExoEngine engine;
+    private ExoEngine engine, engine2;
+    private ExoPlayer player2;
+    private PandaDjEngine dj;
+    private QueuePlayer[] sessionPlayers;
+    private NativePlatform.MixPlans mixPlans;
+    private AudioAttributes music;
+    private int logicalDeck = 0;
     private NativePlatform.QueueFile queueFile;
     private static final String TAG = "PandaFM.Playback";
     private static int created = 0;
@@ -71,8 +77,35 @@ public class PlaybackService extends MediaLibraryService {
         return instance == null ? null : instance.controller;
     }
 
-    static ExoEngine engine() {
-        return instance == null ? null : instance.engine;
+    static PandaDjEngine dj() {
+        return instance == null ? null : instance.dj;
+    }
+
+    static NativePlatform.MixPlans mixPlans() {
+        return instance == null ? null : instance.mixPlans;
+    }
+
+    private ExoPlayer newDeck(DefaultDataSource.Factory sources, boolean focus) {
+        return new ExoPlayer.Builder(this)
+            .setAudioAttributes(music, focus) // only the logical deck handles audio focus (pause for calls, duck for navigation)
+            .setHandleAudioBecomingNoisy(true) // headphones unplugged: pause
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setMediaSourceFactory(new DefaultMediaSourceFactory(sources))
+            .build();
+    }
+
+    /**
+     * Panda DJ's logical handoff: the session (lock screen, notification, car) and audio focus move
+     * to the deck now playing the current song. The old deck lets go of focus first, so it isn't
+     * paused by the new deck's request while it fades out.
+     */
+    private void followDeck(int deck) {
+        if (deck == logicalDeck || session == null) return;
+        ExoPlayer[] players = {player, player2};
+        players[logicalDeck].setAudioAttributes(music, false);
+        players[deck].setAudioAttributes(music, true);
+        session.setPlayer(sessionPlayers[deck]);
+        logicalDeck = deck;
     }
 
     static boolean running() {
@@ -106,30 +139,38 @@ public class PlaybackService extends MediaLibraryService {
             return authorization == null ? spec : spec.withAdditionalHeaders(Collections.singletonMap("Authorization", authorization));
         });
         DefaultDataSource.Factory sources = new DefaultDataSource.Factory(this, signedIn); // streams, and content:// downloads
-        AudioAttributes music = new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build();
-        player = new ExoPlayer.Builder(this)
-            .setAudioAttributes(music, /* handleAudioFocus= */ true) // pause for calls, duck for navigation
-            .setHandleAudioBecomingNoisy(true) // headphones unplugged: pause
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setMediaSourceFactory(new DefaultMediaSourceFactory(sources))
-            .build();
+        music = new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build();
+        player = newDeck(sources, true); // deck A: the logical deck to begin with (holds audio focus)
+        player2 = newDeck(sources, false); // deck B: Panda DJ's standby; idle unless a Panda Mix blends into it
 
         io = NativePlatform.newIo();
         catalog = new NativePlatform.Catalog(this);
         NativePlatform.Api api = new NativePlatform.Api(this);
         engine = new ExoEngine(this, player);
+        engine2 = new ExoEngine(this, player2);
+        NativePlatform.Sources sourcesForQueue = new NativePlatform.Sources(this, catalog);
+        dj = new PandaDjEngine(engine.core, engine, engine2.core, engine2, main::postDelayed, new PandaDjEngine.Host() {
+            public String uriFor(QueueItem item) { return sourcesForQueue.uriFor(item); } // resolved at preload time
+            public void onLogicalDeck(int deck) { followDeck(deck); }
+            public void log(String message) { Log.i(TAG, message); }
+            public long nowMs() { return System.currentTimeMillis(); }
+        });
         queueFile = new NativePlatform.QueueFile(this);
-        controller = new QueueController(new NativeQueue(() -> UUID.randomUUID().toString(), new Random()), engine.core,
-            new NativePlatform.Sources(this, catalog), queueFile, new NativePlatform.Events(this, api, io),
+        controller = new QueueController(new NativeQueue(() -> UUID.randomUUID().toString(), new Random()), dj,
+            sourcesForQueue, queueFile, new NativePlatform.Events(this, api, io),
             new NativePlatform.Radio(api, io), new NativePlatform.Env(this));
-        engine.core.attach(controller);
+        dj.attach(controller);
+        mixPlans = new NativePlatform.MixPlans(this, api, io, () -> {
+            if (controller != null) controller.onPlansUpdated();
+        });
+        controller.setMixPlans(mixPlans);
         applyPreferences();
         controller.restore(); // paused: nothing plays by itself after a restart
         Log.i(TAG, "Queue restored: " + controller.queue.items.size() + " songs, index " + controller.queue.index + " (paused)");
         tree = new LibraryTree(api, catalog);
 
-        QueuePlayer sessionPlayer = new QueuePlayer(player, controller, this::resolveAndPlay);
-        MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayer, new LibraryCallback(this, tree, io));
+        sessionPlayers = new QueuePlayer[] {new QueuePlayer(player, controller, this::resolveAndPlay), new QueuePlayer(player2, controller, this::resolveAndPlay)};
+        MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, sessionPlayers[0], new LibraryCallback(this, tree, io));
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (open != null) {
             builder.setSessionActivity(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
@@ -209,10 +250,11 @@ public class PlaybackService extends MediaLibraryService {
             controller.save();
             controller.release(); // late radio/library/engine callbacks must not touch a released player
         }
-        if (engine != null) engine.core.release();
+        if (dj != null) dj.release(); // both decks: no transition or callback may touch a released player
         if (queueFile != null) queueFile.close();
         if (session != null) session.release();
         if (player != null) player.release();
+        if (player2 != null) player2.release();
         if (io != null) io.shutdown();
         instance = null;
         super.onDestroy();

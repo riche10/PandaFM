@@ -15,7 +15,7 @@ from app.config import Settings, get_settings
 from app.db import create_engine, create_session_factory
 from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
-from app.routers import auth, downloads, events, explore, favorites, health, library, me, media, playlists, radio, sync
+from app.routers import auth, downloads, events, explore, mix, favorites, health, library, me, media, playlists, radio, sync
 from app.services.conversions import ConversionCache
 from app.services.library_sync import LibrarySyncer
 
@@ -58,6 +58,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.conversions.prepare_dirs()
         except OSError as exc:  # downloads need a writable cache; everything else works without
             log.warning("Conversion cache at %s isn't writable: %s", cfg.cache_dir, exc)
+        from app.services.mix import MixAnalyzer
+
+        app.state.mix = MixAnalyzer(cfg.cache_dir, app.state.session_factory, app.state.navidrome, cfg.mix_analysis_workers)
+        app.state.mix.start()  # idle until a Panda Mix asks for something
         log.info("PandaFM API %s starting (Navidrome at %s)", __version__, cfg.navidrome_url)
         try:
             yield
@@ -66,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 sync_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await sync_task
+            await app.state.mix.stop()
             await app.state.navidrome.aclose()
             await app.state.db_engine.dispose()
 
@@ -86,7 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Everything else needs a signed-in owner (5.0). Routes with a UserId parameter
     # get the same check through it; the router-level dependency covers the rest.
     signed_in = [Depends(require_auth)]
-    for module in (library, media, favorites, playlists, events, sync, radio, me, downloads, explore):
+    for module in (library, media, favorites, playlists, events, sync, radio, me, downloads, explore, mix):
         app.include_router(module.router, prefix="/api", dependencies=signed_in)
     if (settings or _docs_enabled()) and (settings.api_docs if settings else _docs_enabled()):
         _owner_only_docs(app)
