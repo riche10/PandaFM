@@ -64,6 +64,9 @@ export function startOffline(): void {
 
 export const offline = () => manager
 
+/** Is anything downloaded on this device (so it can play without the server)? */
+export const hasDownloads = () => Object.keys(manager?.state.getState().tracks ?? {}).length > 0
+
 /** The player's source for a song: downloaded file, server stream, or null (unavailable offline). */
 export const resolveSource = createSourceResolver({
   track: (id) => manager?.state.getState().tracks[id],

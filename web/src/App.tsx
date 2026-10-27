@@ -1,13 +1,12 @@
 import { Navigate, Route, Routes } from 'react-router'
-import { isNative, platform } from './platform/state'
+import { isNative } from './platform/state'
 import { AndroidBack } from './shell/AndroidBack'
 import { AppShell } from './shell/AppShell'
-import { AuthGate } from './shell/AuthGate'
+import { ConnectionGate } from './shell/ConnectionGate'
 import { OfflineView } from './views/OfflineView'
 import { GenreView } from './views/GenreView'
 import { DecadeView } from './views/DecadeView'
 import { CollectionView } from './views/CollectionView'
-import { ServerSetupView } from './views/ServerSetupView'
 import { SettingsView } from './views/SettingsView'
 import { AlbumView } from './views/AlbumView'
 import { ArtistView } from './views/ArtistView'
@@ -23,17 +22,8 @@ import { StatsView } from './views/StatsView'
 import { StatusView } from './views/StatusView'
 
 export default function App() {
-  // The Android app needs to know its server before anything else.
-  if (isNative() && !platform.server) {
-    // Outside the app shell (body doesn't scroll): its own full-height scroll area, so short screens reach Continue.
-    return (
-      <div className="setup-screen">
-        <ServerSetupView />
-      </div>
-    )
-  }
   return (
-    <AuthGate>
+    <ConnectionGate>
     <AppShell>
       {isNative() && <AndroidBack />}
       <Routes>
@@ -58,6 +48,6 @@ export default function App() {
         <Route path="*" element={<NotFoundView />} />
       </Routes>
     </AppShell>
-    </AuthGate>
+    </ConnectionGate>
   )
 }

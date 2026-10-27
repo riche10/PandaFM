@@ -54,6 +54,8 @@ class LibrarySyncer:
         return await self.status()
 
     async def _sync(self, trigger: str) -> None:
+        if getattr(self._navidrome, "configured", True) is False:
+            return  # 5.3: nothing to import until the owner connects a music server
         user_id = await self._user_id()
         async with self._sessions() as db:
             run = LibrarySync(trigger=trigger, status="running")

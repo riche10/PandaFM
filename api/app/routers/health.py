@@ -32,14 +32,16 @@ class DatabaseStatus(BaseModel):
 
 class NavidromeStatus(BaseModel):
     ok: bool
+    configured: bool = True  # 5.3: False until the owner connects a music server
     detail: str | None = None
+    url: str | None = None  # the signed-in owner only
     server_type: str | None = None
     server_version: str | None = None
     open_subsonic: bool | None = None
-    configured: bool = True  # 5.3: False until a music server is set up
 
 
 class HealthResponse(BaseModel):
+    service: Literal["pandafm"] = "pandafm"  # lets the apps tell a PandaFM server from any other web server
     status: Literal["ok", "degraded"]
     version: str
     database: DatabaseStatus
@@ -48,6 +50,7 @@ class HealthResponse(BaseModel):
 
 @router.get("/health", response_model=HealthResponse)
 async def health(
+    request: Request,
     auth: Annotated[object | None, Depends(optional_auth)],
     engine: Annotated[AsyncEngine, Depends(get_db_engine)],
     navidrome: Annotated[NavidromeClient, Depends(get_navidrome)],
@@ -55,8 +58,6 @@ async def health(
     database, navidrome_status = await asyncio.gather(
         _check_database(engine), _check_navidrome(navidrome)
     )
-    if not getattr(navidrome, "configured", True):  # 5.3: nothing set up yet (first run)
-        navidrome_status = NavidromeStatus(ok=False, configured=False, detail="No music server is set up yet.")
     result = HealthResponse(
         status="ok" if database.ok and navidrome_status.ok else "degraded",
         version=__version__,
@@ -67,6 +68,9 @@ async def health(
     if not signed_in:  # anonymous callers learn whether it works, not how it's built
         result.database = DatabaseStatus(ok=result.database.ok)
         result.navidrome = NavidromeStatus(ok=result.navidrome.ok, configured=result.navidrome.configured)
+    else:
+        manager = getattr(request.app.state, "music_server", None)
+        result.navidrome.url = manager.url if manager else None
     return result
 
 
@@ -82,6 +86,8 @@ async def _check_database(engine: AsyncEngine) -> DatabaseStatus:
 
 
 async def _check_navidrome(client: NavidromeClient) -> NavidromeStatus:
+    if getattr(client, "configured", True) is False:
+        return NavidromeStatus(ok=False, configured=False, detail="No music server is connected yet.")
     try:
         info = await asyncio.wait_for(client.ping(), CHECK_TIMEOUT_SECONDS)
     except TimeoutError:
@@ -90,9 +96,7 @@ async def _check_navidrome(client: NavidromeClient) -> NavidromeStatus:
         return NavidromeStatus(
             ok=False,
             detail=(
-                f"Navidrome rejected PandaFM's login ({exc}). Check NAVIDROME_USER "
-                "and NAVIDROME_PASSWORD in the stack's environment variables match "
-                "a Navidrome account."
+                f"The music server rejected PandaFM's login ({exc}). Update the username and password in Settings › Music server."
             ),
         )
     except NavidromeError as exc:

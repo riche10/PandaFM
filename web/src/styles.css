@@ -4183,6 +4183,31 @@ body {
 
 .offline-banner span {
   flex: 1 1 12rem;
+/* ── 5.3 first-run setup and connection states ── */
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.setup-steps li[aria-current="step"] {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.setup-steps li[data-done]::before {
+  content: "✓ ";
+  color: var(--accent);
+}
+
+.setup-host {
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
 }
 
 .setup-actions {
@@ -4250,4 +4275,25 @@ body {
   .track-row:hover:not([data-selecting]) .track-select {
     opacity: 0; /* touch: a long-press starts selecting */
   }
+  margin-top: 0.75rem;
+}
+
+.connection-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: calc(0.5rem + env(safe-area-inset-top, 0px)) 1rem 0.5rem;
+  background: var(--surface-raised, var(--surface));
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.form-note--ok {
+  color: var(--success, var(--accent));
+}
+
+.form-note--error {
+  color: var(--danger, #c0392b);
 }

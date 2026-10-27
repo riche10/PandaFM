@@ -66,7 +66,6 @@ export function SettingsView() {
       </nav>
 
       <AccountSettings />
-      <MusicServerSettings />
       <AppearanceSettings />
       <RadioSettings />
 
@@ -158,6 +157,7 @@ export function SettingsView() {
         <p className="hint">Status: {health}</p>
         {isNative() && <button type="button" className="button button--quiet" onClick={() => setChanging(true)}>Change server</button>}
       </section>
+      <MusicServerSettings />
       <Diagnostics />
     </div>
   )
