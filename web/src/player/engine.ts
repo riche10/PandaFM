@@ -25,7 +25,7 @@ interface Ctx {
 type Chain = { gain: Node & { gain: Param }; shelf: Node & { type: string; frequency: Param; gain: Param }; hp: Node & { type: string; frequency: Param; gain: Param } }
 
 const TICK_MS = 50
-const READY_GRACE_S = 1.5
+const MIN_OVERLAP_S = 1.5 // a late incoming deck still gets a blend while at least this much of it is left
 
 /**
  * Owns the audio decks and exposes simple transport controls.
@@ -101,7 +101,13 @@ export class AudioEngine implements PlaybackEngine {
   }
 
   seek(seconds: number): void {
-    this.cancelTransition() // correctness over a clever transition; the store re-plans
+    // Cancel a blend in progress cleanly, but keep the pair: it re-arms from the new position (5.2 forgot it).
+    const keep = this.handedOff ? null : this.pending
+    this.cancelTransition()
+    if (keep) {
+      this.pending = keep
+      if (this.watch === null) this.watch = setInterval(() => this.tick(), TICK_MS)
+    }
     const el = this.deck.element
     const end = Number.isFinite(el.duration) ? el.duration : Number.POSITIVE_INFINITY
     el.currentTime = Math.min(Math.max(0, seconds), end)
@@ -197,15 +203,21 @@ export class AudioEngine implements PlaybackEngine {
       el.addEventListener('loadedmetadata', seekIn)
       this.standby.load(p.src)
     }
+    const latest = t.startAt + Math.max(0, t.overlap - MIN_OVERLAP_S)
+    if (!this.preloaded && now > latest && t.overlap > MIN_OVERLAP_S) {
+      this.dropPending() // e.g. a seek past the transition: this song ends normally
+      return
+    }
     if (this.preloaded && now >= t.startAt) {
-      if (this.standby.element.readyState >= 3) this.begin(p)
-      else if (now >= t.startAt + READY_GRACE_S) this.cancelTransition() // B isn't ready: A plays to its end
+      if (this.standby.element.readyState >= 3) this.begin(p, Math.max(0, now - t.startAt))
+      else if (now > latest) this.cancelTransition() // B never got ready: A plays to its end
     }
   }
 
-  private begin(p: NonNullable<AudioEngine['pending']>): void {
+  private begin(p: NonNullable<AudioEngine['pending']>, late = 0): void {
     const ctx = this.ctx!
-    const t = timeline(p.plan)
+    const planned = timeline(p.plan)
+    const t = { ...planned, overlap: Math.max(0, planned.overlap - late) } // late: the same ending, a shorter blend
     this.running = true
     this.handedOff = false
     this.beganAt = ctx.currentTime

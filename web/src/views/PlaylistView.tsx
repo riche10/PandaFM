@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { getPlaylist } from '../api/library'
 import { PlayCircle, ShuffleButton } from '../components/Cards'
-import { PandaMixButton } from '../components/PandaMix'
+import { inMixOrder, PandaMixControls, PandaMixStatus, useMixPlaylist } from '../components/PandaMix'
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
 import { Icon } from '../components/Icon'
@@ -23,6 +24,8 @@ export function PlaylistView() {
   const playlist = resource.state === 'ready' ? resource.data : resource.state === 'loading' ? resource.previous : undefined
   const color = useArtworkColor(playlist?.cover_art_id ?? null)
   const downloaded = useOffline((s) => !!s.collections[`playlist:${playlistId}`])
+  const mix = useMixPlaylist(playlistId) // 5.3: Panda Mix as a lasting setting of this playlist
+  const [mixView, setMixView] = useState<'mixed' | 'original'>('mixed')
 
   if (resource.state === 'error') {
     return (
@@ -34,6 +37,8 @@ export function PlaylistView() {
   if (!playlist || playlist.id !== playlistId) return <div className="page"><Loading label="Loading playlist…" /></div>
 
   const source: QueueSource = { kind: 'playlist', id: playlist.id, name: playlist.name }
+  const mixed = !!mix.state?.enabled && mixView === 'mixed'
+  const shown = mixed ? inMixOrder(playlist.tracks, mix.state?.order) : playlist.tracks
   return (
     <div className="page page--detail">
       <DetailHero
@@ -51,7 +56,7 @@ export function PlaylistView() {
               </button>
             )}
             <ShuffleButton label={`Shuffle ${playlist.name}`} disabled={playlist.tracks.length < 2} onShuffle={() => player.playCollection(playlist.tracks, { source, shuffle: true })} />
-            <PandaMixButton playlist={playlist} source={source} />
+            <PandaMixControls playlist={playlist} source={source} mix={mix} view={mixView} onView={setMixView} />
             {!playlist.readonly && (
               <>
                 <button type="button" className="icon-button icon-button--large" aria-label="Rename playlist" onClick={() => openDialog({ type: 'rename-playlist', playlist })}>
@@ -70,12 +75,18 @@ export function PlaylistView() {
           </>
         }
       />
+      <PandaMixStatus mix={mix} view={mixView} />
       {playlist.tracks.length === 0 ? (
         <EmptyState icon="playlist" title="This playlist is empty">
           <p>Find a song, open its ⋯ menu and choose Add to playlist.</p>
         </EmptyState>
       ) : (
-        <TrackList tracks={playlist.tracks} onPlay={(i) => player.playCollection(playlist.tracks, { startIndex: i, source })} playlist={playlist} />
+        mixed ? (
+          // Mixed order: play from here as a Panda Mix. Editing (by position) happens in the original order.
+          <TrackList tracks={shown} onPlay={(i) => player.playCollection(shown, { startIndex: i, source: { ...source, mix: { mode: mix.state?.mode ?? 'auto', playlistId: playlist.id } } })} />
+        ) : (
+          <TrackList tracks={playlist.tracks} onPlay={(i) => player.playCollection(playlist.tracks, { startIndex: i, source })} playlist={playlist} />
+        )
       )}
     </div>
   )

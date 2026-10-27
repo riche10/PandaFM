@@ -4150,3 +4150,18 @@ body {
 .mix-editor-actions {
   flex-wrap: wrap;
 }
+
+/* 5.3 Panda Mix status under a playlist's title */
+.panda-mix-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.panda-mix-status .icon {
+  width: 1rem;
+  height: 1rem;
+}

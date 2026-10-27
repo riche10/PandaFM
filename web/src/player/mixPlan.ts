@@ -25,20 +25,26 @@ export interface MixPlan {
   confidence: number
   ready: boolean
   manual?: boolean
+  /** smart | fallback | manual (5.3) */
+  source?: 'smart' | 'fallback' | 'manual'
+  /** a deliberately conservative choice (Clean Handoff, Quick Switch, Gapless): never a failure */
+  intentional?: boolean
   index?: number
 }
 
-export const PRELOAD_S = 12
+export const PRELOAD_S = 20
+export const FALLBACK_TAIL_MS = 3000
 
-/** The safe plan when Panda hasn't analysed the songs (the server's and Android's own fallback). */
+/** The safe plan when Panda hasn't analysed the songs (the server's and Android's own): a recognisable blend that avoids A's tail. */
 export function fallbackPlan(a: Pick<Track, 'id' | 'duration_seconds'>, b: Pick<Track, 'id'>, mode: MixMode): MixPlan {
   const duration = (a.duration_seconds ?? 0) * 1000
-  const overlap = mode === 'gentle' ? 2500 : 4000
+  const wanted = mode === 'gentle' ? 3500 : mode === 'energetic' ? 6000 : 5000
+  const overlap = duration > wanted + FALLBACK_TAIL_MS ? wanted : 0
   return {
-    from: a.id, to: b.id, type: 'smooth_blend', label: 'Smooth Blend', summary: `Smooth Blend · ${overlap / 1000} sec`,
+    from: a.id, to: b.id, type: 'smooth_blend', label: 'Smooth Blend', summary: `Smooth Blend · ${wanted / 1000} sec`,
     explanation: 'Panda hasn’t analysed these songs yet, so it uses a short, safe blend.',
-    outgoing_start_ms: Math.max(0, duration - overlap), incoming_start_ms: 0, overlap_ms: duration > overlap ? overlap : 0,
-    curve: 'equal_power', filter: null, confidence: 0.3, ready: false,
+    outgoing_start_ms: Math.max(0, duration - overlap - FALLBACK_TAIL_MS), incoming_start_ms: 0, overlap_ms: overlap,
+    curve: 'equal_power', filter: null, confidence: 0.3, ready: false, source: 'fallback', intentional: false,
   }
 }
 

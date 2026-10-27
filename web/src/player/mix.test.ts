@@ -12,13 +12,13 @@ const track = (id: string, duration = 200) => ({ id, title: id, artist: 'X', dur
 describe('Panda Mix plans', () => {
   it('the fallback is a short, safe equal-power blend', () => {
     const p = fallbackPlan(track('a'), track('b'), 'auto')
-    assert.deepEqual([p.outgoing_start_ms, p.overlap_ms, p.curve, p.ready], [196000, 4000, 'equal_power', false])
-    assert.equal(fallbackPlan(track('a'), track('b'), 'gentle').overlap_ms, 2500)
+    assert.deepEqual([p.outgoing_start_ms, p.overlap_ms, p.curve, p.ready, p.source], [192000, 5000, 'equal_power', false, 'fallback']) // ends 3 s before the end
+    assert.equal(fallbackPlan(track('a'), track('b'), 'gentle').overlap_ms, 3500)
   })
 
   it('the handoff is the midpoint', () => {
     const t = timeline({ outgoing_start_ms: 190000, overlap_ms: 10000 } as MixPlan)
-    assert.deepEqual(t, { preloadAt: 178, startAt: 190, handoffAt: 195, endAt: 200, overlap: 10 })
+    assert.deepEqual(t, { preloadAt: 170, startAt: 190, handoffAt: 195, endAt: 200, overlap: 10 })
   })
 
   it('equal power has no dip; bass handoff swaps the lows at the midpoint', () => {
@@ -107,9 +107,9 @@ describe('web dual deck (Panda Mix)', () => {
     await engine.play()
     let handoffs = 0
     engine.prepareNext('/b', plan, () => { handoffs++; return true })
-    a.currentTime = 170
+    a.currentTime = 160
     engine.tick()
-    assert.equal(b.src, '') // too early
+    assert.equal(b.src, '') // too early (the lead is 20 s)
     a.currentTime = 178.5
     engine.tick()
     assert.equal(b.src, '/b')
@@ -145,6 +145,7 @@ describe('web dual deck (Panda Mix)', () => {
     assert.equal(engine.inTransitionBeforeHandoff(), false)
     assert.equal(b.src, '')
     assert.equal(a.currentTime, 60)
+    engine.stop() // the pair stays armed after a seek; a test cleans up like the player does
   })
 
   it('a failed incoming deck drops the blend and A plays on', async () => {
@@ -160,6 +161,32 @@ describe('web dual deck (Panda Mix)', () => {
     a.currentTime = 190
     engine.tick()
     assert.equal(engine.inTransitionBeforeHandoff(), false) // no blend: A ends normally
+  })
+
+  it('a seek re-arms the pair; a late incoming deck still gets a shorter blend', async () => {
+    const { els: [a, b], engine, plan } = mixRig()
+    engine.load('/a')
+    await engine.play()
+    engine.prepareNext('/b', plan, () => true)
+    a.currentTime = 178.5
+    engine.tick()
+    b.readyState = 4
+    a.currentTime = 190
+    engine.tick()
+    engine.seek(60) // cancels the blend, keeps the pair
+    assert.equal(engine.inTransitionBeforeHandoff(), false)
+    a.currentTime = 178.5
+    engine.tick()
+    assert.equal(b.src, '/b') // prepared again
+    b.readyState = 1 // not ready at the transition point
+    a.currentTime = 190
+    engine.tick()
+    assert.equal(engine.inTransitionBeforeHandoff(), false)
+    b.readyState = 4
+    a.currentTime = 194
+    engine.tick() // 4 s late: still a blend
+    assert.equal(engine.inTransitionBeforeHandoff(), true)
+    engine.completeTransitionNow()
   })
 
   it('normal playback never builds the Web Audio graph', async () => {
