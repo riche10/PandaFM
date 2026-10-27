@@ -81,6 +81,8 @@ export interface PlayerDeps {
   newId?: () => string
   /** The queue truly ran out (natural end, no repeat, nothing next). Called once, after play_completed. */
   onQueueEnd?: () => void
+  /** Panda Mix plans (5.2); without it a Panda Mix source just plays normally. */
+  mixPlanner?: import('./mixPlan').MixPlanner
 }
 
 export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorKind, string> = {
@@ -116,8 +118,12 @@ export function createPlayerStore({
   report,
   newId = () => Math.random().toString(36).slice(2),
   onQueueEnd,
+  mixPlanner,
 }: PlayerDeps): PlayerStore {
   engine.setVolume(initialVolume)
+
+  /** Re-plan the next Panda Mix transition (assigned inside the store below). */
+  let replan: () => void = () => {}
 
   // The listen in progress: one play_id ties together its events.
   let listen: { playId: string; uid: string; started: boolean; completed: boolean; paused: boolean } | null = null
@@ -178,9 +184,46 @@ export function createPlayerStore({
       engine.load(source, item.track)
       if (resumeAt > 0) engine.seek(resumeAt) // a restored session continues where it was
       startPlayback()
+      queueMicrotask(planNext)
     }
 
     const update = (change: (queue: Q.QueueState) => Q.QueueState) => set(change(queueOf(get())))
+
+    /** Panda Mix (5.2): tell the engine how the current song becomes the next (nothing otherwise). */
+    const planNext = () => {
+      if (!engine.prepareNext) return
+      const s = get()
+      const mix = s.source?.mix
+      const ni = Q.nextIndex(s)
+      if (!mix || !mixPlanner || s.index < 0 || ni === null || ni === s.index || s.repeat === 'one' || s.status === 'idle') {
+        engine.prepareNext(null, null, () => false)
+        return
+      }
+      const a = s.items[s.index]
+      const b = s.items[ni]
+      const src = streamUrl(b.track.id)
+      const plan = mixPlanner.plan(a.track, b.track, mix.mode, mix.playlistId ?? null, s.items.slice(s.index, s.index + 4).map((i) => i.track), () => planNext())
+      engine.prepareNext(src, plan, () => adoptNext(b.uid))
+    }
+
+    replan = () => planNext()
+
+    /** Panda DJ's handoff (the blend's midpoint): the song fading in becomes current, without being reloaded. */
+    const adoptNext = (uid: string): boolean => {
+      const s = get()
+      const ni = Q.nextIndex(s)
+      if (ni === null || s.items[ni].uid !== uid) return false
+      if (listen?.started && !listen.completed) {
+        reportFrom('play_completed', s.position)
+        listen.completed = true
+      }
+      listen = { playId: newId(), uid, started: true, completed: false, paused: false }
+      const track = s.items[ni].track
+      set({ index: ni, status: 'playing', position: 0, duration: track.duration_seconds ?? 0, error: null })
+      reportFrom('play_started', 0)
+      queueMicrotask(planNext)
+      return true
+    }
 
     /** Hand-picked songs added with nothing loaded: show the first one, ready to play. */
     const showFirstIfIdle = () => {
@@ -270,6 +313,10 @@ export function createPlayerStore({
       },
 
       next() {
+        if (engine.inTransitionBeforeHandoff?.()) { // mid-blend: the song already fading in, without restarting it
+          engine.completeTransitionNow?.()
+          return
+        }
         const target = Q.nextIndex(get())
         if (target !== null) start(target)
       },
@@ -395,5 +442,12 @@ export function createPlayerStore({
   }
 
   engine.subscribe(onEngineEvent)
+  if (engine.prepareNext && mixPlanner) {
+    store.subscribe((state, prev) => {
+      if (state.items !== prev.items || state.repeat !== prev.repeat || state.source !== prev.source || (state.index !== prev.index && state.status !== 'loading')) {
+        queueMicrotask(replan)
+      }
+    })
+  }
   return store
 }

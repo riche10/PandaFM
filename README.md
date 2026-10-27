@@ -216,8 +216,8 @@ merging) and **Pull and redeploy**. Do **not** tick anything that removes
 volumes. Then check:
 
 ```bash
-docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0005 (5.0 and 5.0.1)
-docker exec pandafm-api python -m app.migrate check           # database: 0005, code expects: 0005
+docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0006 (5.2)
+docker exec pandafm-api python -m app.migrate check           # database: 0006, code expects: 0006
 ```
 
 About 20 seconds after start-up, PandaFM copies Navidrome's song list into
@@ -367,6 +367,15 @@ In the Android app, the system Back button now closes an open dialog or
 menu first, then goes back through PandaFM's pages, and only leaves the app
 from Home. With music queued, it moves PandaFM to the background so the
 music keeps going.
+
+## Panda Mix (5.2)
+
+Play a playlist continuously with **Panda DJ** blending each song into the
+next: Auto, Gentle, Flow or Energetic, with transitions chosen from tempo,
+key, loudness and the songs' intros and outros (and conservative when Panda
+isn't sure). PandaFM analyses only the songs a Panda Mix is about to play, not
+your whole library. Adjust any transition, preview it and save it for that
+playlist. See **[docs/panda-mix.md](docs/panda-mix.md)**.
 
 ## PandaFM 5.0: sign-in and remote access
 

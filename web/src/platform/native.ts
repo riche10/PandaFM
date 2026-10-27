@@ -69,6 +69,8 @@ export interface PandaPlayerPlugin {
   migrate(options: { snapshot: string }): Promise<{ migrated: boolean }>
   /** Settings › Diagnostics (5.1): safe playback facts and recent playback events. */
   getDiagnostics(): Promise<{ diagnostics: string }>
+  /** Panda Mix (5.2): analyse a downloaded playlist on the server and keep every plan for offline. */
+  prepareMixOffline(options: { tracks: string; playlistId: string; mode: string }): Promise<void>
   addListener(event: 'queue', listener: (e: { snapshot: string; reason: string }) => void): Promise<{ remove: () => Promise<void> }>
   addListener(event: 'state', listener: (e: NativeState) => void): Promise<{ remove: () => Promise<void> }>
 }

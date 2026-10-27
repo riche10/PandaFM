@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { Link } from 'react-router'
 import { openDialog } from '../dialogs/store'
 import { player, radio, usePlayer, type QueueItem } from '../player'
@@ -5,6 +6,7 @@ import { Cover } from './Cover'
 import { Equalizer } from './Equalizer'
 import { Icon } from './Icon'
 import { MarqueeText } from './MarqueeText'
+import { MixBridge, useMixBridges } from './PandaMix'
 import { MenuButton, MenuItem } from './Menu'
 
 /** Very long queues (a whole library) render this many upcoming rows. */
@@ -40,6 +42,13 @@ export function QueueList({ limit, showCurrent = true }: { limit?: number; showC
     )
   }
 
+  // Panda Mix (5.2): a compact bridge into each upcoming song, from the one before it in the queue.
+  const mixPlans = useMixBridges()
+  const queueItems = usePlayer((s) => s.items)
+  const bridgeInto = (item: QueueItem) => {
+    const at = queueItems.findIndex((i) => i.uid === item.uid)
+    return at > 0 ? <MixBridge from={queueItems[at - 1].track} to={item.track} plans={mixPlans} /> : null
+  }
   const nextFrom = source?.radio
     ? `${source.radio.autoplay ? 'Autoplay · ' : 'Next from '}${source.radio.modeLabel}${source.radio.seedName ? ` · based on ${source.radio.seedName}` : ''}`
     : `Next from: ${source?.name ?? 'your selection'}`
@@ -61,7 +70,10 @@ export function QueueList({ limit, showCurrent = true }: { limit?: number; showC
           </div>
           <ol className="queue-rows">
             {shownManual.map((item) => (
-              <QueueRow key={item.uid} item={item} />
+              <Fragment key={item.uid}>
+                {bridgeInto(item)}
+                <QueueRow item={item} />
+              </Fragment>
             ))}
           </ol>
         </section>
@@ -85,7 +97,10 @@ export function QueueList({ limit, showCurrent = true }: { limit?: number; showC
           </div>
           <ol className="queue-rows">
             {shownContext.map((item) => (
-              <QueueRow key={item.uid} item={item} />
+              <Fragment key={item.uid}>
+                {bridgeInto(item)}
+                <QueueRow item={item} />
+              </Fragment>
             ))}
           </ol>
         </section>

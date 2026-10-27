@@ -4,6 +4,10 @@ import {artworkSrc, onReconnect, resolveSource } from '../offline'
 import { platform } from '../platform/state'
 import { createPlaybackEngine, usesBrowserMediaSession } from './engineSelect'
 import { createNativeQueueStore, resyncNativePlayer } from './nativeStore'
+import { MixPlanner } from './mixPlan'
+/** Panda Mix plans (5.2): shared by the browser mixer and the transition bridges (and the Android bridges). */
+export const mixPlanner = new MixPlanner((body) => apiSend('POST', '/mix/prepare', body))
+import { apiSend } from '../api/client'
 import { autoplaySettings } from './autoplay'
 import { authFetch } from '../api/auth'
 import { apiUrl } from '../api/client'
@@ -77,6 +81,7 @@ function toEvent(report: PlaybackReport): ListeningEvent {
 export const playerStore = nativeQueue
   ? createNativeQueueStore(nativeQueue, savedVolume())
   : createPlayerStore({
+      mixPlanner, // Panda Mix plans (5.2)
   engine: audioEngine,
   streamUrl: resolveSource, // a downloaded file when there is one, else the server stream
   explainError: explainPlaybackError,

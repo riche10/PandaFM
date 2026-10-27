@@ -10,6 +10,7 @@ import { PresetDialog } from './PresetDialog'
 import { StationDialog } from './StationDialog'
 import { AlbumInfo, TrackInfo } from './InfoDialog'
 import { FiltersDialog } from './FiltersDialog'
+import { MixTransitionDialog } from './MixTransitionDialog'
 import { closeDialog, type DialogRequest, openDialog, useDialog } from './store'
 
 const songs = (count: number) => (count === 1 ? '1 song' : `${count} songs`)
@@ -26,6 +27,7 @@ export function DialogHost() {
       {request?.type === 'preset' && <PresetDialog preset={request.preset} />}
       {request?.type === 'station' && <StationDialog station={request.station} prefill={request.prefill} />}
       {request?.type === 'track-info' && <TrackInfo track={request.track} />}
+      {request?.type === 'mix-transition' && <MixTransitionDialog plan={request.plan} from={request.from} to={request.to} mode={request.mode} playlistId={request.playlistId} />}
       {request?.type === 'album-info' && <AlbumInfo album={request.album} />}
       {request?.type === 'filters' && <FiltersDialog kind={request.kind} value={request.value} onApply={request.onApply} />}
       {request?.type === 'why' && <WhyThisSong track={request.track} reasons={request.reasons} modeLabel={request.modeLabel} />}
@@ -54,6 +56,8 @@ function labelFor(request: DialogRequest): string {
       return 'Radio preset'
     case 'station':
       return 'Station'
+    case 'mix-transition':
+      return 'Panda Mix transition'
     case 'track-info':
     case 'album-info':
       return 'Info'
