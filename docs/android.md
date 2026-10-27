@@ -404,3 +404,102 @@ Sign-in
 - Songs play one at a time (no gapless join yet; that arrives with Panda Mix).
 - Car artwork for downloaded songs needs the server once (it's cached after).
 - Voice requests depend on what Google Assistant passes to media apps.
+
+
+## Playback stability (5.1)
+
+5.1 fixes the 5.0.1 reports of music stopping after a few minutes and of the
+Now Playing timeline freezing. What was wrong, and how it works now:
+
+- **The service wasn't a foreground media service.** 5.0.1's rewrite dropped
+  `addSession(session)`. Media3 then only managed the media notification and
+  the foreground state once some `MediaController` connected, and PandaFM's own
+  screens don't use one. The service could stay an ordinary background service,
+  which Android stops a minute or so after the app leaves the screen:
+  `onDestroy` released the player and the music stopped. The session is added
+  again as soon as it exists.
+- **Buffering was taken for a pause.** PandaFM's state now comes from Media3's
+  facts together (`PlaybackStateModel`): `playbackState`, `playWhenReady`,
+  `isPlaying` and the playback suppression reason. Waiting for data, or a moment
+  of lost audio focus, is *buffering* (still meaning to play); only
+  `playWhenReady=false` is a pause. Pause and resume listening events are
+  recorded where they're asked for, never inferred from buffering.
+- **The timeline stopped and couldn't restart.** The plugin's position ticker
+  now runs whenever playback is intended (playing, loading, buffering). When the
+  service is recreated the plugin moves its listener to the new queue (5.0.1
+  kept listening to the old one). Coming back to the app, and opening Now
+  Playing, re-reads the native snapshot at once.
+- **Artwork touched the playing song.** Artwork is now a `content://` URI on
+  the MediaItem from the start (`ArtworkProvider`, signed-in fetch or the
+  downloaded copy); Media3's own bitmap loader resolves it for the
+  notification, lock screen and car. The playing item is never replaced, and a
+  missing or failed cover can't affect audio.
+- **Network trouble.** A stream that fails with a clearly recoverable network
+  error (or an expired access token: refreshed first) is retried at most three
+  times (1 s, 3 s, 8 s), at the same position, as *buffering*. Anything else is
+  a clear error; the queue stays and Play, Next and Previous still work.
+  Downloaded files are never retried (and never streamed). A first-play live
+  AAC stream that can't seek is reloaded at the new position.
+- **Lifecycle.** `onTaskRemoved` keeps the service while PandaFM means to play
+  (a buffer can't look like "inactive"). After `onDestroy`, late radio,
+  library, engine and artwork callbacks are ignored. Queue and listening-event
+  files are written on a background thread; the sign-in check no longer
+  decrypts with the Keystore on the player thread.
+
+### Logs and Diagnostics
+
+`adb logcat -s PandaFM.Playback PandaFM.Auto PandaFM.Auth PandaFM.Download`
+shows state transitions (`gen=24 playing → buffering playWhenReady=true`),
+user pauses and plays, player errors (Media3 code, remote or downloaded,
+generation, state, track id, retry count), and the service lifecycle
+(`onCreate`, recreation, queue restore, `onTaskRemoved` and its decision,
+`onDestroy`). No position ticks, URLs, tokens or passwords are logged.
+
+Without a computer: **Settings › Diagnostics** shows the PandaFM version,
+whether the playback service is running, the queue and ExoPlayer state,
+`playWhenReady`, `isPlaying`, the current track id, queue index and length,
+generation, source (remote/downloaded), stream quality, network, position,
+duration, the last playback error, and the last 50 playback events (kept in
+memory only). **Copy diagnostics** puts it all on the clipboard.
+
+### Manual acceptance checklist (5.1)
+
+**Basic playback**
+1. Install 5.1 over 5.0.1 (no uninstall: same package and signing key).
+2. Open PandaFM.
+3. Play a remote playlist.
+4. Leave it playing at least 15 minutes.
+5. The timeline updates continuously.
+6. Audio doesn't randomly stop.
+7. Several tracks advance correctly.
+
+**Now Playing**
+1. Open Now Playing and watch the slider.
+2. Background the app, then return.
+3. The slider immediately shows the correct position.
+4. Seek; the position keeps updating.
+
+**Lock screen**
+1. Start playback; lock the phone for 15+ minutes.
+2. Several songs advance.
+3. Unlock: PandaFM shows the correct song and position.
+
+**Background**
+1. Start playback, press Home, use other apps.
+2. Music continues and the queue advances.
+
+**Swipe away**
+1. Play a playlist; swipe PandaFM from Recents.
+2. Music continues; the next track starts when the current one ends.
+
+**Buffer simulation**
+Temporarily degrade or disconnect Wi-Fi. Expected: playing → buffering →
+playing, never permanently paused.
+
+**Artwork**
+Start a track whose artwork isn't cached yet. Artwork may appear later; audio
+must not stutter, restart or stop when it does.
+
+**Downloaded**
+Play downloaded tracks with the network off. The timeline and advancement stay
+stable.

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { Cover } from '../components/Cover'
 import { FavoriteButton } from '../components/FavoriteButton'
@@ -13,11 +14,14 @@ import { TrackMenu } from '../components/TrackMenu'
 import { artVars, useArtworkColor } from '../hooks/useArtworkColor'
 import { useCoverSrc } from '../hooks/useCoverSrc'
 import { openDialog } from '../dialogs/store'
-import { player, radio, useCurrentTrack, useHasNext, usePlayer, useRadio } from '../player'
+import { player, radio, useCurrentTrack, useHasNext, usePlayer, useRadio, resyncPlayer } from '../player'
 
 const UP_NEXT = 5
 
 export function NowPlayingView() {
+  useEffect(() => {
+    void resyncPlayer() // Android: show the service's truth right away (position, song, state)
+  }, [])
   const navigate = useNavigate()
   const location = useLocation()
   const track = useCurrentTrack()

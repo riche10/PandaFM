@@ -28,6 +28,7 @@ public class QueueControllerTest {
         public long positionMs() { return position; }
         public long durationMs() { return duration; }
         public void stop() { stopped = true; }
+        public boolean playWhenReady() { return lastPlay; }
     }
 
     static final class FakeRadio implements QueueController.Radio {
@@ -81,7 +82,7 @@ public class QueueControllerTest {
     public void aFinishedSongAdvancesNativelyWithoutReact() {
         QueueController c = controller();
         c.replace(tracks("a", "b", "c"), 0, src("playlist"), false, true);
-        c.onPlayingChanged(engine.lastGen, true);
+        c.onEngineState(engine.lastGen, "playing");
         c.onEnded(engine.lastGen);
         assertEquals("b", c.queue.current().trackId());
         assertTrue(engine.lastPlay);
@@ -94,7 +95,7 @@ public class QueueControllerTest {
         QueueController c = controller();
         c.replace(tracks("a", "b", "c"), 0, null, false, true);
         int gen = engine.lastGen;
-        c.onPlayingChanged(gen, true);
+        c.onEngineState(gen, "playing");
         c.next(); // the user presses Next as the song ends...
         c.onEnded(gen); // ...and the old song's "ended" arrives late
         assertEquals("b", c.queue.current().trackId());

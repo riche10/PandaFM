@@ -59,13 +59,24 @@ final class NativePlatform {
     /** The queue, in files/queue.json (identities and metadata only; no URLs, no tokens). */
     static final class QueueFile implements QueueController.Store {
         private final Context ctx;
+        private final ExecutorService disk = Executors.newSingleThreadExecutor();
+        private final java.util.concurrent.atomic.AtomicReference<String> latest = new java.util.concurrent.atomic.AtomicReference<>();
 
         QueueFile(Context ctx) {
             this.ctx = ctx.getApplicationContext();
         }
 
+        /** Serialised on the player thread, written on a background thread; only the newest is written. */
         public void save(String json) {
-            Files.write(ctx, "queue.json", json);
+            if (latest.getAndSet(json) != null) return; // a write is already queued: it will take this one
+            disk.execute(() -> {
+                String newest = latest.getAndSet(null);
+                if (newest != null) Files.write(ctx, "queue.json", newest);
+            });
+        }
+
+        void close() {
+            disk.shutdown();
         }
 
         public String load() {
@@ -90,6 +101,7 @@ final class NativePlatform {
         private List<Map<String, Object>> tracks = new ArrayList<>();
         private List<Map<String, Object>> collections = new ArrayList<>();
         private final Map<String, String> uris = new LinkedHashMap<>();
+        private Map<String, Object> artwork = new LinkedHashMap<>();
 
         Catalog(Context ctx) {
             this.ctx = ctx.getApplicationContext();
@@ -105,6 +117,8 @@ final class NativePlatform {
             if (m == null) return false;
             tracks = Json.maps(m.get("tracks"));
             collections = Json.maps(m.get("collections"));
+            Map<String, Object> art = Json.map(m.get("artwork"));
+            artwork = art == null ? new LinkedHashMap<String, Object>() : art;
             uris.clear();
             for (Map<String, Object> t : tracks) {
                 String id = Json.str(Json.map(t.get("track")), "id"), uri = Json.str(t, "uri");
@@ -123,6 +137,12 @@ final class NativePlatform {
 
         synchronized String localUri(String trackId) {
             return uris.get(trackId);
+        }
+
+        /** The saved (downloaded) artwork for a cover, as content://, or null. */
+        synchronized String savedArtwork(String coverArtId) {
+            Object uri = artwork.get(coverArtId);
+            return uri instanceof String && ((String) uri).startsWith("content://") ? (String) uri : null;
         }
     }
 
@@ -273,7 +293,8 @@ final class NativePlatform {
         public synchronized void report(Map<String, Object> event) {
             pending.add(event);
             while (pending.size() > MAX_PENDING) pending.remove(0);
-            Files.write(ctx, "pending-events.json", Json.write(new ArrayList<Object>(pending)));
+            String snapshot = Json.write(new ArrayList<Object>(pending));
+            io.execute(() -> Files.write(ctx, "pending-events.json", snapshot)); // never on the player thread
             flush();
         }
 

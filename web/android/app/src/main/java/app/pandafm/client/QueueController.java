@@ -29,6 +29,7 @@ final class QueueController {
         void seekTo(long ms);
         long positionMs();
         long durationMs();
+        boolean playWhenReady();
         void stop();
     }
 
@@ -86,7 +87,8 @@ final class QueueController {
     String error;
     private String playId;
     private String playUid;
-    private boolean started, completed, wasPlaying;
+    private boolean started, completed;
+    private boolean released;
     private long resumeAtMs;
     private String resumeUid;
     private boolean refilling;
@@ -108,12 +110,32 @@ final class QueueController {
         listeners.add(l);
     }
 
+    /** The service is going away: nothing may touch the player or the queue afterwards. */
+    void release() {
+        released = true;
+        listeners.clear();
+    }
+
+    /** Still meaning to make sound (playing, loading, buffering): the timeline keeps updating. */
+    boolean intendsToPlay() {
+        return !released && queue.current() != null && PlaybackStateModel.intendsToPlay(status);
+    }
+
+    long positionMs() {
+        return "idle".equals(status) ? resumeAtMs : engine.positionMs();
+    }
+
+    long durationMs() {
+        return engine.durationMs();
+    }
+
     void removeListener(Listener l) {
         listeners.remove(l);
     }
 
     /** Something the user asked for couldn't happen (e.g. a car request while offline). */
     void showError(String message) {
+        if (released) return;
         fail(message);
     }
 
@@ -122,6 +144,7 @@ final class QueueController {
      * and the snapshot is valid. Anything doubtful is ignored (the native queue starts empty).
      */
     boolean migrateFromWeb(Map<String, Object> web) {
+        if (released) return false;
         if (queue.current() != null || web == null) return false;
         Map<String, Object> m = new LinkedHashMap<>(web);
         Object pos = web.get("position");
@@ -136,6 +159,7 @@ final class QueueController {
 
     // ── restoring after a restart: always paused ──
     void restore() {
+        if (released) return;
         String saved = store.load();
         Map<String, Object> m = Json.map(Json.tryParse(saved));
         if (m == null || !queue.restore(m)) return; // corrupt or absent: start empty
@@ -147,6 +171,7 @@ final class QueueController {
         String sid = queue.radioSessionId();
         if (sid != null) {
             radio.check(sid, (body, code) -> {
+                if (released) return;
                 if (code == 404 || code == 410) { // the session ended on the server: keep the songs
                     queue.endRadio();
                     changed("radio-ended");
@@ -158,6 +183,7 @@ final class QueueController {
 
     // ── what the phone UI and Android Auto ask for ──
     void replace(List<Map<String, Object>> tracks, Integer startIndex, Map<String, Object> source, boolean shuffle, boolean play) {
+        if (released) return;
         if (tracks.isEmpty()) return;
         leaveCurrent();
         queue.load(tracks, startIndex, source, shuffle);
@@ -166,6 +192,7 @@ final class QueueController {
 
     /** A radio session the server started (from the phone or from us): picks, seed song, session. */
     void applyRadioStart(Map<String, Object> out, boolean keepCurrent, boolean autoplay) {
+        if (released) return;
         Map<String, Object> session = Json.map(out.get("session"));
         String sid = Json.str(session, "id");
         if (sid == null) return;
@@ -186,6 +213,7 @@ final class QueueController {
 
     /** Radio picks ({selection_id, track}) with their radio source: the one path for every radio start. */
     void applyRadioPicks(List<Map<String, Object>> rawPicks, Map<String, Object> source, Map<String, Object> seedTrack, boolean keepCurrent, boolean autoplay) {
+        if (released) return;
         String sid = Json.str(Json.map(source == null ? null : source.get("radio")), "sessionId");
         if (sid == null) return;
         List<QueueItem> picks = queue.wrapRadio(rawPicks, sid);
@@ -205,13 +233,16 @@ final class QueueController {
 
     /** Android Auto / a station / a radio mode: ask the server to start radio, then play. */
     void startRadio(String preset, String seedKind, String seedId) {
+        if (released) return;
         radio.start(preset, seedKind, seedId, (body, code) -> {
+            if (released) return;
             if (body != null) applyRadioStart(body, false, false);
             else fail("PandaFM couldn’t start radio right now.");
         });
     }
 
     void playNext(List<Map<String, Object>> tracks) {
+        if (released) return;
         boolean empty = queue.current() == null;
         queue.playNext(tracks);
         if (empty) status = "idle";
@@ -219,6 +250,7 @@ final class QueueController {
     }
 
     void addToQueue(List<Map<String, Object>> tracks) {
+        if (released) return;
         boolean empty = queue.current() == null;
         queue.addToQueue(tracks);
         if (empty) status = "idle";
@@ -226,19 +258,23 @@ final class QueueController {
     }
 
     void remove(String uid) {
+        if (released) return;
         if (queue.remove(uid)) changed("queue");
     }
 
     void move(String uid, int direction) {
+        if (released) return;
         if (queue.move(uid, direction)) changed("queue");
     }
 
     void clear(String which) {
+        if (released) return;
         queue.clearUpcoming(which);
         changed("queue");
     }
 
     void jumpTo(String uid) {
+        if (released) return;
         QueueItem before = queue.current();
         int previous = queue.index;
         if (!queue.jumpTo(uid)) return;
@@ -249,16 +285,19 @@ final class QueueController {
     }
 
     void toggleShuffle() {
+        if (released) return;
         queue.setShuffle(!queue.shuffle);
         changed("shuffle");
     }
 
     void cycleRepeat() {
+        if (released) return;
         queue.cycleRepeat();
         changed("repeat");
     }
 
     void endRadio() {
+        if (released) return;
         queue.endRadio();
         suppressedQueue = queue.items.isEmpty() ? null : queue.items.get(0).uid;
         changed("radio-ended");
@@ -266,20 +305,29 @@ final class QueueController {
 
     // ── transport: the same for the phone, Android Auto, Bluetooth and the lock screen ──
     void play() {
-        if (queue.current() == null) return;
-        if ("idle".equals(status) || "error".equals(status) || "ended".equals(status)) {
+        if (released || queue.current() == null) return;
+        if ("idle".equals(status) || "ended".equals(status)) {
             start(queue.index, true);
             return;
         }
+        if ("error".equals(status)) { // try the same song again (a fresh source: the network may have changed)
+            start(queue.index, true);
+            return;
+        }
+        if ("paused".equals(status) && started && !completed) report("resume", engine.positionMs());
         engine.play();
     }
 
+    /** A real, intentional pause (the user, a headset, the car): not to be confused with buffering. */
     void pause() {
+        if (released) return;
+        if (started && !completed && PlaybackStateModel.intendsToPlay(status)) report("pause", engine.positionMs());
         engine.pause();
         save();
     }
 
     void seekTo(long ms) {
+        if (released) return;
         if (queue.current() == null) return;
         if ("idle".equals(status)) { // a restored song: remember where to start
             resumeAtMs = Math.max(0, ms);
@@ -291,6 +339,7 @@ final class QueueController {
     }
 
     void next() {
+        if (released) return;
         Integer target = queue.nextIndex();
         if (target == null) {
             if (tryAutoplay()) return;
@@ -301,6 +350,7 @@ final class QueueController {
     }
 
     void previous() {
+        if (released) return;
         if (queue.current() == null) return;
         if (!"idle".equals(status) && engine.positionMs() > RESTART_WINDOW_MS) {
             engine.seekTo(0);
@@ -316,30 +366,26 @@ final class QueueController {
     }
 
     // ── engine events (each tagged with the load it belongs to) ──
-    void onPlayingChanged(int forGen, boolean playing) {
-        if (forGen != gen) return;
-        if (playing && !started) {
+    /**
+     * The engine's derived state (PlaybackStateModel): loading, buffering, playing, paused, error.
+     * Buffering keeps meaning to play; only an intentional pause is "paused". No listening
+     * events here except the first start: pause/resume are reported where they're asked for.
+     */
+    void onEngineState(int forGen, String state) {
+        if (released || forGen != gen || queue.current() == null) return;
+        if ("playing".equals(state) && !started) {
             started = true;
             report("play_started", 0);
-        } else if (started && !completed && playing != wasPlaying) {
-            report(playing ? "resume" : "pause", engine.positionMs());
         }
-        wasPlaying = playing;
-        status = playing ? "playing" : ("loading".equals(status) ? "loading" : "paused");
+        if ("error".equals(state)) return; // onError explains it
+        status = state;
+        if ("playing".equals(state)) error = null;
         notifyAll("state");
-    }
-
-    void onReady(int forGen, boolean playing) {
-        if (forGen != gen) return;
-        if (!playing && "loading".equals(status)) {
-            status = "paused";
-            notifyAll("state");
-        }
     }
 
     /** The song finished: advance natively, no JavaScript involved. */
     void onEnded(int forGen) {
-        if (forGen != gen) return; // a newer load (e.g. Next) already moved on
+        if (released || forGen != gen) return; // a newer load (e.g. Next) already moved on
         if (started && !completed) {
             completed = true;
             report("play_completed", engine.durationMs());
@@ -360,8 +406,8 @@ final class QueueController {
     }
 
     void onError(int forGen, String message) {
-        if (forGen != gen) return;
-        fail(message);
+        if (released || forGen != gen) return;
+        fail(message); // the queue stays: Play retries, Next and Previous still work
     }
 
     // ── internals ──
@@ -373,7 +419,7 @@ final class QueueController {
         gen++;
         playId = env.newId();
         playUid = item.uid;
-        started = completed = wasPlaying = false;
+        started = completed = false;
         long startMs = item.uid.equals(resumeUid) ? resumeAtMs : 0;
         resumeUid = null;
         resumeAtMs = 0;
@@ -403,6 +449,7 @@ final class QueueController {
         if (!queue.items.isEmpty() && queue.items.get(0).uid.equals(suppressedQueue)) return false; // radio was ended here
         String lastUid = last.uid;
         radio.start(autoplayPreset, "track", last.trackId(), (body, code) -> {
+            if (released) return;
             QueueItem still = queue.current();
             if (body == null || still == null || !still.uid.equals(lastUid) || !"ended".equals(status)) return; // the user moved on
             applyRadioStart(body, false, true);
@@ -418,6 +465,7 @@ final class QueueController {
         refilling = true;
         radio.extend(sid, ahead, TARGET_AHEAD, (body, code) -> {
             refilling = false;
+            if (released) return;
             if (!sid.equals(queue.radioSessionId())) return; // radio ended or changed meanwhile
             if (body == null) {
                 if (code == 404 || code == 409 || code == 410) { // the session is over: keep what's queued
@@ -442,12 +490,14 @@ final class QueueController {
     }
 
     private void changed(String reason) {
+        if (released) return;
         save();
         notifyAll(reason);
         refill();
     }
 
     void save() {
+        if (released) return;
         Map<String, Object> m = queue.snapshot(NativeQueue.MAX_SAVED);
         QueueItem now = queue.current();
         long pos = "idle".equals(status) ? resumeAtMs : now == null ? 0 : engine.positionMs();
@@ -464,7 +514,7 @@ final class QueueController {
         Map<String, Object> m = queue.snapshot(2000);
         m.put("status", status);
         m.put("error", error);
-        m.put("positionMs", "idle".equals(status) ? resumeAtMs : engine.positionMs());
+        m.put("positionMs", positionMs());
         m.put("durationMs", engine.durationMs());
         m.put("gen", (long) gen);
         m.put("autoplaySuppressed", suppressedQueue != null && !queue.items.isEmpty() && queue.items.get(0).uid.equals(suppressedQueue));

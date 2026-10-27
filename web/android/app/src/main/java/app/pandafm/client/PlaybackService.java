@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import androidx.annotation.OptIn;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
@@ -41,6 +42,9 @@ public class PlaybackService extends MediaLibraryService {
     private MediaLibrarySession session;
     private QueueController controller;
     private ExoEngine engine;
+    private NativePlatform.QueueFile queueFile;
+    private static final String TAG = "PandaFM.Playback";
+    private static int created = 0;
     private LibraryTree tree;
     private NativePlatform.Catalog catalog;
     private ExecutorService io;
@@ -71,6 +75,15 @@ public class PlaybackService extends MediaLibraryService {
         return instance == null ? null : instance.engine;
     }
 
+    static boolean running() {
+        return instance != null;
+    }
+
+    /** Swiped away from Recents: keep going while PandaFM still means to play (buffering included). */
+    static boolean stopOnTaskRemoved(boolean intendsToPlay, boolean hasCurrent) {
+        return !intendsToPlay || !hasCurrent;
+    }
+
     static NativePlatform.Catalog catalog() {
         return instance == null ? null : instance.catalog;
     }
@@ -78,6 +91,8 @@ public class PlaybackService extends MediaLibraryService {
     @Override
     public void onCreate() {
         super.onCreate();
+        created++;
+        Log.i(TAG, "PlaybackService.onCreate" + (created > 1 ? " (recreated, #" + created + " in this process)" : ""));
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
             .setUserAgent("PandaFM-Android")
             .setConnectTimeoutMs(15_000)
@@ -102,13 +117,15 @@ public class PlaybackService extends MediaLibraryService {
         io = NativePlatform.newIo();
         catalog = new NativePlatform.Catalog(this);
         NativePlatform.Api api = new NativePlatform.Api(this);
-        engine = new ExoEngine(this, player, io);
-        controller = new QueueController(new NativeQueue(() -> UUID.randomUUID().toString(), new Random()), engine,
-            new NativePlatform.Sources(this, catalog), new NativePlatform.QueueFile(this), new NativePlatform.Events(this, api, io),
+        engine = new ExoEngine(this, player);
+        queueFile = new NativePlatform.QueueFile(this);
+        controller = new QueueController(new NativeQueue(() -> UUID.randomUUID().toString(), new Random()), engine.core,
+            new NativePlatform.Sources(this, catalog), queueFile, new NativePlatform.Events(this, api, io),
             new NativePlatform.Radio(api, io), new NativePlatform.Env(this));
-        engine.attach(controller);
+        engine.core.attach(controller);
         applyPreferences();
         controller.restore(); // paused: nothing plays by itself after a restart
+        Log.i(TAG, "Queue restored: " + controller.queue.items.size() + " songs, index " + controller.queue.index + " (paused)");
         tree = new LibraryTree(api, catalog);
 
         QueuePlayer sessionPlayer = new QueuePlayer(player, controller, this::resolveAndPlay);
@@ -118,6 +135,11 @@ public class PlaybackService extends MediaLibraryService {
             builder.setSessionActivity(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         }
         session = builder.build();
+        // Without this, Media3 only manages the media notification and the foreground state once
+        // some MediaController connects. PandaFM's own screens don't use one, so in 5.0.1 the
+        // service could stay an ordinary background service that Android stops a minute or so
+        // after the app leaves the screen: the "music stops after a few minutes" bug.
+        addSession(session);
         instance = this;
         main.postDelayed(saver, SAVE_EVERY_MS);
         List<Runnable> ready = new ArrayList<>(waiting);
@@ -138,6 +160,7 @@ public class PlaybackService extends MediaLibraryService {
         String mediaId = chosen.mediaId;
         String query = chosen.requestMetadata == null ? null : chosen.requestMetadata.searchQuery;
         boolean signedIn = AuthStore.get(this).signedIn(), online = NetworkState.of(this).connected;
+        QueueController target = controller;
         io.execute(() -> {
             LibraryTree.Resolution r;
             String failure = null;
@@ -150,6 +173,7 @@ public class PlaybackService extends MediaLibraryService {
             LibraryTree.Resolution res = r;
             String error = failure;
             main.post(() -> {
+                if (instance != this || controller != target) return; // the service was recreated meanwhile
                 if (res == null) controller.showError(error);
                 else if (res.error != null) controller.showError(res.error);
                 else if (res.resume) controller.play();
@@ -171,13 +195,22 @@ public class PlaybackService extends MediaLibraryService {
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         if (controller != null) controller.save();
-        if (player == null || !player.getPlayWhenReady() || controller == null || controller.queue.current() == null) stopSelf();
+        boolean intends = controller != null && controller.intendsToPlay();
+        boolean stop = stopOnTaskRemoved(intends, controller != null && controller.queue.current() != null);
+        Log.i(TAG, "onTaskRemoved: status=" + (controller == null ? "none" : controller.status) + (stop ? " → stopping the service" : " → playback continues"));
+        if (stop) stopSelf();
     }
 
     @Override
     public void onDestroy() {
+        Log.i(TAG, "PlaybackService.onDestroy (status=" + (controller == null ? "none" : controller.status) + ")");
         main.removeCallbacks(saver);
-        if (controller != null) controller.save();
+        if (controller != null) {
+            controller.save();
+            controller.release(); // late radio/library/engine callbacks must not touch a released player
+        }
+        if (engine != null) engine.core.release();
+        if (queueFile != null) queueFile.close();
         if (session != null) session.release();
         if (player != null) player.release();
         if (io != null) io.shutdown();

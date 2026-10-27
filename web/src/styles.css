@@ -4054,3 +4054,16 @@ body {
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+
+/* Settings › Diagnostics: recent playback events (5.1) */
+.diagnostic-events {
+  max-height: 14rem;
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.5rem 0.75rem 0.5rem 1.75rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
