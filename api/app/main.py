@@ -15,7 +15,7 @@ from app.config import Settings, get_settings
 from app.db import create_engine, create_session_factory
 from app.errors import register_error_handlers
 from app.navidrome.client import NavidromeClient
-from app.routers import auth, downloads, events, explore, mix, favorites, health, library, me, media, playlists, radio, sync
+from app.routers import auth, downloads, events, explore, mix, music_server, favorites, health, library, me, media, playlists, radio, sync
 from app.services.conversions import ConversionCache
 from app.services.library_sync import LibrarySyncer
 
@@ -43,12 +43,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = cfg
         app.state.db_engine = create_engine(cfg)
         app.state.session_factory = create_session_factory(app.state.db_engine)
-        app.state.navidrome = NavidromeClient(
-            cfg.navidrome_url,
-            cfg.navidrome_user,
-            cfg.navidrome_password.get_secret_value(),
-            timeout=cfg.navidrome_timeout_seconds,
-        )
+        from app.musicserver import MusicServerHolder, SecretBox
+        from app.musicserver import load as load_music_server
+
+        # 5.3: the music server is external and set up at runtime (legacy env settings still work).
+        app.state.navidrome = MusicServerHolder(cfg.navidrome_timeout_seconds)
+        app.state.secret_box = SecretBox(cfg.secret_key.get_secret_value() if cfg.secret_key else None, cfg.data_dir)
+        try:
+            await load_music_server(app.state.navidrome, app.state.session_factory, app.state.secret_box, cfg)
+        except Exception:  # noqa: BLE001  (e.g. the 0008 table isn't there yet: PandaFM still starts and says so)
+            log.exception("Couldn't load the music server settings")
         app.state.syncer = LibrarySyncer(app.state.session_factory, app.state.navidrome, lambda: _default_user_id(app))
         sync_task = asyncio.create_task(app.state.syncer.run_periodically()) if cfg.background_sync else None
         app.state.conversions = ConversionCache(
@@ -62,7 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         app.state.mix = MixAnalyzer(cfg.cache_dir, app.state.session_factory, app.state.navidrome, cfg.mix_analysis_workers)
         app.state.mix.start()  # idle until a Panda Mix asks for something
-        log.info("PandaFM API %s starting (Navidrome at %s)", __version__, cfg.navidrome_url)
+        log.info("PandaFM API %s starting (music server: %s)", __version__, app.state.navidrome.url or "not set up yet")
         try:
             yield
         finally:
@@ -91,7 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Everything else needs a signed-in owner (5.0). Routes with a UserId parameter
     # get the same check through it; the router-level dependency covers the rest.
     signed_in = [Depends(require_auth)]
-    for module in (library, media, favorites, playlists, events, sync, radio, me, downloads, explore, mix):
+    for module in (library, media, favorites, playlists, events, sync, radio, me, downloads, explore, mix, music_server):
         app.include_router(module.router, prefix="/api", dependencies=signed_in)
     if (settings or _docs_enabled()) and (settings.api_docs if settings else _docs_enabled()):
         _owner_only_docs(app)

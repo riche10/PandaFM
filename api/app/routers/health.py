@@ -36,6 +36,7 @@ class NavidromeStatus(BaseModel):
     server_type: str | None = None
     server_version: str | None = None
     open_subsonic: bool | None = None
+    configured: bool = True  # 5.3: False until a music server is set up
 
 
 class HealthResponse(BaseModel):
@@ -54,6 +55,8 @@ async def health(
     database, navidrome_status = await asyncio.gather(
         _check_database(engine), _check_navidrome(navidrome)
     )
+    if not getattr(navidrome, "configured", True):  # 5.3: nothing set up yet (first run)
+        navidrome_status = NavidromeStatus(ok=False, configured=False, detail="No music server is set up yet.")
     result = HealthResponse(
         status="ok" if database.ok and navidrome_status.ok else "degraded",
         version=__version__,
@@ -63,7 +66,7 @@ async def health(
     signed_in = auth is not None
     if not signed_in:  # anonymous callers learn whether it works, not how it's built
         result.database = DatabaseStatus(ok=result.database.ok)
-        result.navidrome = NavidromeStatus(ok=result.navidrome.ok)
+        result.navidrome = NavidromeStatus(ok=result.navidrome.ok, configured=result.navidrome.configured)
     return result
 
 

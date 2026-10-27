@@ -17,36 +17,6 @@ name: pandafm
 services:
   # One-shot helper: Docker named volumes start root-owned, while Navidrome
   # runs unprivileged as PUID:PGID. Fix /data ownership before Navidrome boots.
-  navidrome-init:
-    image: alpine:3.20
-    restart: "no"
-    user: "0:0"
-    command:
-      - /bin/sh
-      - -c
-      - "chown -R ${PUID:-1000}:${PGID:-1000} /data"
-    volumes:
-      - navidrome-data:/data
-
-  navidrome:
-    image: deluan/navidrome:${NAVIDROME_VERSION:-0.64.2}
-    container_name: pandafm-navidrome
-    restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"
-    depends_on:
-      navidrome-init:
-        condition: service_completed_successfully
-    ports:
-      - "${NAVIDROME_PORT:-4533}:4533"
-    environment:
-      ND_MUSICFOLDER: /music
-      ND_DATAFOLDER: /data
-      ND_SCANSCHEDULE: ${NAVIDROME_SCAN_SCHEDULE:-@every 1h}
-      ND_LOGLEVEL: info
-    volumes:
-      - navidrome-data:/data
-      - ${MUSIC_DIR:-/mnt/ugreen/media/Music}:/music:ro
-
   pandafm-db:
     image: postgres:17-alpine
     container_name: pandafm-db
@@ -71,16 +41,21 @@ services:
     depends_on:
       pandafm-db:
         condition: service_healthy
-      navidrome:
-        condition: service_started
     environment:
       PANDAFM_DB_HOST: pandafm-db
       PANDAFM_DB_NAME: ${POSTGRES_DB:-pandafm}
       PANDAFM_DB_USER: ${POSTGRES_USER:-pandafm}
       PANDAFM_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Portainer}
-      PANDAFM_NAVIDROME_URL: http://navidrome:4533
-      PANDAFM_NAVIDROME_USER: ${NAVIDROME_USER:?Set NAVIDROME_USER in Portainer}
-      PANDAFM_NAVIDROME_PASSWORD: ${NAVIDROME_PASSWORD:?Set NAVIDROME_PASSWORD in Portainer}
+      # 5.3: PandaFM no longer bundles Navidrome. Connect your own Navidrome / OpenSubsonic
+      # server during first-run setup (or Settings › Music server). These legacy settings
+      # still work if set (they then manage the server); leave them empty for new installs.
+      PANDAFM_NAVIDROME_URL: ${PANDAFM_NAVIDROME_URL:-}
+      PANDAFM_NAVIDROME_USER: ${PANDAFM_NAVIDROME_USER:-}
+      PANDAFM_NAVIDROME_PASSWORD: ${PANDAFM_NAVIDROME_PASSWORD:-}
+      # Encrypts the stored music-server password. Optional: without it PandaFM generates a
+      # key once in the pandafm-data volume (keep that volume).
+      PANDAFM_SECRET_KEY: ${PANDAFM_SECRET_KEY:-}
+      PANDAFM_DATA_DIR: /data
       PANDAFM_LOG_LEVEL: ${PANDAFM_LOG_LEVEL:-info}
       # 5.0: lets you (once) create PandaFM's owner account. Any long random string,
       # e.g. `openssl rand -hex 24`. It stops working when the owner exists.
@@ -91,6 +66,7 @@ services:
       PANDAFM_CACHE_MAX_GB: ${PANDAFM_CACHE_MAX_GB:-20}
     volumes:
       - pandafm-cache:/cache
+      - pandafm-data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=8)"]
       interval: 30s
@@ -109,6 +85,6 @@ services:
       - "${PANDAFM_WEB_PORT:-8086}:80"
 
 volumes:
-  navidrome-data:
+  pandafm-data:
   pandafm-db:
   pandafm-cache:

@@ -61,7 +61,7 @@ def test_health_explains_bad_navidrome_credentials():
 def test_anonymous_health_says_whether_not_how():
     with client_with_navidrome(failed(40, "Wrong username or password"), signed_in=False) as client:
         body = client.get("/api/health").json()
-    assert body["navidrome"] == {"ok": False, "detail": None, "server_type": None, "server_version": None, "open_subsonic": None}
+    assert body["navidrome"] == {"ok": False, "detail": None, "server_type": None, "server_version": None, "open_subsonic": None, "configured": True}
     assert body["database"] == {"ok": False, "detail": None, "server_version": None}
 
 

@@ -24,9 +24,14 @@ class Settings(BaseSettings):
 
     # ── Navidrome ── (no defaults for credentials: startup fails loudly
     # if they are missing rather than limping along unauthenticated)
-    navidrome_url: str = "http://localhost:4533"
-    navidrome_user: str
-    navidrome_password: SecretStr
+    # Legacy (5.3): the music server is now set up in PandaFM itself. While these are set they still
+    # win (and are copied, encrypted, into the database); remove them to manage it from the app.
+    navidrome_url: str | None = None
+    navidrome_user: str | None = None
+    navidrome_password: SecretStr | None = None
+    # Where PandaFM keeps its generated secret key (unless PANDAFM_SECRET_KEY is set).
+    data_dir: str = "/data"
+    secret_key: SecretStr | None = None
     navidrome_timeout_seconds: float = 10.0
 
     log_level: str = "info"

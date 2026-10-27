@@ -337,3 +337,16 @@ class MixPlaylist(Base):
     updated_at: Mapped[datetime] = _now()
 
     __table_args__ = (UniqueConstraint("user_id", "playlist_id", name="uq_mix_playlist"),)
+
+
+
+class MusicServer(Base):
+    """The external Navidrome / OpenSubsonic server (5.3). One row; the password is encrypted."""
+
+    __tablename__ = "music_server"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    url: Mapped[str] = mapped_column(String(500))
+    username: Mapped[str] = mapped_column(String(200))
+    password_sealed: Mapped[str] = mapped_column(String(1000))
+    updated_at: Mapped[datetime] = _now()
