@@ -1,5 +1,7 @@
 """Panda Mix playlist order (5.3): optimised, deterministic, stable under edits."""
 
+from collections import Counter
+
 from app.mix.order import insert, mixed_order
 
 
@@ -38,3 +40,13 @@ def test_album_runs_stay_together():
     analyses = {"l1": an(120), "l2": an(95), "x": an(121), "y": an(96)}
     order = mixed_order(["l1", "x", "y", "l2"], meta, analyses)
     assert order.index("l2") == order.index("l1") + 1
+
+
+def test_duplicate_playlist_entries_are_never_dropped():
+    ids = ["a", "b", "a", "c"]
+    analyses = {"a": an(120), "b": an(122), "c": an(124)}
+    out = mixed_order(ids, {}, analyses)
+    assert Counter(out) == Counter(ids)
+
+    inserted = insert(["a", "b"], "a", {}, analyses)
+    assert Counter(inserted) == Counter(["a", "a", "b"])
