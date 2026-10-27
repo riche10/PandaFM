@@ -67,7 +67,7 @@ or Settings › Music server), not in environment variables.
 The app itself is available at:
 
 ```text
-http://<ubuntu-server-ip>:8085
+http://<ubuntu-server-ip>:8086
 ```
 
 The frontend container automatically forwards `/api/*` to the private
@@ -78,11 +78,11 @@ The frontend container automatically forwards `/api/*` to the private
 Your public reverse proxy only needs one upstream:
 
 ```text
-http://<ubuntu-server-ip>:8085
+http://<ubuntu-server-ip>:8086
 ```
 
 For example, a hostname such as `pandafm.example.com` can point entirely to
-port 8085. Do not create a separate public route to FastAPI; the web container
+port 8086. Do not create a separate public route to FastAPI; the web container
 already handles `/api/*` internally.
 
 This keeps PandaFM portable: someone can deploy the Docker stack and use
@@ -140,13 +140,13 @@ at `/status`.
 
 ### External Nginx / Nginx Proxy Manager settings for audio
 
-PandaFM works behind your proxy with one upstream (port 8085). For smooth
+PandaFM works behind your proxy with one upstream (port 8086). For smooth
 audio, turn off response buffering so songs stream as they arrive and
 seeking starts quickly:
 
 ```nginx
 location / {
-    proxy_pass http://<ubuntu-server-ip>:8085;
+    proxy_pass http://<ubuntu-server-ip>:8086;
     proxy_http_version 1.1;
     proxy_buffering off;
     proxy_set_header Host $host;
@@ -191,14 +191,14 @@ merging) and **Pull and redeploy**. Do **not** tick anything that removes
 volumes. Then check:
 
 ```bash
-docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0006 (5.2)
-docker exec pandafm-api python -m app.migrate check           # database: 0006, code expects: 0006
+docker logs pandafm-api 2>&1 | grep "schema is at revision"   # → 0008 (5.3)
+docker exec pandafm-api python -m app.migrate check           # database: 0008, code expects: 0008
 ```
 
 About 20 seconds after start-up, PandaFM copies Navidrome's song list into
 its cache (and again after each Navidrome rescan, or every 6 hours).
 Starting Panda Radio before that simply waits for the first copy. You can
-also run it from `/stats`, or with `curl -X POST http://<server>:8085/api/library/sync`.
+also run it from `/stats`, or with `curl -X POST http://<server>:8086/api/library/sync`.
 
 If a migration ever fails, the API container stops (it won't run on a
 half-updated schema): `docker logs pandafm-api` shows why, and your data
@@ -283,7 +283,7 @@ Server side, offline downloads add:
 - CORS for the app's WebView origin (`https://localhost`).
 
 After redeploying, `docker logs pandafm-api 2>&1 | grep "schema is at revision"`
-should show the latest revision (`0007` as of 5.3). Quality badges appear once the next library sync (within
+should show the latest revision (`0008` as of 5.3: `0007` music-server settings, `0008` persistent mixed playlists). Quality badges appear once the next library sync (within
 a minute of start-up) has stored the new audio facts.
 
 ## Personalisation and Autoplay
@@ -345,12 +345,14 @@ music keeps going.
 
 ## Panda Mix
 
-Play a playlist continuously with **Panda DJ** blending each song into the
-next: Auto, Gentle, Flow or Energetic, with transitions chosen from tempo,
-key, loudness and the songs' intros and outros (and conservative when Panda
-isn't sure). PandaFM analyses only the songs a Panda Mix is about to play, not
-your whole library. Adjust any transition, preview it and save it for that
-playlist. See **[docs/panda-mix.md](docs/panda-mix.md)**.
+Turn **Panda Mix** on for a playlist and it stays mixed until you turn it off.
+PandaFM analyses that playlist (never the rest of your library), builds a stable
+playback order from BPM/key/loudness compatibility, and **Panda DJ** blends each
+adjacent pair using Auto, Gentle, Flow or Energetic transitions. The primary
+Play button uses the saved mixed order while Panda Mix is enabled; Remix makes
+a new order, and the original Navidrome playlist/order is never modified.
+Adjust any transition, preview it and save it for that playlist. See
+**[docs/panda-mix.md](docs/panda-mix.md)**.
 
 ## Sign-in and remote access
 
