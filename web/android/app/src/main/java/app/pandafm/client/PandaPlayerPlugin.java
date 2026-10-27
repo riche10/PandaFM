@@ -117,7 +117,7 @@ public class PandaPlayerPlugin extends Plugin {
             Map<String, Object> d = new java.util.LinkedHashMap<>();
             d.put("serviceRunning", PlaybackService.running());
             QueueController c = PlaybackService.controller();
-            ExoEngine e = PlaybackService.engine();
+            PandaDjEngine dj = PlaybackService.dj();
             if (c != null) {
                 QueueItem now = c.queue.current();
                 d.put("controllerStatus", c.status);
@@ -126,7 +126,8 @@ public class PandaPlayerPlugin extends Plugin {
                 d.put("queueLength", (long) c.queue.items.size());
                 d.put("lastError", c.error);
             }
-            if (e != null) d.putAll(e.core.diagnostics());
+            if (dj != null) d.putAll(dj.diagnostics());
+            if (c != null) d.put("mixMode", c.mixMode());
             NetworkState net = NetworkState.of(getContext());
             d.put("network", !net.connected ? "offline" : net.wifi ? "Wi-Fi" : net.metered ? "mobile data" : "unmetered");
             d.put("streamQualitySetting", NativePlatform.Prefs.streamQuality(getContext()));
@@ -202,8 +203,23 @@ public class PandaPlayerPlugin extends Plugin {
     public void setVolume(PluginCall call) {
         Double v = call.getDouble("volume");
         with(call, c -> {
-            ExoEngine e = PlaybackService.engine();
-            if (e != null) e.setVolume((float) Math.max(0, Math.min(1, v == null ? 1 : v)));
+            PandaDjEngine dj = PlaybackService.dj();
+            if (dj != null) dj.setUserVolume((float) Math.max(0, Math.min(1, v == null ? 1 : v)));
+        });
+    }
+
+    /** "Prepare Panda Mix" for a downloaded playlist: the server analyses it; every plan is kept for offline. */
+    @PluginMethod
+    public void prepareMixOffline(PluginCall call) {
+        List<Map<String, Object>> raw = tracks(call, "tracks");
+        String playlistId = call.getString("playlistId"), mode = call.getString("mode", "auto");
+        with(call, c -> {
+            NativePlatform.MixPlans plans = PlaybackService.mixPlans();
+            if (plans == null) return;
+            List<QueueItem> items = new java.util.ArrayList<>();
+            int k = 0;
+            for (Map<String, Object> t : raw) items.add(new QueueItem("prep" + (k++), t, "context", null, null));
+            plans.prepareOffline(items, mode, playlistId);
         });
     }
 

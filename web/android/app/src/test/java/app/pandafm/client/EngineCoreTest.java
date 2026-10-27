@@ -27,7 +27,10 @@ public class EngineCoreTest {
         int state = STATE_IDLE, suppression;
         boolean pwr, playing, seekable = true;
         long position, duration = 200_000;
+        float volume = 1f;
         String uri, artwork;
+
+        public void setVolume(float v) { volume = v; }
 
         public void setMediaItem(String id, String u, long startMs, String t, String a, String al, String art) {
             calls.add("setMediaItem " + id + " @" + startMs);

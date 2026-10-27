@@ -21,7 +21,7 @@ import java.util.TimeZone;
  * Every load gets a generation number; engine events from an older load are
  * ignored, so "track ended" and "Next pressed" can't both advance the queue.
  */
-final class QueueController {
+final class QueueController implements PlaybackSink {
     interface Engine {
         void load(int gen, QueueItem item, String uri, long startMs, boolean play);
         void play();
@@ -31,6 +31,25 @@ final class QueueController {
         long durationMs();
         boolean playWhenReady();
         void stop();
+
+        /** Panda Mix (5.2): the next song and the plan to reach it (null clears). Single-deck engines ignore it. */
+        default void prepareNext(int forGen, QueueItem next, Map<String, Object> plan) {}
+
+        /** The incoming deck became the logical current track with this generation. */
+        default void adopt(int newGen) {}
+
+        /** A transition has started but its midpoint (the logical handoff) hasn't come yet. */
+        default boolean inTransitionBeforeHandoff() {
+            return false;
+        }
+
+        /** Finish a running transition now (Next during an overlap goes to the song already fading in). */
+        default void completeTransitionNow() {}
+    }
+
+    /** Panda Mix plans (5.2): cached or a safe fallback, never blocking; better plans arrive via onPlansUpdated(). */
+    interface MixPlans {
+        Map<String, Object> plan(QueueItem from, QueueItem to, String mode, String playlistId, List<QueueItem> window);
     }
 
     interface Sources {
@@ -108,6 +127,68 @@ final class QueueController {
 
     void addListener(Listener l) {
         listeners.add(l);
+    }
+
+    private MixPlans mixPlans;
+
+    void setMixPlans(MixPlans plans) {
+        mixPlans = plans;
+    }
+
+    /** "auto" | "gentle" | "flow" | "energetic" when this queue plays as a Panda Mix, else null. */
+    String mixMode() {
+        return queue.source == null ? null : Json.str(Json.map(queue.source.get("mix")), "mode");
+    }
+
+    private String mixPlaylist() {
+        return queue.source == null ? null : Json.str(Json.map(queue.source.get("mix")), "playlistId");
+    }
+
+    /** Tell the engine how the current song should become the next one (only during a Panda Mix). */
+    void planNext() {
+        if (released) return;
+        String mode = mixMode();
+        QueueItem now = queue.current();
+        Integer ni = queue.nextIndex();
+        if (mode == null || mixPlans == null || now == null || ni == null || ni == queue.index || "one".equals(queue.repeat) || "idle".equals(status)) {
+            engine.prepareNext(gen, null, null);
+            return;
+        }
+        List<QueueItem> window = new ArrayList<>();
+        for (int k = queue.index; k < Math.min(queue.items.size(), queue.index + 4); k++) window.add(queue.items.get(k));
+        QueueItem next = queue.items.get(ni);
+        engine.prepareNext(gen, next, mixPlans.plan(now, next, mode, mixPlaylist(), window));
+    }
+
+    /** A better plan arrived (analysis finished): re-plan the upcoming transition. */
+    void onPlansUpdated() {
+        planNext();
+    }
+
+    /**
+     * Panda DJ's logical handoff (the transition midpoint): the song fading in becomes the current
+     * one without being reloaded. Refused (false) if the queue changed and it's no longer next.
+     */
+    boolean onHandoff(int forGen, String incomingUid) {
+        if (released || forGen != gen) return false;
+        Integer ni = queue.nextIndex();
+        if (ni == null || !queue.items.get(ni).uid.equals(incomingUid)) return false;
+        if (started && !completed) {
+            completed = true;
+            report("play_completed", engine.positionMs());
+        }
+        queue.index = ni;
+        gen++;
+        playId = env.newId();
+        playUid = incomingUid;
+        started = true;
+        completed = false;
+        error = null;
+        status = "playing";
+        engine.adopt(gen);
+        report("play_started", 0);
+        changed("current");
+        return true;
     }
 
     /** The service is going away: nothing may touch the player or the queue afterwards. */
@@ -340,6 +421,10 @@ final class QueueController {
 
     void next() {
         if (released) return;
+        if (engine.inTransitionBeforeHandoff()) { // A is fading out, B fading in: B, without restarting it
+            engine.completeTransitionNow();
+            return;
+        }
         Integer target = queue.nextIndex();
         if (target == null) {
             if (tryAutoplay()) return;
@@ -371,7 +456,8 @@ final class QueueController {
      * Buffering keeps meaning to play; only an intentional pause is "paused". No listening
      * events here except the first start: pause/resume are reported where they're asked for.
      */
-    void onEngineState(int forGen, String state) {
+    @Override
+    public void onEngineState(int forGen, String state) {
         if (released || forGen != gen || queue.current() == null) return;
         if ("playing".equals(state) && !started) {
             started = true;
@@ -384,7 +470,8 @@ final class QueueController {
     }
 
     /** The song finished: advance natively, no JavaScript involved. */
-    void onEnded(int forGen) {
+    @Override
+    public void onEnded(int forGen) {
         if (released || forGen != gen) return; // a newer load (e.g. Next) already moved on
         if (started && !completed) {
             completed = true;
@@ -405,7 +492,8 @@ final class QueueController {
         tryAutoplay();
     }
 
-    void onError(int forGen, String message) {
+    @Override
+    public void onError(int forGen, String message) {
         if (released || forGen != gen) return;
         fail(message); // the queue stays: Play retries, Next and Previous still work
     }
@@ -434,6 +522,12 @@ final class QueueController {
         status = play ? "loading" : "paused";
         engine.load(gen, item, uri, startMs, play);
         changed("current");
+    }
+
+    /** After every change: refill radio and (during a Panda Mix) plan the next transition. */
+    private void afterChange() {
+        refill();
+        planNext();
     }
 
     /** Leaving a song that started but didn't finish is a skip (the server decides early or late). */
@@ -493,7 +587,7 @@ final class QueueController {
         if (released) return;
         save();
         notifyAll(reason);
-        refill();
+        afterChange();
     }
 
     void save() {

@@ -84,7 +84,8 @@ final class ExoEngine implements EngineCore.PlayerPort {
         player.clearMediaItems();
     }
 
-    void setVolume(float v) {
+    @Override
+    public void setVolume(float v) {
         player.setVolume(v);
     }
 }

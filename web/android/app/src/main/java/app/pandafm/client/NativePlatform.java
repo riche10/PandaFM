@@ -342,6 +342,99 @@ final class NativePlatform {
         }
     }
 
+    /**
+     * Panda Mix plans (5.2): from /api/mix/prepare for the next few songs, cached in memory and in
+     * files/mix-plans.json (offline). Never blocks: with nothing known, the Java fallback is used and
+     * the better plan replaces it when it arrives (re-fetched at most every 20 s while analysis runs).
+     */
+    static final class MixPlans implements QueueController.MixPlans {
+        private static final int MAX = 2000;
+        private final Context ctx;
+        private final Api api;
+        private final ExecutorService io;
+        private final Runnable updated;
+        private final Handler main = new Handler(Looper.getMainLooper());
+        private final ExecutorService disk = Executors.newSingleThreadExecutor();
+        private final Map<String, Map<String, Object>> cache = new java.util.LinkedHashMap<String, Map<String, Object>>(256, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Map<String, Object>> e) {
+                return size() > MAX;
+            }
+        };
+        private final Map<String, Long> fetched = new java.util.HashMap<>();
+
+        MixPlans(Context ctx, Api api, ExecutorService io, Runnable updated) {
+            this.ctx = ctx.getApplicationContext();
+            this.api = api;
+            this.io = io;
+            this.updated = updated;
+            Map<String, Object> saved = Json.map(Json.tryParse(Files.read(this.ctx, "mix-plans.json")));
+            if (saved != null) for (Map.Entry<String, Object> e : saved.entrySet()) if (Json.map(e.getValue()) != null) cache.put(e.getKey(), Json.map(e.getValue()));
+        }
+
+        static String key(String from, String to, String mode, String playlist) {
+            return from + "|" + to + "|" + mode + "|" + (playlist == null ? "" : playlist);
+        }
+
+        @Override
+        public synchronized Map<String, Object> plan(QueueItem a, QueueItem b, String mode, String playlistId, List<QueueItem> window) {
+            Map<String, Object> p = cache.get(key(a.trackId(), b.trackId(), mode, playlistId));
+            if (p == null || !Boolean.TRUE.equals(p.get("ready"))) fetch(window, mode, playlistId, false);
+            return p != null ? new LinkedHashMap<>(p) : MixFallback.plan(a, b, mode);
+        }
+
+        private void fetch(List<QueueItem> window, String mode, String playlistId, boolean offline) {
+            StringBuilder ids = new StringBuilder();
+            List<Object> tracks = new ArrayList<>();
+            for (QueueItem i : window) {
+                ids.append(i.trackId()).append(',');
+                Map<String, Object> t = new LinkedHashMap<>();
+                for (String k : new String[] {"id", "duration_seconds", "album_id", "track_number", "disc_number", "genres"}) if (i.track.get(k) != null) t.put(k, i.track.get(k));
+                tracks.add(t);
+            }
+            String wkey = ids + mode + (playlistId == null ? "" : playlistId) + offline;
+            long now = System.currentTimeMillis();
+            Long last = fetched.get(wkey);
+            if (tracks.size() < 2 || (last != null && now - last < 20_000)) return;
+            fetched.put(wkey, now);
+            if (!NetworkState.of(ctx).connected || !AuthStore.get(ctx).signedIn()) return;
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("tracks", tracks);
+            body.put("current_index", 0L);
+            body.put("playlist_id", playlistId);
+            body.put("mode", mode);
+            body.put("offline", offline);
+            io.execute(() -> {
+                try {
+                    Map<String, Object> resp = Json.map(api.post("/mix/prepare", Json.write(body)));
+                    if (resp != null && store(resp, mode, playlistId)) main.post(updated);
+                } catch (LibraryTree.ApiError ignored) {
+                    // plans are a nicety: the fallback keeps playing
+                }
+            });
+        }
+
+        private synchronized boolean store(Map<String, Object> resp, String mode, String playlistId) {
+            boolean any = false;
+            for (Map<String, Object> t : Json.maps(resp.get("transitions"))) {
+                String from = Json.str(t, "from"), to = Json.str(t, "to");
+                if (from == null || to == null) continue;
+                cache.put(key(from, to, mode, playlistId), t);
+                any = true;
+            }
+            if (any) {
+                String snapshot = Json.write(new LinkedHashMap<String, Object>(cache));
+                disk.execute(() -> Files.write(ctx, "mix-plans.json", snapshot));
+            }
+            return any;
+        }
+
+        /** "Prepare Panda Mix" for a downloaded playlist: analyse it all on the server and keep every plan. */
+        void prepareOffline(List<QueueItem> playlist, String mode, String playlistId) {
+            fetch(playlist, mode, playlistId, true);
+        }
+    }
+
     static ExecutorService newIo() {
         return Executors.newFixedThreadPool(3);
     }
