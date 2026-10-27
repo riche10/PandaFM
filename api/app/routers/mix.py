@@ -10,9 +10,10 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.deps import SessionDep, UserId
+from app.deps import NavidromeDep, SessionDep, UserId
 from app.errors import error_response
 from app.services import mix as mix_service
+from app.services import mix_playlists
 
 router = APIRouter(prefix="/mix", tags=["mix"])
 Mode = Literal["auto", "gentle", "flow", "energetic"]
@@ -93,3 +94,36 @@ async def save_transition(body: OverrideIn, db: SessionDep, user_id: UserId):
 async def reset_transition(db: SessionDep, user_id: UserId, from_track: Annotated[str, Query(min_length=1)], to_track: Annotated[str, Query(min_length=1)],
                            playlist_id: str | None = None):
     await mix_service.reset_override(db, user_id, playlist_id, from_track, to_track)
+
+
+class MixPlaylistIn(BaseModel):
+    mode: Mode = "auto"
+
+
+@router.get("/playlists")
+async def mixed_playlists(db: SessionDep, user_id: UserId):
+    """Playlists with Panda Mix turned on (for badges)."""
+    return {"playlists": await mix_playlists.enabled_ids(db, user_id)}
+
+
+@router.get("/playlists/{playlist_id}")
+async def mixed_playlist(playlist_id: str, request: Request, db: SessionDep, user_id: UserId, navidrome: NavidromeDep):
+    return await mix_playlists.state(db, navidrome, _analyzer(request), user_id, playlist_id)
+
+
+@router.put("/playlists/{playlist_id}")
+async def turn_on(playlist_id: str, body: MixPlaylistIn, request: Request, db: SessionDep, user_id: UserId, navidrome: NavidromeDep):
+    """Turn Panda Mix on (or change its personality): the whole playlist is analysed, once."""
+    if not _enabled(request):
+        return error_response(404, "mix_disabled", "Panda Mix is turned off on this server.")
+    return await mix_playlists.enable(db, navidrome, _analyzer(request), user_id, playlist_id, body.mode)
+
+
+@router.post("/playlists/{playlist_id}/remix")
+async def remix(playlist_id: str, request: Request, db: SessionDep, user_id: UserId, navidrome: NavidromeDep):
+    return await mix_playlists.remix(db, navidrome, _analyzer(request), user_id, playlist_id)
+
+
+@router.delete("/playlists/{playlist_id}", status_code=204)
+async def turn_off(playlist_id: str, db: SessionDep, user_id: UserId):
+    await mix_playlists.disable(db, user_id, playlist_id)

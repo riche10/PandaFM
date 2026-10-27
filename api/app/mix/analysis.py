@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 2  # 2 (5.3): musical mix-in/mix-out points
 SR = 11025  # mono analysis rate: enough for rhythm, silence and loudness shape
 HOP = 128  # ~11.6 ms frames for the onset envelope
 WAVEFORM_BUCKETS = 512
@@ -203,7 +203,21 @@ def sections(x: np.ndarray, sr: int, out: dict, db: np.ndarray, frame_ms: float)
     rhythm = out.get("bpm_confidence") or 0.0
     last = outro[-per_s * 10:]
     slope = float(np.polyfit(np.arange(last.size), last, 1)[0]) * per_s if last.size > 2 else 0.0
+    # 5.3: where the music really ends and gets going. A 1 s loudness envelope against the song's
+    # body level: mix_out is where it falls more than 6 dB below the body for good (a fade or a
+    # quiet outro starts), mix_in where it first reaches that level. Overlaps that end near
+    # mix_out keep Song A audible during the blend (5.2 often blended inside the fade).
+    win = max(1, per_s)
+    power = np.convolve(10 ** (db / 10), np.ones(win) / win, mode="same")
+    smooth = 10 * np.log10(power + 1e-12)
+    body_db = float(np.median(smooth[lead:end])) if end > lead else float(np.median(smooth))
+    strong = np.nonzero(smooth[lead:end] >= body_db - 6)[0] if end > lead else np.array([], dtype=int)
+    mix_in = int((lead + strong[0]) * frame_ms) if strong.size else out["audible_start_ms"]
+    mix_out = int((lead + strong[-1] + 1) * frame_ms) if strong.size else out["audible_end_ms"]
     return {
+        "body_db": round(body_db, 1),
+        "mix_in_ms": max(out["audible_start_ms"], mix_in),
+        "mix_out_ms": min(out["audible_end_ms"], max(mix_in, mix_out)),
         "intro_suitability": round(max(0.0, min(1.0, 0.5 * steady(intro) * calm(intro) + 0.5 * rhythm)), 2),
         "outro_suitability": round(max(0.0, min(1.0, 0.5 * steady(outro) * calm(outro) + 0.5 * rhythm)), 2),
         "fade_out": slope < -1.5,  # losing >1.5 dB a second over the last 10 s
