@@ -8,6 +8,7 @@ Remix draws a new order on purpose. Navidrome's playlist is never modified.
 """
 
 import random
+from collections import Counter
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,23 +34,37 @@ async def state(db: AsyncSession, navidrome, analyzer: MixAnalyzer | None, user_
     if row is None or not row.enabled:
         return {"playlist_id": playlist_id, "enabled": False}
     playlist = await navidrome.get_playlist(playlist_id)
-    ids = list(dict.fromkeys(t.id for t in playlist.tracks))
+    playlist_ids = [t.id for t in playlist.tracks]
+    ids = list(dict.fromkeys(playlist_ids))  # analyse identical audio once, even if the playlist repeats it
     found = await usable_analyses(db, ids)
     ready = {i: f["payload"] for i, f in found.items() if f["status"] == "ready"}
     if analyzer is not None:
         for k, i in enumerate(ids):
             if i not in found:
                 analyzer.schedule(i, PRIORITY + k)
-    analysed = sum(1 for i in ids if i in found)
-    order = [i for i in row.mixed_order if i in set(ids)]  # removed songs leave; the rest keep their place
+    analysed = sum(1 for i in playlist_ids if i in found)
+
+    # Reconcile the saved order as a multiset. A playlist may intentionally
+    # contain the same song twice; never collapse those occurrences.
+    remaining = Counter(playlist_ids)
+    order = []
+    for i in row.mixed_order:
+        if remaining[i] > 0:
+            order.append(i)
+            remaining[i] -= 1
+
     meta = _meta(playlist.tracks)
-    if row.status == "preparing" and analysed == len(ids):
-        order = mix_order.mixed_order(ids, meta, ready, row.seed)  # optimised once, then stable
+    if row.status == "preparing" and all(i in found for i in ids):
+        order = mix_order.mixed_order(playlist_ids, meta, ready, row.seed)  # optimised once, then stable
         row.status = "ready"
     else:
-        for i in ids:
-            if i not in order:
+        missing = Counter(playlist_ids)
+        for i in order:
+            missing[i] -= 1
+        for i in playlist_ids:
+            if missing[i] > 0:
                 order = mix_order.insert(order, i, meta, ready) if row.status == "ready" else order + [i]
+                missing[i] -= 1
     if order != row.mixed_order:
         row.mixed_order = order
     await db.commit()
@@ -63,7 +78,7 @@ async def enable(db: AsyncSession, navidrome, analyzer, user_id: int, playlist_i
     if row is None:
         playlist = await navidrome.get_playlist(playlist_id)
         db.add(MixPlaylist(user_id=user_id, playlist_id=playlist_id, enabled=True, mode=mode, seed=0, status="preparing",
-                           mixed_order=list(dict.fromkeys(t.id for t in playlist.tracks))))
+                           mixed_order=[t.id for t in playlist.tracks]))
     else:
         row.enabled = True
         row.mode = mode  # a new personality changes the transitions, not the order
