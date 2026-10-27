@@ -1,60 +1,28 @@
-# PandaFM - single Portainer stack
+# PandaFM: the PandaFM stack only (5.3).
 #
-# Deploy this repository as ONE Git-based stack in Portainer.
-# Your existing reverse proxy sits OUTSIDE this stack and only needs to
-# forward PandaFM traffic to PANDAFM_WEB_PORT (default 8086).
+# PandaFM connects to a music server you already run: Navidrome or another
+# OpenSubsonic server, anywhere PandaFM can reach (this host, another stack,
+# another machine). It is NOT part of this stack. Don't have one yet? See
+# examples/navidrome-compose.yml.
 #
-# Stack contents:
-#   - Navidrome
-#   - PandaFM API
-#   - PandaFM Web
-#   - PostgreSQL
+#   cp .env.example .env      # set POSTGRES_PASSWORD (everything else is optional)
+#   docker compose up -d --build
+#   open http://<this host>:8086 and follow the setup
 #
-# Configure variables in Portainer > Stack > Environment variables.
-
+# Persistent data lives in three volumes; back them up together:
+#   pandafm-db      listening history, playlists' extras, settings (PostgreSQL)
+#   pandafm-config  PandaFM's installation key (decrypts the saved music server password)
+#   pandafm-cache   re-creatable conversions and analysis scratch space
 name: pandafm
 
 services:
-  # One-shot helper: Docker named volumes start root-owned, while Navidrome
-  # runs unprivileged as PUID:PGID. Fix /data ownership before Navidrome boots.
-  navidrome-init:
-    image: alpine:3.20
-    restart: "no"
-    user: "0:0"
-    command:
-      - /bin/sh
-      - -c
-      - "chown -R ${PUID:-1000}:${PGID:-1000} /data"
-    volumes:
-      - navidrome-data:/data
-
-  navidrome:
-    image: deluan/navidrome:${NAVIDROME_VERSION:-0.64.2}
-    container_name: pandafm-navidrome
-    restart: unless-stopped
-    user: "${PUID:-1000}:${PGID:-1000}"
-    depends_on:
-      navidrome-init:
-        condition: service_completed_successfully
-    ports:
-      - "${NAVIDROME_PORT:-4533}:4533"
-    environment:
-      ND_MUSICFOLDER: /music
-      ND_DATAFOLDER: /data
-      ND_SCANSCHEDULE: ${NAVIDROME_SCAN_SCHEDULE:-@every 1h}
-      ND_LOGLEVEL: info
-    volumes:
-      - navidrome-data:/data
-      - ${MUSIC_DIR:-/mnt/ugreen/media/Music}:/music:ro
-
   pandafm-db:
     image: postgres:17-alpine
-    container_name: pandafm-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-pandafm}
       POSTGRES_USER: ${POSTGRES_USER:-pandafm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Portainer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD (see .env.example)}
     volumes:
       - pandafm-db:/var/lib/postgresql/data
     healthcheck:
@@ -64,32 +32,36 @@ services:
       retries: 12
 
   pandafm-api:
+    # Built from this repository. To use a published image instead, replace `build:` with it.
+    image: ${PANDAFM_API_IMAGE:-pandafm-api:local}
     build:
       context: ./api
-    container_name: pandafm-api
     restart: unless-stopped
     depends_on:
       pandafm-db:
-        condition: service_healthy
-      navidrome:
-        condition: service_started
+        condition: service_healthy  # PandaFM no longer waits for (or starts) a music server
     environment:
       PANDAFM_DB_HOST: pandafm-db
       PANDAFM_DB_NAME: ${POSTGRES_DB:-pandafm}
       PANDAFM_DB_USER: ${POSTGRES_USER:-pandafm}
-      PANDAFM_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Portainer}
-      PANDAFM_NAVIDROME_URL: http://navidrome:4533
-      PANDAFM_NAVIDROME_USER: ${NAVIDROME_USER:?Set NAVIDROME_USER in Portainer}
-      PANDAFM_NAVIDROME_PASSWORD: ${NAVIDROME_PASSWORD:?Set NAVIDROME_PASSWORD in Portainer}
-      PANDAFM_LOG_LEVEL: ${PANDAFM_LOG_LEVEL:-info}
-      # 5.0: lets you (once) create PandaFM's owner account. Any long random string,
-      # e.g. `openssl rand -hex 24`. It stops working when the owner exists.
-      PANDAFM_SETUP_TOKEN: ${PANDAFM_SETUP_TOKEN:-}
-      PANDAFM_API_DOCS: ${PANDAFM_API_DOCS:-false}
-      # Converted copies for downloads live in their own volume, never in the library.
+      PANDAFM_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD (see .env.example)}
+      PANDAFM_CONFIG_DIR: /config
+      PANDAFM_CONFIG_KEY: ${PANDAFM_CONFIG_KEY:-}
       PANDAFM_CACHE_DIR: /cache
       PANDAFM_CACHE_MAX_GB: ${PANDAFM_CACHE_MAX_GB:-20}
+      PANDAFM_LOG_LEVEL: ${PANDAFM_LOG_LEVEL:-info}
+      PANDAFM_SETUP_TOKEN: ${PANDAFM_SETUP_TOKEN:-}
+      PANDAFM_TRUSTED_PROXIES: ${PANDAFM_TRUSTED_PROXIES:-}
+      PANDAFM_API_DOCS: ${PANDAFM_API_DOCS:-false}
+      PANDAFM_MIX_ANALYSIS_WORKERS: ${PANDAFM_MIX_ANALYSIS_WORKERS:-1}
+      PANDAFM_MIX_LOOKAHEAD: ${PANDAFM_MIX_LOOKAHEAD:-3}
+      # Upgrading from 5.2 or earlier only: imported once (encrypted) if no music server is saved
+      # yet, then ignored. New installs leave these empty and connect the music server in the app.
+      PANDAFM_NAVIDROME_URL: ${PANDAFM_NAVIDROME_URL:-}
+      PANDAFM_NAVIDROME_USER: ${PANDAFM_NAVIDROME_USER:-${NAVIDROME_USER:-}}
+      PANDAFM_NAVIDROME_PASSWORD: ${PANDAFM_NAVIDROME_PASSWORD:-${NAVIDROME_PASSWORD:-}}
     volumes:
+      - pandafm-config:/config
       - pandafm-cache:/cache
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=8)"]
@@ -99,9 +71,9 @@ services:
       retries: 3
 
   pandafm-web:
+    image: ${PANDAFM_WEB_IMAGE:-pandafm-web:local}
     build:
       context: ./web
-    container_name: pandafm-web
     restart: unless-stopped
     depends_on:
       - pandafm-api
@@ -109,6 +81,6 @@ services:
       - "${PANDAFM_WEB_PORT:-8086}:80"
 
 volumes:
-  navidrome-data:
   pandafm-db:
+  pandafm-config:
   pandafm-cache:

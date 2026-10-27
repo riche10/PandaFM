@@ -55,7 +55,7 @@ def test_health_explains_bad_navidrome_credentials():
         body = client.get("/api/health").json()
 
     assert body["navidrome"]["ok"] is False
-    assert "NAVIDROME_USER" in body["navidrome"]["detail"]
+    assert "Settings › Music server" in body["navidrome"]["detail"]
 
 
 def test_anonymous_health_says_whether_not_how():

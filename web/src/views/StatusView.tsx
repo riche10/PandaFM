@@ -94,7 +94,8 @@ export function StatusView() {
   }, [runCheck])
 
   const rows = rowsFor(check)
-  const navidromeUrl = `http://${window.location.hostname}:4533`
+  // 5.3: the owner's configured music server (from health), never a guessed address
+  const navidromeUrl = (('health' in check ? check.health : null) as { navidrome?: { url?: string | null } } | null)?.navidrome?.url ?? null
 
   return (
     <main className="page">
@@ -136,10 +137,11 @@ export function StatusView() {
       <p className="footnote">
         <a href="/stats">Listening statistics and library sync</a>
       </p>
-      <footer className="footnote">
-        Navidrome’s own admin pages are at <a href={navidromeUrl}>{navidromeUrl}</a> (unless
-        you changed NAVIDROME_PORT).
-      </footer>
+      {navidromeUrl && (
+        <footer className="footnote">
+          Your music server: <a href={navidromeUrl} rel="noreferrer">{navidromeUrl}</a>
+        </footer>
+      )}
     </main>
   )
 }

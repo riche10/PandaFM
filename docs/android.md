@@ -517,3 +517,15 @@ stops afterwards. Only the current deck holds audio focus. If the incoming
 song can't load or isn't ready in time, the transition is dropped and the
 current song ends normally. Plans are cached in `files/mix-plans.json` for
 offline use. See [panda-mix.md](panda-mix.md).
+
+
+## Connecting to the server (5.3)
+
+The app decides its first screen from one connection state: no server saved
+(Connect to PandaFM), saved server unreachable (Can't reach your PandaFM
+server: Try again, Change server, or Continue offline when downloads exist;
+the address is never erased by an outage), setup unfinished (owner account,
+then the music server), signed out (Sign in), or ready. A server only counts as
+PandaFM if `/api/health` answers like PandaFM. If PandaFM answers but its music
+server doesn't, the app opens normally with a banner: that's a server-side
+problem, not a wrong address.

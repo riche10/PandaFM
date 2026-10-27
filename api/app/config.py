@@ -5,15 +5,16 @@ variables (see docker-compose.yml). This module never reads .env itself,
 so there is exactly one place where configuration enters the container.
 """
 
+from typing import Annotated
 from functools import lru_cache
 
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator, SecretStr
+from pydantic_settings import NoDecode, BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PANDAFM_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="PANDAFM_", extra="ignore", env_ignore_empty=True)  # unset optional variables arrive as ""
 
     # ── Database ──
     db_host: str = "localhost"
@@ -48,7 +49,20 @@ class Settings(BaseSettings):
     setup_token: str | None = None
     # Proxies whose X-Forwarded-For / X-Forwarded-Proto are believed (pandafm-web and
     # your LAN reverse proxy). Private ranges by default: the API itself must not be public.
-    trusted_proxies: list[str] = ["127.0.0.1/32", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+    trusted_proxies: Annotated[list[str], NoDecode] = ["127.0.0.1/32", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]
+
+    @field_validator("trusted_proxies", mode="before")
+    @classmethod
+    def _proxy_list(cls, value):
+        """Accept a JSON list or the friendlier comma-separated form (10.0.0.0/8, 192.168.1.10/32)."""
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                import json
+
+                return json.loads(text)
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
     # 5.3: PandaFM's own persistent configuration (its installation key lives here).
     config_dir: str = "/config"
     # Optional: supply the installation key yourself (32 bytes, base64 or hex) instead of the file.

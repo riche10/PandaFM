@@ -1,3 +1,4 @@
+import { useConnection } from '../api/connection'
 import { useState } from 'react'
 import { authStore, checkAuth, setupOwner, signIn, useAuth } from '../api/auth'
 import { Icon } from '../components/Icon'
@@ -10,6 +11,8 @@ import { isNative, platform } from '../platform/state'
 export function SignInView() {
   const { state } = useAuth()
   const setup = state === 'setup'
+  // 5.3: the token is asked for only when the server needs it from this visitor
+  const tokenRequired = useConnection((s) => s.setup?.setup_token_required ?? true)
   const [token, setToken] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -46,10 +49,12 @@ export function SignInView() {
       <h1 className="setup-title">{setup ? 'Set up PandaFM' : 'Sign in to PandaFM'}</h1>
       <p className="hint">
         {setup
-          ? 'Create the owner account. You need the setup token your administrator set as PANDAFM_SETUP_TOKEN.'
+          ? tokenRequired
+            ? 'Create the owner account. You need the setup token set as PANDAFM_SETUP_TOKEN on the server.'
+            : 'Create the owner account: the one person who manages this PandaFM.'
           : platform.server ? `Server: ${platform.server}` : 'Use your PandaFM owner account.'}
       </p>
-      {setup && (
+      {setup && tokenRequired && (
         <label className="field">
           <span className="field-label">Setup token</span>
           <input className="field-input" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" spellCheck={false} required />

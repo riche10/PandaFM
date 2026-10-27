@@ -95,3 +95,16 @@ def test_only_home_lan_and_vpn_addresses_count_as_private():
         assert private_address(ip), ip
     for ip in ("203.0.113.9", "198.51.100.7", "8.8.8.8", "2001:db8::1", "testclient", "", None):
         assert not private_address(ip), ip
+
+
+def test_empty_optional_variables_and_comma_separated_proxies(monkeypatch):
+    from app.config import Settings
+    for name in ("PANDAFM_TRUSTED_PROXIES", "PANDAFM_SETUP_TOKEN", "PANDAFM_NAVIDROME_URL", "PANDAFM_CONFIG_KEY"):
+        monkeypatch.setenv(name, "")  # what Compose passes for an unset optional variable
+    cfg = Settings(database_url="postgresql+psycopg://u:p@db/x")
+    assert cfg.setup_token is None and cfg.navidrome_url is None and cfg.config_key is None
+    assert "192.168.0.0/16" in cfg.trusted_proxies  # the default
+    monkeypatch.setenv("PANDAFM_TRUSTED_PROXIES", "10.0.0.0/8, 192.168.1.10/32")
+    assert Settings(database_url="postgresql+psycopg://u:p@db/x").trusted_proxies == ["10.0.0.0/8", "192.168.1.10/32"]
+    monkeypatch.setenv("PANDAFM_TRUSTED_PROXIES", '["172.16.0.0/12"]')
+    assert Settings(database_url="postgresql+psycopg://u:p@db/x").trusted_proxies == ["172.16.0.0/12"]

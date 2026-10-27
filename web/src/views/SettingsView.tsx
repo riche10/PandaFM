@@ -7,6 +7,7 @@ import { useOffline } from '../offline'
 import { updateSettings, useOfflineSettings } from '../offline/settings'
 import { isNative, platform } from '../platform/state'
 import { ServerSetupView } from './ServerSetupView'
+import { MusicServerSettings } from './settings/MusicServerSettings'
 import { AppearanceSettings } from './settings/AppearanceSettings'
 import { RadioSettings } from './settings/RadioSettings'
 import { Diagnostics } from './settings/Diagnostics'
@@ -156,6 +157,7 @@ export function SettingsView() {
         <p className="hint">Status: {health}</p>
         {isNative() && <button type="button" className="button button--quiet" onClick={() => setChanging(true)}>Change server</button>}
       </section>
+      <MusicServerSettings />
       <Diagnostics />
     </div>
   )
