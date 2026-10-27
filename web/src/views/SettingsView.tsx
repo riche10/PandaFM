@@ -11,6 +11,7 @@ import { AppearanceSettings } from './settings/AppearanceSettings'
 import { RadioSettings } from './settings/RadioSettings'
 import { Diagnostics } from './settings/Diagnostics'
 import { AccountSettings } from './settings/AccountSettings'
+import { MusicServerSettings } from './settings/MusicServerSettings'
 import { StreamingQuality } from './settings/StreamingQuality'
 import { StorageLimit } from './settings/StorageLimit'
 import { useAutoplaySettings, autoplaySettings } from '../player/autoplay'
@@ -65,6 +66,7 @@ export function SettingsView() {
       </nav>
 
       <AccountSettings />
+      <MusicServerSettings />
       <AppearanceSettings />
       <RadioSettings />
 

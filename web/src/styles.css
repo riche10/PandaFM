@@ -4165,3 +4165,89 @@ body {
   width: 1rem;
   height: 1rem;
 }
+
+/* 5.3: the server can't be reached (downloads still play) */
+.offline-banner {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-raised, var(--surface));
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8125rem;
+}
+
+.offline-banner span {
+  flex: 1 1 12rem;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ── 5.3 multi-select ── */
+.track-row {
+  position: relative;
+}
+
+.track-select {
+  position: absolute;
+  left: 0.15rem;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  margin: -0.5rem 0 0;
+  opacity: 0;
+  accent-color: var(--accent);
+}
+
+.track-row:hover .track-select,
+.track-row:focus-within .track-select,
+.track-row[data-selecting] .track-select {
+  opacity: 1;
+}
+
+.track-row[data-selecting] .track-index {
+  visibility: hidden;
+}
+
+.track-row[data-selected] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.selection-bar {
+  position: sticky;
+  bottom: calc(var(--player-bar-height, 4.5rem) + 0.5rem);
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface-raised, var(--surface));
+  box-shadow: 0 6px 24px rgb(0 0 0 / 25%);
+}
+
+.selection-count {
+  margin-right: 0.25rem;
+  font-weight: 600;
+}
+
+.selection-spacer {
+  flex: 1;
+}
+
+@media (hover: none) {
+  .track-row:hover:not([data-selecting]) .track-select {
+    opacity: 0; /* touch: a long-press starts selecting */
+  }
+}

@@ -1,4 +1,4 @@
-# Panda Mix and Panda DJ (5.2)
+# Panda Mix and Panda DJ
 
 **Panda Mix** plays one of your playlists continuously, with each song
 blended into the next. **Panda DJ** is the engine that decides *how* Song A
@@ -101,3 +101,37 @@ No time-stretching or pitch shifting; no global learning from your edits;
 Panda Mix works on playlists only (not Radio or Stations yet); Android Auto
 plays Panda Mix normally but has no editor; "Gapless" between two decks can
 leave a gap of a few tens of milliseconds.
+
+
+## 5.3: persistent Panda Mix playlists, clearer transitions
+
+**Panda Mix is a setting of a playlist.** Turn it on from the playlist (Auto or
+a personality): that is the only thing that analyses a *whole* playlist. Until
+every song is analysed the playlist plays in its own order with safe blends;
+then Panda arranges a **mixed order** once (neighbours with compatible tempo,
+key and loudness; album runs kept together) and keeps it stable. Songs you
+add to the playlist in Navidrome are slotted in where they fit; removed ones
+drop out; nothing else moves. **Remix** draws a new order; **Turn off Panda
+Mix** goes back to normal (the analyses stay cached). The playlist page shows
+**Play Panda Mix** beside the normal **Play**, and toggles between the mixed
+and the original order. Navidrome's playlist and its order are never changed.
+
+**Why 5.2's transitions were often hard to hear.** Blends were timed against
+the last audible moment of Song A, which for any song that fades out is deep
+inside the fade (the 5.2 fallback blended with A ~22 dB below its normal
+level). 5.3 finds each song's *musical* end (where it falls below its body
+level for good) and ends the blend there, so A is still clearly playing for
+most of it. The fallback (no analysis yet) is a 5 s equal-power blend that
+ends 3 s before the file ends.
+
+**Personalities** now differ clearly: Gentle 3–4 s; Auto 5–8 s (long beat-
+aligned blends for compatible dance tracks); Flow 6–10 s; Energetic 7–12 s,
+plus long Bass Handoffs and Filter Glides for dance music. Songs that really
+don't fit together still get a deliberate **Quick Switch** or **Clean
+Handoff**: marked *intentional*, never counted as a failure.
+
+**Diagnostics** (Settings › Diagnostics, Android) show whether each transition
+was smart, fallback, manual or intentional, and whether one was cancelled or
+dropped because the next song wasn't ready, with the plan, its source,
+confidence, BPMs, start, overlap, both decks' track/state/position/volume,
+progress and the last reason.

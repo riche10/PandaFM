@@ -1,16 +1,8 @@
-# PandaFM - single Portainer stack
+# PandaFM: the web app, its API and its database. Your music server (Navidrome or
+# another OpenSubsonic server) runs separately; connect it during first-run setup.
 #
-# Deploy this repository as ONE Git-based stack in Portainer.
-# Your existing reverse proxy sits OUTSIDE this stack and only needs to
-# forward PandaFM traffic to PANDAFM_WEB_PORT (default 8086).
-#
-# Stack contents:
-#   - Navidrome
-#   - PandaFM API
-#   - PandaFM Web
-#   - PostgreSQL
-#
-# Configure variables in Portainer > Stack > Environment variables.
+# Configure with a .env file next to this one (see .env.example) or your Compose
+# UI's environment variables. Never commit real values.
 
 name: pandafm
 
@@ -24,7 +16,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-pandafm}
       POSTGRES_USER: ${POSTGRES_USER:-pandafm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Portainer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes:
       - pandafm-db:/var/lib/postgresql/data
     healthcheck:
@@ -45,7 +37,7 @@ services:
       PANDAFM_DB_HOST: pandafm-db
       PANDAFM_DB_NAME: ${POSTGRES_DB:-pandafm}
       PANDAFM_DB_USER: ${POSTGRES_USER:-pandafm}
-      PANDAFM_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Portainer}
+      PANDAFM_DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
       # 5.3: PandaFM no longer bundles Navidrome. Connect your own Navidrome / OpenSubsonic
       # server during first-run setup (or Settings › Music server). These legacy settings
       # still work if set (they then manage the server); leave them empty for new installs.
