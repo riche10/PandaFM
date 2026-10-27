@@ -49,7 +49,19 @@ export function PlaylistView() {
         meta={[playlist.owner, countOf(playlist.track_count, 'song', 'songs'), formatLength(playlist.duration_seconds)].filter(Boolean).join(' · ')}
         actions={
           <>
-            <PlayCircle label={`Play ${playlist.name}`} disabled={!playlist.tracks.length} onPlay={() => player.playCollection(playlist.tracks, { source })} />
+            <PlayCircle
+              label={mix.state?.enabled ? `Play Panda Mix ${playlist.name}` : `Play ${playlist.name}`}
+              disabled={!playlist.tracks.length}
+              onPlay={() => {
+                if (mix.state?.enabled) {
+                  player.playCollection(inMixOrder(playlist.tracks, mix.state.order), {
+                    source: { ...source, mix: { mode: mix.state.mode ?? 'auto', playlistId: playlist.id } },
+                  })
+                } else {
+                  player.playCollection(playlist.tracks, { source })
+                }
+              }}
+            />
             {isNative() && (
               <button type="button" className="icon-button icon-button--large" aria-label="Download for offline listening" onClick={() => openDialog({ type: 'download', target: { kind: 'playlist', id: playlist.id, name: playlist.name } })}>
                 <Icon name={downloaded ? 'downloaded' : 'download'} />
