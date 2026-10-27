@@ -45,5 +45,7 @@ already have an owner, so nothing changes for you.
 
 ## Schema
 
-The database moves to revision `0007` (additive: one new table). Migrations
-run automatically when the API starts.
+The database moves to revision `0008`. Both 5.3 migrations are additive:
+`0007` stores the external music-server configuration and `0008` stores
+persistent Panda Mix playlist state. Migrations run automatically when the API
+starts.
