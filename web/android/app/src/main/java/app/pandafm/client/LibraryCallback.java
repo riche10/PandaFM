@@ -47,6 +47,8 @@ final class LibraryCallback implements MediaLibraryService.MediaLibrarySession.C
 
     @Override
     public ListenableFuture<LibraryResult<MediaItem>> onGetLibraryRoot(MediaLibraryService.MediaLibrarySession session, MediaSession.ControllerInfo browser, MediaLibraryService.LibraryParams params) {
+        ArtworkProvider.rememberHost(browser.getPackageName());
+        android.util.Log.i("PandaFM.Auto", "Media browser connected: " + browser.getPackageName());
         return Futures.immediateFuture(LibraryResult.ofItem(item(tree.root(), browser), params));
     }
 

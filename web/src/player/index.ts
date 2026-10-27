@@ -3,7 +3,7 @@ import type { CoverSize } from '../api/library'
 import {artworkSrc, onReconnect, resolveSource } from '../offline'
 import { platform } from '../platform/state'
 import { createPlaybackEngine, usesBrowserMediaSession } from './engineSelect'
-import { createNativeQueueStore } from './nativeStore'
+import { createNativeQueueStore, resyncNativePlayer } from './nativeStore'
 import { autoplaySettings } from './autoplay'
 import { authFetch } from '../api/auth'
 import { apiUrl } from '../api/client'
@@ -189,6 +189,9 @@ if (nativeQueue) {
   sync()
   autoplaySettings.subscribe(sync)
 }
+
+/** Android: re-read the native queue now (e.g. when Now Playing opens). No-op in browsers. */
+export const resyncPlayer = () => (nativeQueue ? resyncNativePlayer() : Promise.resolve())
 
 /** Player actions for event handlers. Stable functions, safe to call anywhere. */
 export const player = {

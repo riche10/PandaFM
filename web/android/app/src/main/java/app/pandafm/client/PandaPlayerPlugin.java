@@ -47,9 +47,9 @@ public class PandaPlayerPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         main.removeCallbacks(ticker);
-        QueueController c = PlaybackService.controller();
-        if (c != null && listener != null) c.removeListener(listener);
+        if (attachedTo != null && listener != null) attachedTo.removeListener(listener);
         listener = null;
+        attachedTo = null;
     }
 
     private void with(PluginCall call, Task task) {
@@ -65,9 +65,21 @@ public class PandaPlayerPlugin extends Plugin {
         }));
     }
 
+    private QueueController attachedTo;
+
+    /**
+     * Listen to the service's current controller. If the service was recreated (its controller
+     * changed), move over: in 5.0.1 the plugin kept its old listener and the timeline froze.
+     */
     private void attach(QueueController c) {
-        if (listener != null) return;
+        if (c == attachedTo && listener != null) return;
+        if (attachedTo != null && listener != null) attachedTo.removeListener(listener);
+        attachedTo = c;
         listener = reason -> {
+            if ("state".equals(reason) || "position".equals(reason)) {
+                tick(); // state only: a small event, not the whole queue
+                return;
+            }
             JSObject o = new JSObject();
             o.put("reason", reason);
             o.put("snapshot", Json.write(c.uiSnapshot()));
@@ -75,21 +87,53 @@ public class PandaPlayerPlugin extends Plugin {
             tick();
         };
         c.addListener(listener);
+        Log.i(TAG, "Phone UI attached to the playback queue");
+    }
+
+    /** Ticks while playback is intended (playing, loading, buffering); stops when truly paused. */
+    static boolean shouldTick(String status) {
+        return PlaybackStateModel.intendsToPlay(status);
     }
 
     private void tick() {
         main.removeCallbacks(ticker);
         QueueController c = PlaybackService.controller();
         if (c == null) return;
-        Map<String, Object> s = c.uiSnapshot();
+        if (c != attachedTo) attach(c);
         JSObject o = new JSObject();
         o.put("status", c.status);
-        o.put("positionMs", (Object) s.get("positionMs"));
-        o.put("durationMs", (Object) s.get("durationMs"));
+        o.put("positionMs", c.positionMs());
+        o.put("durationMs", c.durationMs());
         o.put("error", c.error);
         o.put("gen", c.gen);
         notifyListeners("state", o);
-        if ("playing".equals(c.status) || "loading".equals(c.status)) main.postDelayed(ticker, TICK_MS);
+        if (shouldTick(c.status)) main.postDelayed(ticker, TICK_MS);
+    }
+
+    /** Settings › Diagnostics: safe playback facts (no URLs, no tokens). */
+    @PluginMethod
+    public void getDiagnostics(PluginCall call) {
+        main.post(() -> {
+            Map<String, Object> d = new java.util.LinkedHashMap<>();
+            d.put("serviceRunning", PlaybackService.running());
+            QueueController c = PlaybackService.controller();
+            ExoEngine e = PlaybackService.engine();
+            if (c != null) {
+                QueueItem now = c.queue.current();
+                d.put("controllerStatus", c.status);
+                d.put("trackId", now == null ? null : now.trackId());
+                d.put("queueIndex", (long) c.queue.index);
+                d.put("queueLength", (long) c.queue.items.size());
+                d.put("lastError", c.error);
+            }
+            if (e != null) d.putAll(e.core.diagnostics());
+            NetworkState net = NetworkState.of(getContext());
+            d.put("network", !net.connected ? "offline" : net.wifi ? "Wi-Fi" : net.metered ? "mobile data" : "unmetered");
+            d.put("streamQualitySetting", NativePlatform.Prefs.streamQuality(getContext()));
+            JSObject o = new JSObject();
+            o.put("diagnostics", Json.write(d));
+            call.resolve(o);
+        });
     }
 
     private static List<Map<String, Object>> tracks(PluginCall call, String key) {

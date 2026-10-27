@@ -62,8 +62,11 @@ final class AuthCore {
         this.clock = clock;
     }
 
+    private Boolean known; // cached: is there a refresh token? (the Android vault decrypts with the Keystore)
+
     synchronized boolean signedIn() {
-        return vault.get("refresh") != null && vault.get("server") != null;
+        if (known == null) known = vault.get("refresh") != null;
+        return known && vault.get("server") != null;
     }
 
     synchronized String username() {
@@ -99,6 +102,7 @@ final class AuthCore {
         vault.put("server", base(server));
         if (user != null) vault.put("username", user);
         vault.put("refresh", refresh); // rotated on every refresh: always keep the newest
+        known = Boolean.TRUE;
         access = token;
         accessExpiresMs = clock.nowMs() + (ttl == null ? 900 : ttl) * 1000L;
         return user;
@@ -153,6 +157,7 @@ final class AuthCore {
     }
 
     private void forget() {
+        known = Boolean.FALSE;
         access = null;
         accessExpiresMs = 0;
         vault.clear();

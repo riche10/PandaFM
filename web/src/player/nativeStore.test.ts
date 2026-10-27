@@ -58,3 +58,26 @@ describe('Android: the player store mirrors the native queue', () => {
     assert.equal(fromSnapshot('{"items":"x"}'), null)
   })
 })
+
+describe('5.1: buffering, resync and failures', () => {
+  it('buffering shows as loading, never as paused', () => {
+    const f = fakePlugin()
+    const store = createNativeQueueStore(f.plugin)
+    f.emit('state', { status: 'playing', positionMs: 1000, durationMs: 9000, error: null, gen: 1 })
+    f.emit('state', { status: 'buffering', positionMs: 1000, durationMs: 9000, error: null, gen: 1 })
+    assert.equal(store.getState().status, 'loading')
+    f.emit('state', { status: 'playing', positionMs: 2000, durationMs: 9000, error: null, gen: 1 })
+    assert.deepEqual([store.getState().status, store.getState().position], ['playing', 2])
+  })
+
+  it('a failed Play says so instead of doing nothing', async () => {
+    const f = fakePlugin()
+    const rejecting = new Proxy(f.plugin as object, {
+      get: (t, name: string) => (name === 'play' ? () => Promise.reject(new Error('bridge down')) : (t as Record<string, unknown>)[name]),
+    })
+    const store = createNativeQueueStore(rejecting as never)
+    store.getState().play()
+    await new Promise((r) => setTimeout(r, 0))
+    assert.match(store.getState().error ?? '', /didn’t respond/)
+  })
+})
