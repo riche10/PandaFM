@@ -130,3 +130,26 @@ def test_song_a_is_still_audible_during_the_blend():
 
 
 _ = sys
+
+
+
+# ── 5.4: loudness, keys and sections shape the plan, and it explains itself ──
+def test_a_big_loudness_gap_shortens_the_blend_and_says_so():
+    a, b = {**analysis(120, conf=0.7), "integrated_lufs": -16.0}, {**analysis(122, conf=0.7), "integrated_lufs": -6.0}
+    p = plan(POP_A, POP_B, a, b, "flow")
+    assert p["overlap_ms"] <= 8000 and any("louder" in r for r in p["reasons"]) and any("loudness" in r for r in p["reasons"])
+
+
+def test_a_confident_key_clash_keeps_harmonic_blends_short():
+    clash = plan(A, B, analysis(128, key="8A", key_conf=0.8), analysis(128, key="3B", key_conf=0.8), "energetic")
+    fit = plan(A, B, analysis(128, key="8A", key_conf=0.8), analysis(128, key="9A", key_conf=0.8), "energetic")
+    assert clash["overlap_ms"] <= 8000 < fit["overlap_ms"]
+    assert any("clash" in r for r in clash["reasons"])
+
+
+def test_plans_explain_themselves_with_confident_facts_only():
+    p = plan(POP_A, POP_B, {**analysis(128, key="8A"), "key": "A minor"}, {**analysis(130, key="9A"), "key": "E minor"}, "auto")
+    assert "Tempo: 128 → 130 BPM" in p["reasons"] and "Key: 8A → 9A (compatible)" in p["reasons"]
+    assert p["key_name_out"] == "A minor" and p["key_name_in"] == "E minor"
+    unsure = plan(POP_A, POP_B, analysis(None, conf=0.0, key_conf=0.1), analysis(None, conf=0.0, key_conf=0.1), "auto")
+    assert "Tempo uncertain" in unsure["reasons"] and "Key uncertain" in unsure["reasons"] and unsure["key_name_out"] is None

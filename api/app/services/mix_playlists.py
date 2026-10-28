@@ -55,7 +55,7 @@ async def state(db: AsyncSession, navidrome, analyzer: MixAnalyzer | None, user_
 
     meta = _meta(playlist.tracks)
     if row.status == "preparing" and all(i in found for i in ids):
-        order = mix_order.mixed_order(playlist_ids, meta, ready, row.seed)  # optimised once, then stable
+        order = mix_order.mixed_order(playlist_ids, meta, ready, row.seed, current=row.mixed_order)  # optimised once, then stable
         row.status = "ready"
     else:
         missing = Counter(playlist_ids)
@@ -68,8 +68,25 @@ async def state(db: AsyncSession, navidrome, analyzer: MixAnalyzer | None, user_
     if order != row.mixed_order:
         row.mixed_order = order
     await db.commit()
-    return {"playlist_id": playlist_id, "enabled": True, "mode": row.mode, "status": row.status, "analysed": analysed, "total": len(ids),
-            "order": order, "seed": row.seed}
+    return {"playlist_id": playlist_id, "enabled": True, "mode": row.mode, "status": row.status, "analysed": sum(1 for i in ids if i in found),
+            "total": len(ids), "order": order, "seed": row.seed, "facts": {i: _facts(i, found, analyzer) for i in ids},
+            "why": [{"from": a, "to": b, "reasons": mix_order.explain(meta.get(a, {}), meta.get(b, {}), ready.get(a), ready.get(b))}
+                    for a, b in zip(order, order[1:])]}
+
+
+def _facts(track_id: str, found: dict, analyzer: MixAnalyzer | None) -> dict:
+    """What the playlist can show for a song: only values Panda is confident about."""
+    f = found.get(track_id)
+    if f is None:
+        state = (analyzer.state_of(track_id) if analyzer else None) or "pending"
+        return {"status": "analysing" if state == "running" else state}
+    if f["status"] != "ready" or not f["payload"]:
+        return {"status": "failed"}
+    a = f["payload"]
+    bpm_ok = (a.get("bpm_confidence") or 0) >= 0.4 and a.get("bpm")
+    key_ok = (a.get("key_confidence") or 0) >= 0.3 and a.get("key_camelot")
+    return {"status": "ready", "bpm": round(a["bpm"]) if bpm_ok else None, "key": a.get("key") if key_ok else None,
+            "camelot": a.get("key_camelot") if key_ok else None, "lufs": a.get("integrated_lufs")}
 
 
 async def enable(db: AsyncSession, navidrome, analyzer, user_id: int, playlist_id: str, mode: str) -> dict:

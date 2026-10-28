@@ -73,6 +73,43 @@ def classify(aa: dict, ba: dict) -> tuple[str, float, float | None]:
     return "far", conf, diff
 
 
+def p_key(x: dict) -> bool:
+    return bool(x.get("key_camelot")) and (x.get("key_confidence") or 0) >= 0.3
+
+
+def _reasons_and_caps(aa: dict, ba: dict, conf: float, diff: float | None) -> tuple[list[str], list[tuple[int, str, bool]]]:
+    """The musical facts behind a plan, and the limits they put on its length (5.4)."""
+    reasons: list[str] = []
+    caps: list[tuple[int, str, bool]] = []
+    if diff is not None and conf >= 0.4:
+        folded = abs((aa.get("bpm") or 1) / (ba.get("bpm") or 1) - 1) > 0.3
+        reasons.append(f"Tempo: {round(aa['bpm'])} → {round(ba['bpm'])} BPM" + (" (half/double time)" if folded else ""))
+    else:
+        reasons.append("Tempo uncertain")
+    key_conf = min(aa.get("key_confidence") or 0, ba.get("key_confidence") or 0)
+    if p_key(aa) and p_key(ba):
+        ok = camelot_compatible(aa["key_camelot"], ba["key_camelot"])
+        reasons.append(f"Key: {aa['key_camelot']} → {ba['key_camelot']}" + (" (compatible)" if ok else ""))
+        if not ok and key_conf >= 0.5:
+            caps.append((8000, "The keys clash, so Panda keeps the harmonic overlap short.", True))
+    else:
+        reasons.append("Key uncertain")
+    la, lb = aa.get("integrated_lufs"), ba.get("integrated_lufs")
+    if la is not None and lb is not None:
+        d = lb - la
+        reasons.append("Similar loudness" if abs(d) <= 2 else f"Song B is {abs(d):.0f} LU {'louder' if d > 0 else 'quieter'}")
+        if abs(d) > 6:
+            caps.append((8000, "Very different loudness: a shorter blend avoids a jump.", False))
+    outro, intro = aa.get("outro_suitability") or 0, ba.get("intro_suitability") or 0
+    if outro >= 0.6 and intro >= 0.6:
+        reasons.append("Clean outro and intro")
+    elif outro < 0.3 and intro < 0.3:
+        caps.append((6000, "Neither the outro nor the intro suits a long overlap.", False))
+    if aa.get("audible_end_ms", 0) - aa.get("mix_out_ms", aa.get("audible_end_ms", 0)) >= 3000:
+        reasons.append("Song A fades out")
+    return reasons, caps
+
+
 def plan(a: dict, b: dict, aa: dict | None, ba: dict | None, mode: str = "auto") -> dict:
     """a/b: track facts (id, duration_seconds, album_id, track_number, genres); aa/ba: analyses or None."""
     mode = mode if mode in MODES else "auto"
@@ -89,13 +126,20 @@ def plan(a: dict, b: dict, aa: dict | None, ba: dict | None, mode: str = "auto")
 
     def make(kind: str, overlap: int, confidence: float, why: str, beat: bool = False, **extra) -> dict:
         overlap = max(0, min(overlap, max(0, anchor - 1000)))
+        capped = []
+        if kind not in ("gapless", "clean_handoff", "quick_switch"):
+            for limit, note, harmonic in caps:  # loudness, key and section facts shorten blends (5.4)
+                if overlap > limit and (not harmonic or kind in ("deep_blend", "bass_handoff", "smooth_blend")):
+                    overlap = limit
+                    capped.append(note)
         out_start = anchor - overlap
         if beat:
             out_start = on_beat(out_start)
         out_start = max(0, min(out_start, max(0, a_dur - overlap)))
         in_start = in_on_beat() if beat else start
         p = {**base, **extra, "type": kind, "label": TYPES[kind], "overlap_ms": overlap, "outgoing_start_ms": out_start, "incoming_start_ms": max(0, in_start),
-             "handoff_ms": overlap // 2, "confidence": round(confidence, 2), "explanation": why, "intentional": kind in INTENTIONAL}
+             "handoff_ms": overlap // 2, "confidence": round(confidence, 2), "explanation": why, "intentional": kind in INTENTIONAL,
+             "reasons": reasons + capped, "key_name_out": aa.get("key") if p_key(aa) else None, "key_name_in": ba.get("key") if p_key(ba) else None}
         bpm = f" · {round(p['bpm_out'])} → {round(p['bpm_in'])} BPM" if p.get("bpm_out") and p.get("bpm_in") and kind in ("deep_blend", "bass_handoff", "smooth_blend") else ""
         p["summary"] = f"{TYPES[kind]}{'' if kind == 'gapless' else ' · ' + _fmt_s(overlap)}{bpm}"
         return p
@@ -118,11 +162,13 @@ def plan(a: dict, b: dict, aa: dict | None, ba: dict | None, mode: str = "auto")
     continuous = (a.get("album_id") and a.get("album_id") == b.get("album_id") and a.get("track_number") and b.get("track_number")
                   and b["track_number"] == a["track_number"] + 1)
     if continuous and aa["trailing_silence_ms"] < 250 and ba["leading_silence_ms"] < 250:
+        reasons, caps = ["The next track on the same album"], []
         p = make("gapless", 0, 0.9, "These album tracks run into each other, so Panda plays them without a gap.")
         p.update(outgoing_start_ms=aa["duration_ms"], incoming_start_ms=0)
         return p
 
     tempo, conf, diff = classify(aa, ba)
+    reasons, caps = _reasons_and_caps(aa, ba, conf, diff)
     dance = is_dance(a.get("genres")) and is_dance(b.get("genres"))
     key_ok = camelot_compatible(aa.get("key_camelot") if (aa.get("key_confidence") or 0) >= 0.3 else None,
                                 ba.get("key_camelot") if (ba.get("key_confidence") or 0) >= 0.3 else None)
