@@ -45,6 +45,9 @@ final class QueueController implements PlaybackSink {
 
         /** Finish a running transition now (Next during an overlap goes to the song already fading in). */
         default void completeTransitionNow() {}
+
+        /** 5.4: ordinary playback: keep this (true next) song warm on the standby deck; null clears it. */
+        default void warmNext(int forGen, QueueItem next) {}
     }
 
     /** Panda Mix plans (5.2): cached or a safe fallback, never blocking; better plans arrive via onPlansUpdated(). */
@@ -150,10 +153,13 @@ final class QueueController implements PlaybackSink {
         String mode = mixMode();
         QueueItem now = queue.current();
         Integer ni = queue.nextIndex();
-        if (mode == null || mixPlans == null || now == null || ni == null || ni == queue.index || "one".equals(queue.repeat) || "idle".equals(status)) {
+        boolean noNext = now == null || ni == null || ni == queue.index || "one".equals(queue.repeat) || "idle".equals(status);
+        if (mode == null || mixPlans == null || noNext) {
             engine.prepareNext(gen, null, null);
+            engine.warmNext(gen, noNext ? null : queue.items.get(ni)); // normal playback: warm the next song (latency, not mixing)
             return;
         }
+        engine.warmNext(gen, null); // Panda Mix preloads the incoming song itself, on the same standby deck
         List<QueueItem> window = new ArrayList<>();
         for (int k = queue.index; k < Math.min(queue.items.size(), queue.index + 4); k++) window.add(queue.items.get(k));
         QueueItem next = queue.items.get(ni);

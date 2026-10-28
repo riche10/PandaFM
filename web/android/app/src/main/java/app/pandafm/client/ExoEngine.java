@@ -88,4 +88,20 @@ final class ExoEngine implements EngineCore.PlayerPort {
     public void setVolume(float v) {
         player.setVolume(v);
     }
+
+    private DeckLoadControl loadControl;
+
+    void useLoadControl(DeckLoadControl control) {
+        loadControl = control;
+    }
+
+    @Override
+    public void setStandbyBuffering(boolean standby) {
+        if (loadControl != null) loadControl.standby = standby;
+    }
+
+    @Override
+    public long bufferedMs() {
+        return player.getTotalBufferedDuration();
+    }
 }
