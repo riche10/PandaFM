@@ -560,3 +560,39 @@ a regeneration it stamps `web/android/icon-sources.sha256`; `--stale` reports
 launcher icons that don't match the current artwork. As of 5.4 the four
 `web/assets/app-icon*.png` files are damaged (they can't be decoded) and need
 re-exporting from the original artwork before the new branding can ship.
+
+
+## Streams from sleeping storage (5.4.2)
+
+If your music lives on a NAS whose disks spin down, the first song after a quiet
+spell can take 10-20 s to open. PandaFM now treats that as **loading**, not a
+failure:
+
+- The server waits up to `PANDAFM_NAVIDROME_STREAM_TIMEOUT_SECONDS` (default
+  30) for Navidrome to start an audio stream (Original, and the source of a
+  High/Data Saver conversion). Every other Navidrome call keeps its short 10 s
+  timeout. If the stream still hasn't started, the answer is `503
+  navidrome_unavailable` with `Retry-After: 5`.
+- The phone keeps the song selected and the intent to play, shows it as
+  loading, and retries after 2, 5, 10 and 20 s (or later if the server asks),
+  then shows "Your music server isn't responding". Its HTTP read timeout (45 s)
+  outlasts the server's wait.
+- Recovery follows the real HTTP answer (Settings › Diagnostics shows it, e.g.
+  `HTTP 503 · navidrome_unavailable`, the attempt, the next retry and "HTTP 503
+  → recovered after 13.4 s"): only **401** refreshes the device's sign-in
+  (once); 403 and other client errors aren't retried; **404/410** (a song the
+  music server no longer has) skips to the next song in a queue, at most three
+  in a row, with no retries; **416** gets one fresh load; **429** waits as long as
+  `Retry-After` says; `navidrome_auth` and `music_server_not_configured` stop at
+  once (they need the owner, not a retry). The standby (next-song warmup)
+  deck never retries, and doesn't open its request while the current song is
+  still waiting at 0:00.
+
+To see what the server answered:
+
+```sh
+docker logs pandafm-api 2>&1 | grep stream_open
+```
+
+Each request logs `waiting_for_navidrome`, then `ready elapsed_ms=… status=…`
+or `failed elapsed_ms=… panda_status=… error=…` (no tokens or credentials).

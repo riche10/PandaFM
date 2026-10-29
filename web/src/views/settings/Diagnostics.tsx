@@ -10,6 +10,8 @@ const LABELS: Record<string, string> = {
   playWhenReady: 'playWhenReady', isPlaying: 'isPlaying', trackId: 'Current track id', queueIndex: 'Queue index', queueLength: 'Queue length',
   generation: 'Generation', source: 'Source', quality: 'Stream quality', streamQualitySetting: 'Quality setting', network: 'Network',
   positionMs: 'Position', durationMs: 'Duration', lastError: 'Last playback error',
+  streamRequest: 'Stream request', streamAttempt: 'Attempt', nextRetry: 'Next retry', playbackIntent: 'Playback intent',
+  lastRecovery: 'Last stream recovery', deckRole: 'Deck role',
   pandaMix: 'Panda Mix', mixPlaylist: 'Playlist', mixMode: 'Mix mode', currentPair: 'Current pair', transition: 'Plan', planSource: 'Plan source',
   transitionConfidence: 'Confidence', bpmOut: 'Outgoing BPM', bpmIn: 'Incoming BPM', transitionStartMs: 'Transition start', overlapMs: 'Overlap',
   logicalDeck: 'Current deck', deckA: 'Deck A', deckB: 'Deck B', standbyReady: 'Standby ready', transitionRunning: 'Transition running',

@@ -59,6 +59,7 @@ public class EngineCoreTest {
     final List<long[]> scheduled = new ArrayList<>();
     final List<Runnable> tasks = new ArrayList<>();
     final List<String> expired = new ArrayList<>();
+    final boolean[] signedIn = {true};
     final List<String> warnings = new ArrayList<>();
     long now = 1_700_000_000_000L;
     final EngineCore core = new EngineCore(port, (task, delay) -> { tasks.add(task); scheduled.add(new long[] {delay}); },
@@ -68,6 +69,7 @@ public class EngineCoreTest {
         },
         new EngineCore.Hooks() {
             public void expireAccessToken() { expired.add("x"); }
+            public boolean signedIn() { return signedIn[0]; }
             public String artworkUriFor(String coverArtId) { return "content://app.pandafm.client.artwork/cover/" + coverArtId; }
             public long nowMs() { return now; }
         });
@@ -255,13 +257,16 @@ public class EngineCoreTest {
     }
 
     @Test
-    public void anExpiredTokenMidSongRefreshesBeforeRetrying() {
+    public void onlyA401RefreshesTheSignIn() { // 5.4.2: 5.4.1 refreshed it for any bad HTTP status
         startPlaying("a");
-        core.onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS");
-        assertEquals(1, expired.size());
+        core.onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS"); // a status Media3 didn't tell us
+        assertTrue(expired.isEmpty());
         tasks.get(0).run();
         ready(true);
         assertEquals("playing", controller.status);
+        port.state = STATE_IDLE;
+        core.onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS", new HttpFailure(401, null, "auth_required"));
+        assertEquals(1, expired.size());
     }
 
     @Test
@@ -366,4 +371,149 @@ public class EngineCoreTest {
         assertEquals("remote", d.get("source"));
         assertEquals("READY", d.get("playbackState"));
     }
+
+    // ── 5.4.2: recovery by the server's actual answer ──
+    void http(int status, Integer retryAfter, String code) {
+        port.state = STATE_IDLE; // Media3 drops to IDLE on an error
+        port.playing = false;
+        core.onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS", new HttpFailure(status, retryAfter, code));
+    }
+
+    @Test
+    public void aSleepingNasRecoversWithoutMovingTheQueue() {
+        controller.replace(NativeQueueTest.tracks("a", "b"), 0, NativeQueueTest.source("playlist", "Mix"), false, true);
+        assertEquals("loading", controller.status); // tap: Loading…
+        http(503, 5, "navidrome_unavailable");
+        assertEquals("buffering", controller.status); // still loading, not failed, not paused
+        assertTrue(controller.intendsToPlay());
+        assertEquals(5_000L, scheduled.get(0)[0]); // Retry-After 5 beats the first 2 s step
+        now += 5_000;
+        tasks.get(0).run();
+        http(503, null, "navidrome_unavailable");
+        assertEquals(5_000L, scheduled.get(1)[0]); // the schedule: 2, 5, 10, 20 s
+        now += 5_000;
+        tasks.get(1).run();
+        buffering();
+        ready(true); // the disks are awake
+        assertEquals("playing", controller.status);
+        assertEquals(0, controller.queue.index); // the same song, never moved
+        assertTrue(expired.isEmpty()); // a sleeping NAS is not a sign-in problem
+        Map<String, Object> d = core.diagnostics();
+        assertEquals("HTTP 503 · navidrome_unavailable → recovered after 10.0 s", d.get("lastRecovery"));
+        assertEquals(Arrays.asList("play_started"), types()); // started once
+    }
+
+    @Test
+    public void aPermanentOutageEndsWithAClearErrorNotALoop() {
+        startPlaying("a", "b");
+        for (int k = 0; k < 5; k++) {
+            http(503, null, "navidrome_unavailable");
+            if (k < 4) {
+                Map<String, Object> d = core.diagnostics();
+                assertEquals((k + 2) + " / 5", d.get("streamAttempt"));
+                tasks.get(k).run();
+            }
+        }
+        assertEquals(4, scheduled.size());
+        assertEquals(Arrays.asList(2_000L, 5_000L, 10_000L, 20_000L), Arrays.asList(scheduled.get(0)[0], scheduled.get(1)[0], scheduled.get(2)[0], scheduled.get(3)[0]));
+        assertEquals("error", controller.status);
+        assertTrue(controller.error, controller.error.contains("isn’t responding"));
+        assertEquals(0, controller.queue.index);
+    }
+
+    @Test
+    public void musicServerCredentialsAreNotRetried() {
+        startPlaying("a");
+        http(503, null, "navidrome_auth");
+        assertTrue(scheduled.isEmpty() && expired.isEmpty()); // refreshing PandaFM's token can't fix Navidrome's password
+        assertTrue(controller.error.contains("Settings › Music server"));
+    }
+
+    @Test
+    public void a401RefreshesOnceThenSaysSignedOut() {
+        signedIn[0] = false; // the refresh was refused: the device is signed out
+        startPlaying("a");
+        http(401, null, null);
+        assertEquals(1, expired.size());
+        tasks.get(0).run();
+        http(401, null, null);
+        assertEquals(1, expired.size()); // no refresh loop
+        assertEquals(1, scheduled.size());
+        assertTrue(controller.error.contains("signed out"));
+    }
+
+    @Test
+    public void a403IsNotRetried() {
+        startPlaying("a");
+        http(403, null, "forbidden");
+        assertTrue(scheduled.isEmpty());
+        assertEquals("error", controller.status);
+    }
+
+    @Test
+    public void a416GetsOneFreshLoadThenStops() {
+        startPlaying("a");
+        port.position = 90_000;
+        port.calls.clear();
+        http(416, null, null);
+        assertEquals("setMediaItem track:a @90000", port.calls.get(0)); // a fresh request, not the same Range again
+        assertTrue(scheduled.isEmpty());
+        http(416, null, null);
+        assertEquals("error", controller.status);
+    }
+
+    @Test
+    public void a429WaitsAsLongAsTheServerAsks() {
+        startPlaying("a");
+        http(429, 7, null);
+        assertEquals(7_000L, scheduled.get(0)[0]);
+        assertTrue(expired.isEmpty());
+    }
+
+    @Test
+    public void aMissingSongIsSkippedInAQueueAndExplainedAlone() {
+        startPlaying("a", "b");
+        http(404, null, "not_found");
+        assertTrue(scheduled.isEmpty()); // no pointless retries (5.4.1 spent ~12 s on them)
+        assertEquals("b", controller.queue.current().trackId());
+        controller.replace(NativeQueueTest.tracks("solo"), 0, NativeQueueTest.source("album", "One"), false, true);
+        http(410, null, null);
+        assertEquals("error", controller.status);
+        assertEquals("This song is no longer available from your music server.", controller.error);
+    }
+
+    @Test
+    public void aQueueOfMissingSongsStopsAfterThreeSkips() {
+        startPlaying("a", "b", "c", "d", "e", "f");
+        for (int k = 0; k < 4; k++) http(404, null, "not_found");
+        assertEquals("d", controller.queue.current().trackId()); // a → b → c → d, then it stops
+        assertEquals("error", controller.status);
+    }
+
+    @Test
+    public void aLateRetryAfterNextIsInert() {
+        startPlaying("a", "b");
+        http(503, null, "navidrome_unavailable");
+        controller.next();
+        port.calls.clear();
+        tasks.get(0).run(); // A's retry fires after B was chosen
+        assertTrue(port.calls.isEmpty());
+        assertEquals("b", controller.queue.current().trackId());
+    }
+
+    @Test
+    public void theRealHttpAnswerIsReadFromMedia3sException() {
+        Map<String, List<String>> headers = new java.util.HashMap<>();
+        headers.put("retry-after", Arrays.asList("5"));
+        headers.put("x-pandafm-error", Arrays.asList("navidrome_unavailable"));
+        Exception wrapped = new RuntimeException(new androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(503, headers, new byte[0]));
+        HttpFailure f = ExoEngine.httpFailureOf(wrapped);
+        assertEquals("HTTP 503 · navidrome_unavailable", f.label());
+        assertEquals(Integer.valueOf(5), f.retryAfterS);
+        HttpFailure body = ExoEngine.httpFailureOf(new androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(
+            404, new java.util.HashMap<>(), "{\"error\":{\"code\":\"not_found\",\"message\":\"x\"}}".getBytes()));
+        assertEquals("HTTP 404 · not_found", body.label()); // no header: the small JSON body
+        assertEquals(null, ExoEngine.httpFailureOf(new java.io.IOException("socket closed")));
+    }
+
 }

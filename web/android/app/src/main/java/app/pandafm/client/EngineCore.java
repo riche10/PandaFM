@@ -57,6 +57,10 @@ final class EngineCore implements QueueController.Engine {
     interface Hooks {
         /** Before retrying a stream that failed with a bad HTTP status: make the next request refresh its token. */
         void expireAccessToken();
+        /** Whether this device still has a PandaFM sign-in (a refused refresh signs it out). */
+        default boolean signedIn() {
+            return true;
+        }
         /** "track:<id>" artwork as a content:// URI (no credentials), or null. */
         String artworkUriFor(String coverArtId);
         long nowMs();
@@ -78,7 +82,11 @@ final class EngineCore implements QueueController.Engine {
     private QueueItem item;
     private String state = "idle";
     private boolean failed, endedSent;
-    private int retries;
+    private int attempts; // retries made for this load
+    private boolean authRetried, freshTried;
+    private long recoverSinceMs, nextRetryMs = -1;
+    private String lastHttp, lastRecovery;
+    private HttpFailure lastHttpFailure;
     private boolean released;
     private boolean standby; // 5.4: a warmed next song: no retries (no loops offline), failures just end the warmup
     private String lastError;
@@ -145,7 +153,10 @@ final class EngineCore implements QueueController.Engine {
         item = it;
         uri = sourceUri;
         failed = endedSent = false;
-        retries = 0;
+        attempts = 0;
+        authRetried = freshTried = false;
+        recoverSinceMs = 0;
+        nextRetryMs = -1;
         String art = it.coverArtId() == null ? null : hooks.artworkUriFor(it.coverArtId());
         port.setMediaItem("track:" + it.trackId(), sourceUri, startMs, it.title(), it.artist(), it.album(), art);
         port.setPlayWhenReady(play);
@@ -158,7 +169,10 @@ final class EngineCore implements QueueController.Engine {
     public void play() {
         if (failed) { // a real error: try the same song again
             failed = false;
-            retries = 0;
+            attempts = 0;
+        authRetried = freshTried = false;
+        recoverSinceMs = 0;
+        nextRetryMs = -1;
             port.prepare();
         }
         port.setPlayWhenReady(true);
@@ -217,31 +231,76 @@ final class EngineCore implements QueueController.Engine {
     }
 
     void onError(int code, String codeName) {
+        onError(code, codeName, null);
+    }
+
+    /**
+     * 5.4.2: recovery depends on what the server actually answered (StreamRecovery). Only a 401
+     * refreshes the access token (5.4.1 did it for any bad status). While a retry is pending the
+     * song, its queue position and the intent to play are kept (state "buffering").
+     */
+    void onError(int code, String codeName, HttpFailure http) {
         if (released || controller == null || item == null) return;
-        boolean recoverable = !standby && isRemote() && (code == IO_UNSPECIFIED || code == IO_NETWORK_CONNECTION_FAILED || code == IO_NETWORK_CONNECTION_TIMEOUT
-            || code == IO_BAD_HTTP_STATUS || code == TIMEOUT);
-        lastError = codeName + " (" + (isRemote() ? "remote" : "downloaded") + ", gen " + gen + ")";
-        log.warn("gen=" + gen + " player_error " + codeName + " remote=" + isRemote() + " state=" + state + " playWhenReady=" + port.playWhenReady()
-            + " track=" + item.trackId() + " retry=" + retries);
-        record("player_error " + codeName);
-        if (recoverable && retries < BACKOFF_MS.length) {
-            int forGen = gen;
-            long delay = BACKOFF_MS[retries++];
-            if (code == IO_BAD_HTTP_STATUS) hooks.expireAccessToken(); // e.g. the access token ran out mid-song
-            scheduler.postDelayed(() -> {
-                if (released || forGen != gen || item == null) return; // the queue moved on meanwhile
-                record("retry " + retries);
-                port.prepare(); // keeps the position; ExoPlayer reconnects with a Range request
+        String label = http != null ? http.label() : codeName;
+        lastHttp = http == null ? null : http.label();
+        lastHttpFailure = http;
+        lastError = label + " (" + (isRemote() ? "remote" : "downloaded") + ", gen " + gen + ", " + (standby ? "standby" : "logical") + ")";
+        log.warn("gen=" + gen + " player_error " + label + " remote=" + isRemote() + " role=" + (standby ? "standby" : "logical") + " state=" + state
+            + " playWhenReady=" + port.playWhenReady() + " track=" + item.trackId() + " attempt=" + (attempts + 1));
+        record("player_error " + label);
+        StreamRecovery.Decision d = standby || !isRemote() ? StreamRecovery.Decision.fatal(null) // a standby never retries; files don't need to
+            : StreamRecovery.decide(code, http, attempts, authRetried, freshTried);
+        switch (d.kind) {
+            case RETRY: {
+                if (recoverSinceMs == 0) recoverSinceMs = hooks.nowMs();
+                attempts++;
+                if (d.refreshAuth) {
+                    authRetried = true;
+                    hooks.expireAccessToken(); // the next request refreshes (one process-wide refresh)
+                }
+                int forGen = gen;
+                nextRetryMs = d.delayMs;
+                scheduler.postDelayed(() -> {
+                    if (released || forGen != gen || item == null) return; // the queue moved on meanwhile: inert
+                    nextRetryMs = -1;
+                    record("retry " + attempts + (lastHttp == null ? "" : " after " + lastHttp));
+                    port.prepare(); // keeps the position; ExoPlayer reconnects with a Range request
+                    update();
+                }, d.delayMs);
+                state = "buffering"; // still meaning to play while we wait to retry
+                controller.onEngineState(gen, "buffering");
+                return;
+            }
+            case FRESH_LOAD: {
+                freshTried = true;
+                long at = Math.max(0, port.position());
+                record("fresh load after " + label + " at " + at + "ms");
+                port.setMediaItem("track:" + item.trackId(), uri, at, item.title(), item.artist(), item.album(),
+                    item.coverArtId() == null ? null : hooks.artworkUriFor(item.coverArtId()));
+                port.prepare();
                 update();
-            }, delay);
-            state = "buffering"; // still meaning to play while we wait to retry
-            controller.onEngineState(gen, "buffering");
-            return;
+                return;
+            }
+            case UNAVAILABLE:
+                failed = true;
+                update();
+                controller.onUnavailable(gen, d.message);
+                return;
+            default: {
+                failed = true;
+                update();
+                String message = d.message;
+                if (StreamRecovery.SIGNED_OUT.equals(message)) {
+                    message = hooks.signedIn() ? "PandaFM didn’t accept this device’s sign-in for this song."
+                        : "This device was signed out of PandaFM. Sign in again; your downloads are kept.";
+                }
+                if (message == null) {
+                    String[] kind = PlaybackErrors.classify(code, !isRemote());
+                    message = kind.length > 1 ? kind[1] : "PandaFM couldn’t play this song.";
+                }
+                controller.onError(gen, message);
+            }
         }
-        failed = true;
-        update();
-        String[] kind = PlaybackErrors.classify(code, !isRemote());
-        controller.onError(gen, kind.length > 1 ? kind[1] : "PandaFM couldn’t play this song.");
     }
 
     private void update() {
@@ -249,7 +308,16 @@ final class EngineCore implements QueueController.Engine {
         String next = PlaybackStateModel.derive(port.playbackState(), port.playWhenReady(), port.isPlaying(), port.suppressionReason(), failed);
         if ("ended".equals(next)) return; // completion goes through onEnded (once)
         if (next.equals(state)) return;
-        if ("playing".equals(next)) retries = 0; // recovered
+        if ("playing".equals(next)) { // recovered
+            if (recoverSinceMs > 0) {
+                lastRecovery = (lastHttp == null ? "network error" : lastHttp) + " → recovered after "
+                    + String.format(java.util.Locale.ROOT, "%.1f s", (hooks.nowMs() - recoverSinceMs) / 1000.0);
+                record("recovered: " + lastRecovery);
+            }
+            attempts = 0;
+            authRetried = freshTried = false;
+            recoverSinceMs = 0;
+        }
         log.info("gen=" + gen + " " + state + " → " + next + " playWhenReady=" + port.playWhenReady());
         record(state + " → " + next);
         state = next;
@@ -275,6 +343,12 @@ final class EngineCore implements QueueController.Engine {
         m.put("positionMs", positionMs());
         m.put("durationMs", durationMs());
         m.put("lastError", lastError);
+        m.put("streamRequest", lastHttp);
+        m.put("streamAttempt", attempts == 0 ? null : (attempts + 1) + " / " + StreamRecovery.maxAttempts(lastHttpFailure));
+        m.put("nextRetry", nextRetryMs < 0 ? null : String.format(java.util.Locale.ROOT, "%.0f s", nextRetryMs / 1000.0));
+        m.put("playbackIntent", port.playWhenReady() ? "playing" : "paused");
+        m.put("lastRecovery", lastRecovery);
+        m.put("deckRole", standby ? "standby" : "logical");
         m.put("events", new ArrayList<Object>(history));
         return m;
     }

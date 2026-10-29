@@ -11,6 +11,7 @@ import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 
 /**
@@ -32,6 +33,7 @@ final class ExoEngine implements EngineCore.PlayerPort {
             public void warn(String m) { Log.w(TAG, m); }
         }, new EngineCore.Hooks() {
             public void expireAccessToken() { AuthStore.get(app).expireAccess(); }
+            public boolean signedIn() { return AuthStore.get(app).signedIn(); }
             public String artworkUriFor(String coverArtId) {
                 ArtworkProvider.grantToKnownHosts(app, coverArtId); // the car may show what plays
                 return ArtworkProvider.uriFor(coverArtId).toString();
@@ -46,7 +48,7 @@ final class ExoEngine implements EngineCore.PlayerPort {
             @Override public void onIsPlayingChanged(boolean isPlaying) { core.onPlayerChanged(); }
             @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) { core.onPlayerChanged(); }
             @Override public void onPlaybackSuppressionReasonChanged(int reason) { core.onPlayerChanged(); }
-            @Override public void onPlayerError(PlaybackException error) { core.onError(error.errorCode, error.getErrorCodeName()); }
+            @Override public void onPlayerError(PlaybackException error) { core.onError(error.errorCode, error.getErrorCodeName(), httpFailureOf(error)); }
         });
     }
 
@@ -104,4 +106,27 @@ final class ExoEngine implements EngineCore.PlayerPort {
     public long bufferedMs() {
         return player.getTotalBufferedDuration();
     }
+
+    /** 5.4.2: the real HTTP answer behind ERROR_CODE_IO_BAD_HTTP_STATUS (status, Retry-After, PandaFM's code). */
+    static HttpFailure httpFailureOf(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof HttpDataSource.InvalidResponseCodeException) {
+                HttpDataSource.InvalidResponseCodeException e = (HttpDataSource.InvalidResponseCodeException) t;
+                String code = header(e.headerFields, "X-PandaFM-Error");
+                if (code == null || !code.matches("[a-z_]{1,40}")) code = HttpFailure.codeFromBody(e.responseBody);
+                return new HttpFailure(e.responseCode, HttpFailure.seconds(header(e.headerFields, "Retry-After")), code);
+            }
+            if (t.getCause() == t) break;
+        }
+        return null;
+    }
+
+    static String header(java.util.Map<String, java.util.List<String>> headers, String name) {
+        if (headers == null) return null;
+        for (java.util.Map.Entry<String, java.util.List<String>> h : headers.entrySet()) {
+            if (h.getKey() != null && h.getKey().equalsIgnoreCase(name) && h.getValue() != null && !h.getValue().isEmpty()) return h.getValue().get(0);
+        }
+        return null;
+    }
+
 }

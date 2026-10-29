@@ -128,6 +128,17 @@ final class PandaDjEngine implements QueueController.Engine {
         }
 
         @Override
+        public void onUnavailable(int gen, String message) {
+            if (released || controller == null) return;
+            if (deck == primary && !(running && deck == outDeck && !handedOff)) {
+                cancel("song unavailable");
+                controller.onUnavailable(gen, message);
+            } else {
+                onError(gen, message); // a standby or mid-blend deck: the usual isolated handling
+            }
+        }
+
+        @Override
         public void onError(int gen, String message) {
             if (released || controller == null) return;
             if (running && deck == outDeck && !handedOff) { // A failed mid-blend: B is already playing, hand over
