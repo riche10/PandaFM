@@ -16,6 +16,7 @@ from typing import Annotated
 
 import asyncio
 import logging
+import time
 from typing import Literal
 
 from fastapi import APIRouter, Header, Query, Request, Response
@@ -25,7 +26,8 @@ from starlette.responses import StreamingResponse
 from app.audio.live import live_aac
 from app.audio.profiles import plan
 from app.audio.quality import revision
-from app.errors import error_response
+from app.errors import classify, error_response
+from app.navidrome.client import NavidromeError
 from app.navidrome.parse import facts_of
 from app.services.conversions import ConversionError
 from starlette.types import Receive, Scope, Send
@@ -35,6 +37,8 @@ from app.navidrome.client import AudioStream
 
 router = APIRouter(tags=["media"])
 log = logging.getLogger(__name__)
+# 5.4.2: stream opens are logged under pandafm.* so they show in the server log at INFO.
+stream_log = logging.getLogger("pandafm.stream")
 QUALITY_PROFILES = {"high": "high_quality", "low": "space_saver"}  # the download profiles, reused
 STREAM_WAIT_S = 4.0  # first play: how long to wait for the cached copy before going live
 SEEK_WAIT_S = 20.0  # a seek needs the cached (seekable) copy
@@ -64,15 +68,7 @@ class ProxiedAudioResponse(StreamingResponse):
             await self._upstream.aclose()
 
 
-@router.get(
-    "/tracks/{track_id}/stream",
-    response_class=ProxiedAudioResponse,
-    # Explicit, because FastAPI otherwise reads the default status from the
-    # response class's __init__, which ProxiedAudioResponse doesn't take.
-    status_code=200,
-    responses={206: {"description": "Partial content (Range request)"}},
-)
-async def stream_track(
+async def _stream_track(
     track_id: ItemId,
     navidrome: NavidromeDep,
     request: Request,
@@ -82,13 +78,7 @@ async def stream_track(
     range_header: Annotated[str | None, Header(alias="Range")] = None,
     if_range: Annotated[str | None, Header(alias="If-Range")] = None,
 ):
-    """Stream a song: the original file, or (for remote listening) a smaller AAC copy.
-
-    High/low reuse the download profiles and the conversion cache: a cached
-    copy is served with Range (seekable); the first play of an uncached song
-    starts at once as live AAC while the cached copy is made. Lossy sources
-    already at or below the target play as they are; nothing becomes FLAC.
-    """
+    """(see stream_track)"""
     if quality == "original":
         return ProxiedAudioResponse(await navidrome.open_stream(track_id, range_header=range_header, if_range=if_range))
     from app.routers.downloads import _cache, _db_track_id  # runtime import: downloads imports this module
@@ -128,6 +118,45 @@ async def stream_track(
     with cache.serving(done.file_name):
         return FileResponse(cache.path_of(done), media_type="audio/mp4", headers={"X-PandaFM-Quality": quality, "Cache-Control": "private, max-age=86400"})
 
+
+@router.get(
+    "/tracks/{track_id}/stream",
+    response_class=ProxiedAudioResponse,
+    # Explicit, because FastAPI otherwise reads the default status from the
+    # response class's __init__, which ProxiedAudioResponse doesn't take.
+    status_code=200,
+    responses={206: {"description": "Partial content (Range request)"}},
+)
+async def stream_track(
+    track_id: ItemId,
+    navidrome: NavidromeDep,
+    request: Request,
+    db: SessionDep,
+    user_id: UserId,
+    quality: Annotated[Literal["original", "high", "low"], Query(description="original, high (AAC ~256 kbps) or low (AAC ~128 kbps)")] = "original",
+    range_header: Annotated[str | None, Header(alias="Range")] = None,
+    if_range: Annotated[str | None, Header(alias="If-Range")] = None,
+):
+    """Stream a song: the original file, or (for remote listening) a smaller AAC copy.
+
+    High/low reuse the download profiles and the conversion cache: a cached
+    copy is served with Range (seekable); the first play of an uncached song
+    starts at once as live AAC while the cached copy is made. Lossy sources
+    already at or below the target play as they are; nothing becomes FLAC.
+    """
+    started = time.monotonic()
+    ranged = "yes" if range_header else "no"
+    stream_log.info("stream_open track=%s quality=%s range=%s waiting_for_navidrome", track_id, quality, ranged)
+    try:
+        response = await _stream_track(track_id, navidrome, request, db, user_id, quality, range_header, if_range)
+    except NavidromeError as exc:
+        status, code = classify(exc)
+        stream_log.warning("stream_open track=%s quality=%s range=%s failed elapsed_ms=%d panda_status=%d error=%s",
+                    track_id, quality, ranged, (time.monotonic() - started) * 1000, status, code)
+        raise
+    stream_log.info("stream_open track=%s quality=%s range=%s ready elapsed_ms=%d status=%d",
+             track_id, quality, ranged, (time.monotonic() - started) * 1000, getattr(response, "status_code", 200))
+    return response
 
 @router.get(
     "/covers/{cover_art_id}",

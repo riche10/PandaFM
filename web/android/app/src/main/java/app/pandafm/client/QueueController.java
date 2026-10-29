@@ -471,7 +471,10 @@ final class QueueController implements PlaybackSink {
         }
         if ("error".equals(state)) return; // onError explains it
         status = state;
-        if ("playing".equals(state)) error = null;
+        if ("playing".equals(state)) {
+            error = null;
+            unavailableSkips = 0;
+        }
         notifyAll("state");
     }
 
@@ -496,6 +499,28 @@ final class QueueController implements PlaybackSink {
         save();
         notifyAll("ended");
         tryAutoplay();
+    }
+
+    static final int MAX_UNAVAILABLE_SKIPS = 3;
+    private int unavailableSkips;
+
+    /**
+     * 5.4.2: a song the music server no longer has (HTTP 404/410). In a queue that goes on (album,
+     * playlist, Favorites, radio, a station...), skip to the next song, at most 3 in a row so a
+     * queue full of missing songs can't spin; then stop with a clear message.
+     */
+    @Override
+    public void onUnavailable(int forGen, String message) {
+        if (released || forGen != gen) return;
+        Integer next = queue.nextIndex();
+        if (next != null && next != queue.index && unavailableSkips < MAX_UNAVAILABLE_SKIPS) {
+            unavailableSkips++;
+            error = "Skipped a song that’s no longer available from your music server.";
+            start(next, true);
+            return;
+        }
+        unavailableSkips = 0;
+        fail(message);
     }
 
     @Override

@@ -94,6 +94,10 @@ class NavidromeUnavailable(NavidromeError):
     """Navidrome could not be reached, timed out, or did not answer like a Subsonic server."""
 
 
+class NavidromeSlow(NavidromeUnavailable):
+    """5.4.2: Navidrome didn't start an audio stream within the stream timeout (e.g. sleeping NAS disks)."""
+
+
 class NavidromeAuthError(NavidromeError):
     """Navidrome rejected PandaFM's username/password."""
 
@@ -172,10 +176,12 @@ class NavidromeClient:
         *,
         timeout: float = 10.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        stream_timeout: float | None = None,
     ) -> None:
         self._username = username
         self._password = password
         self._timeout = timeout
+        self._stream_timeout = stream_timeout if stream_timeout is not None else max(timeout, 30.0)
         self._http = httpx.AsyncClient(
             base_url=base_url.rstrip("/") + "/rest/",
             timeout=timeout,
@@ -377,7 +383,8 @@ class NavidromeClient:
             headers["If-Range"] = if_range
 
         response = await self._get(
-            "stream", {"id": track_id, "format": "raw"}, headers=headers, stream=True
+            "stream", {"id": track_id, "format": "raw"}, headers=headers, stream=True,
+            read_timeout=self._stream_timeout,  # 5.4.2: sleeping disks may need tens of seconds to open a file
         )
         content_type = response.headers.get("content-type", "")
         is_envelope = "json" in content_type or "xml" in content_type
@@ -427,13 +434,17 @@ class NavidromeClient:
         *,
         headers: dict[str, str] | None = None,
         stream: bool = False,
+        read_timeout: float | None = None,
     ) -> httpx.Response:
         query = self._auth_params() | {"f": "json"}
         query |= {key: value for key, value in params.items() if value is not None}
-        request = self._http.build_request("GET", endpoint, params=query, headers=headers)
+        timeout = None if read_timeout is None else httpx.Timeout(self._timeout, read=read_timeout)
+        request = self._http.build_request("GET", endpoint, params=query, headers=headers, **({"timeout": timeout} if timeout else {}))
         try:
             return await self._http.send(request, stream=stream)
         except httpx.TimeoutException as exc:
+            if read_timeout is not None and isinstance(exc, httpx.ReadTimeout):
+                raise NavidromeSlow(f"Navidrome didn't start the audio within {read_timeout:g}s") from exc
             raise NavidromeUnavailable(
                 f"Navidrome did not answer within {self._timeout:g}s"
             ) from exc

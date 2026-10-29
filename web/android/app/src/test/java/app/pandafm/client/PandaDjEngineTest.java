@@ -2,6 +2,7 @@ package app.pandafm.client;
 
 import static app.pandafm.client.PlaybackStateModel.STATE_BUFFERING;
 import static app.pandafm.client.PlaybackStateModel.STATE_ENDED;
+import static app.pandafm.client.PlaybackStateModel.STATE_IDLE;
 import static app.pandafm.client.PlaybackStateModel.STATE_READY;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -818,6 +819,39 @@ public class PandaDjEngineTest {
         }
         for (String id : ids) assertEquals(id, 1, loads(pa, id) + loads(pb, id)); // every song loaded exactly once
         assertEquals(21, types().stream().filter(t -> t.startsWith("play_started")).count());
+    }
+
+
+    // ── 5.4.2: HTTP failures and the standby deck ──
+    @Test
+    public void aStandby404NeverTouchesTheCurrentSong() {
+        playNormal("a", "b", "c");
+        warmB();
+        cb.onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS", new HttpFailure(404, null, "not_found"));
+        assertTrue(pa.pwr && pa.volume == 1f);
+        assertEquals("playing", controller.status);
+        assertEquals(0, controller.queue.index);
+        assertTrue(delayed.isEmpty()); // standbys never retry
+        assertEquals("failed", dj.diagnostics().get("warmupState"));
+    }
+
+    @Test
+    public void noStandbyRequestWhileTheCurrentSongIsStuckAtZero() {
+        controller.replace(NativeQueueTest.tracks("a", "b"), 0, NativeQueueTest.source("playlist", "Mix"), false, true);
+        pa.state = STATE_IDLE;
+        ca.onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS", new HttpFailure(503, 5, "navidrome_unavailable"));
+        for (int k = 0; k < 10; k++) dj.tick(); // waiting for the NAS
+        assertTrue(pb.calls.isEmpty()); // no second request piling onto waking disks
+        assertEquals(0L, pa.position);
+        assertTrue(controller.intendsToPlay());
+    }
+
+    @Test
+    public void aMissingCurrentSongAdvancesToAPlayableOne() {
+        playNormal("a", "b", "c");
+        ca.onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS", new HttpFailure(404, null, "not_found"));
+        assertEquals("b", controller.queue.current().trackId());
+        assertTrue(delayed.isEmpty());
     }
 
 }

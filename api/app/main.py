@@ -51,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.music_server = MusicServerManager(
             app.state.navidrome, app.state.session_factory, cfg.config_dir,
             getattr(cfg.config_key, "get_secret_value", lambda: cfg.config_key)() if cfg.config_key else None, timeout=cfg.navidrome_timeout_seconds,
+            stream_timeout=cfg.navidrome_stream_timeout_seconds,
         )
         app.state.syncer = LibrarySyncer(app.state.session_factory, app.state.navidrome, lambda: _default_user_id(app))
         sync_task = asyncio.create_task(app.state.syncer.run_periodically()) if cfg.background_sync else None

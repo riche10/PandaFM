@@ -162,7 +162,7 @@ public class PlaybackService extends MediaLibraryService {
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
             .setUserAgent("PandaFM-Android")
             .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(30_000)
+            .setReadTimeoutMs(45_000) // 5.4.2: outlasts the server's 30 s wait for a stream to start (sleeping NAS disks)
             .setAllowCrossProtocolRedirects(false);
         // PandaFM streams carry the device's access token as a header (never in the URL), only to the
         // PandaFM server's own origin; Android's HTTP stack drops it on cross-host redirects.

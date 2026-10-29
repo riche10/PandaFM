@@ -105,12 +105,13 @@ async def test_connection(raw_url: str, username: str, password: str, transport:
 
 
 class MusicServerManager:
-    def __init__(self, handle: NavidromeHandle, sessions: async_sessionmaker[AsyncSession], config_dir: str, config_key: str | None, timeout: float = 10.0) -> None:
+    def __init__(self, handle: NavidromeHandle, sessions: async_sessionmaker[AsyncSession], config_dir: str, config_key: str | None, timeout: float = 10.0, stream_timeout: float = 30.0) -> None:
         self.handle = handle
         self._sessions = sessions
         self._config_dir = config_dir
         self._config_key = config_key
         self._timeout = timeout
+        self._stream_timeout = stream_timeout
         self._vault: Vault | None = None
         self.transport: httpx.AsyncBaseTransport | None = None  # tests inject a fake music server here
         self.url: str | None = None
@@ -123,7 +124,7 @@ class MusicServerManager:
         return self._vault
 
     def _use(self, url: str, username: str, password: str) -> None:
-        old = self.handle.swap(NavidromeClient(url, username, password, timeout=self._timeout, transport=self.transport))
+        old = self.handle.swap(NavidromeClient(url, username, password, timeout=self._timeout, transport=self.transport, stream_timeout=self._stream_timeout))
         self.url, self.username = url, username
         if old is not None:
             asyncio.get_running_loop().create_task(old.aclose())  # in-flight streams finish on the old client
