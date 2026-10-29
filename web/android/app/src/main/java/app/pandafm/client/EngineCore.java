@@ -26,6 +26,11 @@ import java.util.Map;
 final class EngineCore implements QueueController.Engine {
     interface PlayerPort {
         void setVolume(float volume);
+        /** 5.4: a standby deck only buffers a few seconds ahead (its LoadControl), the logical deck as usual. */
+        default void setStandbyBuffering(boolean standby) {}
+        default long bufferedMs() {
+            return 0;
+        }
         void setMediaItem(String mediaId, String uri, long startMs, String title, String artist, String album, String artworkUri);
         void prepare();
         void setPlayWhenReady(boolean play);
@@ -75,6 +80,7 @@ final class EngineCore implements QueueController.Engine {
     private boolean failed, endedSent;
     private int retries;
     private boolean released;
+    private boolean standby; // 5.4: a warmed next song: no retries (no loops offline), failures just end the warmup
     private String lastError;
     private final ArrayDeque<String> history = new ArrayDeque<>();
 
@@ -113,6 +119,15 @@ final class EngineCore implements QueueController.Engine {
 
     void release() {
         released = true;
+    }
+
+    void setStandby(boolean s) {
+        standby = s;
+        port.setStandbyBuffering(s);
+    }
+
+    long bufferedMs() {
+        return item == null ? 0 : Math.max(0, port.bufferedMs());
     }
 
     boolean isRemote() {
@@ -199,7 +214,7 @@ final class EngineCore implements QueueController.Engine {
 
     void onError(int code, String codeName) {
         if (released || controller == null || item == null) return;
-        boolean recoverable = isRemote() && (code == IO_UNSPECIFIED || code == IO_NETWORK_CONNECTION_FAILED || code == IO_NETWORK_CONNECTION_TIMEOUT
+        boolean recoverable = !standby && isRemote() && (code == IO_UNSPECIFIED || code == IO_NETWORK_CONNECTION_FAILED || code == IO_NETWORK_CONNECTION_TIMEOUT
             || code == IO_BAD_HTTP_STATUS || code == TIMEOUT);
         lastError = codeName + " (" + (isRemote() ? "remote" : "downloaded") + ", gen " + gen + ")";
         log.warn("gen=" + gen + " player_error " + codeName + " remote=" + isRemote() + " state=" + state + " playWhenReady=" + port.playWhenReady()

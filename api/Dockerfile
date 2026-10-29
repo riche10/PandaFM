@@ -19,10 +19,12 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 
+# Both writable folders belong to the runtime user. A new named volume mounted on either
+# starts with this folder's ownership, so a fresh deployment can create
+# /config/installation.key without any host-side chown (5.4 fix; 5.3 forgot /config).
 RUN useradd --system --uid 10001 --no-create-home pandafm \
-    && mkdir -p /cache && chown pandafm /cache
-# A new named volume mounted here starts with this folder's ownership.
-VOLUME /cache
+    && mkdir -p /cache /config && chown pandafm:pandafm /cache /config && chmod 0700 /config
+VOLUME ["/cache", "/config"]
 USER pandafm
 
 EXPOSE 8000

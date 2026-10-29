@@ -531,3 +531,32 @@ then the music server), signed out (Sign in), or ready. A server only counts as
 PandaFM if `/api/health` answers like PandaFM. If PandaFM answers but its music
 server doesn't, the app opens normally with a banner: that's a server-side
 problem, not a wrong address.
+
+
+## Next-track warmup (5.4)
+
+Ordinary playback (not only Panda Mix) uses the standby deck to warm the next
+song: about 2 s into the current song, the queue's true next item is loaded
+silently (volume 0, never started, no play event, no queue or session change)
+from the source Next would use right now (the download if there is one,
+otherwise the stream for the current quality and network). While a deck is the
+standby, its load control stops buffering at about 8 s ahead. Next, the song
+ending, or jumping to exactly that song promotes the warm deck at once; the
+following song then warms on the other deck. If the warmup is missing, failed,
+stale (the queue changed) or from a different source (quality or network
+changed, a download finished), PandaFM loads the song the normal way, so
+playback always advances. Repeat One and offline-and-not-downloaded songs warm
+nothing; a standby deck never retries on its own. Settings › Diagnostics shows
+the warmup state (idle, resolving, loading, ready, failed, invalidated), track,
+source, seconds buffered and the standby deck.
+
+## Launcher icon artwork
+
+`scripts/build-android-apk.sh` regenerates the launcher icons when either
+`web/assets/app-icon-foreground.png` or `.svg` exists, after checking the PNGs
+with `scripts/check-android-icons.py --sources` (damaged artwork keeps the
+current icons with a warning; `PANDAFM_ANDROID_ICONS=1` fails instead). After
+a regeneration it stamps `web/android/icon-sources.sha256`; `--stale` reports
+launcher icons that don't match the current artwork. As of 5.4 the four
+`web/assets/app-icon*.png` files are damaged (they can't be decoded) and need
+re-exporting from the original artwork before the new branding can ship.

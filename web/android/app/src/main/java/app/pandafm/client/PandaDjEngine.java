@@ -32,7 +32,13 @@ final class PandaDjEngine implements QueueController.Engine {
         void onLogicalDeck(int deck);
         void log(String message);
         long nowMs();
+        /** Whether a stream could be opened right now (warmups never try offline). */
+        default boolean online() {
+            return true;
+        }
     }
+
+    static final long WARM_AFTER_MS = 2_000; // let the current song settle before opening the next stream
 
     static final long PRELOAD_MS = 20_000, TICK_MS = 40, MIN_OVERLAP_MS = 1_500;
 
@@ -59,6 +65,12 @@ final class PandaDjEngine implements QueueController.Engine {
     private int smart, fallbacks, manual, intentional, cancelled, notReady;
     private String lastReason, lastPlan;
     private final float[] vol = {1f, 0f};
+    // 5.4 next-track warmup (ordinary playback): at most one song, on the standby deck
+    private QueueItem warmItem;
+    private String warmUri, warmState = "idle";
+    private int warmGen;
+    private boolean warmLoaded;
+    private String preloadUri; // the Panda Mix incoming song's source (it may be promoted on Next too)
     private final ArrayDeque<String> history = new ArrayDeque<>();
 
     PandaDjEngine(EngineCore a, EngineCore.PlayerPort pa, EngineCore b, EngineCore.PlayerPort pb, EngineCore.Scheduler scheduler, Host host) {
@@ -68,6 +80,7 @@ final class PandaDjEngine implements QueueController.Engine {
         this.host = host;
         a.attach(new DeckSink(0));
         b.attach(new DeckSink(1));
+        b.setStandby(true);
     }
 
     void attach(QueueController c) {
@@ -126,6 +139,11 @@ final class PandaDjEngine implements QueueController.Engine {
             if (deck == primary) {
                 cancel("player error");
                 controller.onError(gen, message);
+            } else if (warmLoaded && !running) { // a warmed next song failed: the next song simply loads normally later
+                warmState = "failed";
+                warmLoaded = false;
+                cores[deck].stop();
+                record("warmup failed → normal load: " + message);
             } else { // B failed to load or play: A carries on and ends normally
                 record("incoming error: " + message + " → normal handoff");
                 cancel("incoming failed");
@@ -136,6 +154,8 @@ final class PandaDjEngine implements QueueController.Engine {
     // ── what the queue asks for ──
     @Override
     public void load(int gen, QueueItem item, String uri, long startMs, boolean play) {
+        if (!running && promote(gen, item, uri, startMs, play)) return;
+        if (warmItem != null) invalidateWarm("a different song was loaded");
         cancel("load");
         paused = !play;
         cores[primary].load(gen, item, uri, startMs, play);
@@ -191,9 +211,94 @@ final class PandaDjEngine implements QueueController.Engine {
         if (!running) setVol(primary, userVolume);
     }
 
+    /**
+     * 5.4: the next song is already warm on the standby deck (or preloaded for a Panda Mix
+     * blend): adopt it instead of reloading it. Only when it is exactly this queue item, from the
+     * source that would be used now; otherwise the normal load path runs.
+     */
+    private boolean promote(int gen, QueueItem item, String uri, long startMs, boolean play) {
+        int standby = other();
+        boolean warm = warmLoaded && warmItem != null && warmItem.uid.equals(item.uid) && uri != null && uri.equals(warmUri);
+        boolean mixed = preloaded && nextItem != null && nextItem.uid.equals(item.uid) && uri != null && uri.equals(preloadUri);
+        if (!(warm || mixed) || cores[standby].item() == null || !cores[standby].item().uid.equals(item.uid)) return false;
+        int old = primary;
+        cores[old].stop(); // the old song's decoder goes; that deck becomes the standby
+        setVol(old, 0f);
+        primary = standby;
+        cores[old].setStandby(true);
+        cores[primary].setStandby(false);
+        cores[primary].adopt(gen);
+        host.onLogicalDeck(primary); // the session, lock screen and audio focus follow
+        if (Math.abs(cores[primary].positionMs() - startMs) > 250) cores[primary].seekTo(startMs); // e.g. a mix preload at its planned start
+        setVol(primary, userVolume);
+        paused = !play;
+        if (play) cores[primary].play();
+        else cores[primary].pause();
+        record((warm ? "warmup adopted " : "preloaded mix song adopted ") + item.trackId());
+        host.log("PandaDJ " + (warm ? "warmup adopted" : "preload adopted") + " track=" + item.trackId());
+        warmItem = null;
+        warmUri = null;
+        warmLoaded = false;
+        warmState = "idle";
+        preloaded = false;
+        nextItem = null;
+        plan = null;
+        cores[primary].onPlayerChanged();
+        return true;
+    }
+
+    @Override
+    public void warmNext(int forGen, QueueItem next) {
+        if (released) return;
+        if (next == null) {
+            invalidateWarm("no next song");
+            return;
+        }
+        if (running || plan != null) return; // a Panda Mix preload owns the standby deck
+        String uri = host.uriFor(next); // the source that would be used if Next were pressed now
+        if (warmItem != null && warmItem.uid.equals(next.uid) && uri != null && uri.equals(warmUri) && !"failed".equals(warmState)) return;
+        invalidateWarm(warmItem == null ? null : "queue changed");
+        warmItem = next;
+        warmGen = forGen;
+        warmUri = uri;
+        if (uri == null || (uri.startsWith("http") && !host.online())) {
+            warmState = "failed"; // offline and not downloaded: nothing to warm, and no retrying
+            record("warmup skipped (offline) " + next.trackId());
+            return;
+        }
+        warmState = "resolving"; // opened once the current song has settled
+        tickSoon();
+    }
+
+    private void startWarm() {
+        int deck = other();
+        cores[deck].setStandby(true);
+        setVol(deck, 0f);
+        cores[deck].load(warmGen, warmItem, warmUri, 0, false);
+        warmLoaded = true;
+        warmState = "loading";
+        record("warmup start " + warmItem.trackId() + " (" + sourceOf(warmUri) + ")");
+    }
+
+    private void invalidateWarm(String why) {
+        if (warmLoaded && !running && !preloaded) cores[other()].stop();
+        if (why != null && warmItem != null) record("warmup invalidated: " + why);
+        warmItem = null;
+        warmUri = null;
+        warmLoaded = false;
+        warmState = why == null ? "idle" : "invalidated";
+    }
+
+    static String sourceOf(String uri) {
+        if (uri == null) return "none";
+        if (!uri.startsWith("http")) return "downloaded";
+        return uri.contains("quality=low") ? "Data Saver" : uri.contains("quality=high") ? "High" : "Original";
+    }
+
     @Override
     public void prepareNext(int forGen, QueueItem next, Map<String, Object> newPlan) {
         if (released) return;
+        if (next != null && newPlan != null && warmItem != null) invalidateWarm("Panda Mix takes over the standby deck");
         if (running) { // the current blend finishes first; this one is planned right after
             queuedNext = next;
             queuedPlan = newPlan;
@@ -237,14 +342,25 @@ final class PandaDjEngine implements QueueController.Engine {
     }
 
     private void tickSoon() {
-        if (ticking || released || (nextItem == null && !running)) return;
+        if (ticking || released || (nextItem == null && !running && !warmWaiting())) return;
         ticking = true;
         scheduler.postDelayed(this::tick, TICK_MS);
+    }
+
+    private boolean warmWaiting() {
+        return warmItem != null && ("resolving".equals(warmState) || "loading".equals(warmState));
     }
 
     void tick() {
         ticking = false;
         if (released) return;
+        if (warmWaiting()) {
+            if ("resolving".equals(warmState) && PlaybackStateModel.intendsToPlay(cores[primary].state()) && cores[primary].positionMs() >= WARM_AFTER_MS) startWarm();
+            else if ("loading".equals(warmState) && cores[other()].ready()) {
+                warmState = "ready";
+                record("warmup ready " + warmItem.trackId());
+            }
+        }
         if (running) {
             if (!paused) automate();
         } else if (nextItem != null && plan != null && PlaybackStateModel.intendsToPlay(cores[primary].state())) {
@@ -278,8 +394,10 @@ final class PandaDjEngine implements QueueController.Engine {
             nextItem = null;
             return;
         }
+        cores[other()].setStandby(true);
         setVol(other(), 0f);
         cores[other()].load(planGen, nextItem, uri, num("incoming_start_ms", 0), false);
+        preloadUri = uri;
         host.log("PandaDJ preload deck=" + (other() == 0 ? "A" : "B") + " track=" + nextItem.trackId());
         record("preload " + nextItem.trackId() + " (" + plan.get("type") + ")");
     }
@@ -343,6 +461,8 @@ final class PandaDjEngine implements QueueController.Engine {
         handedOff = true;
         int before = primary;
         primary = inDeck;
+        cores[primary].setStandby(false);
+        cores[before].setStandby(true);
         host.onLogicalDeck(primary);
         if (!controller.onHandoff(planGen, nextItem.uid)) { // the queue moved on meanwhile: undo, A stays current
             primary = before;
@@ -459,6 +579,11 @@ final class PandaDjEngine implements QueueController.Engine {
         m.put("lastTransition", lastPlan);
         m.put("lastReason", lastReason);
         m.put("transitionsDone", (long) transitions);
+        m.put("warmupState", warmState);
+        m.put("warmupTrack", warmItem == null ? null : warmItem.trackId() + " · " + warmItem.title());
+        m.put("warmupSource", warmItem == null ? null : sourceOf(warmUri));
+        m.put("warmupBuffered", warmLoaded ? String.format(java.util.Locale.ROOT, "~%.1f s", cores[other()].bufferedMs() / 1000.0) : null);
+        m.put("standbyDeck", other() == 0 ? "A" : "B");
         m.put("transitionKinds", "smart " + smart + " · fallback " + fallbacks + " · manual " + manual + " · intentional " + intentional
             + " · cancelled " + cancelled + " · not ready " + notReady);
         java.util.List<Object> events = new ArrayList<>(Json.list(m.get("events")) == null ? new ArrayList<>() : Json.list(m.get("events")));

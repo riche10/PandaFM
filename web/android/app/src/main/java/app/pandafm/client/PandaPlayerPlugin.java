@@ -242,6 +242,7 @@ public class PandaPlayerPlugin extends Plugin {
             if (c != null) {
                 c.autoplayEnabled = NativePlatform.Prefs.of(getContext()).getBoolean("autoplayEnabled", true);
                 c.autoplayPreset = NativePlatform.Prefs.of(getContext()).getString("autoplayPreset", "panda");
+                c.planNext(); // 5.4: a new streaming quality changes the next song's source: re-check the warmup
             }
         });
         call.resolve();
@@ -254,6 +255,7 @@ public class PandaPlayerPlugin extends Plugin {
         with(call, c -> {
             NativePlatform.Catalog catalog = PlaybackService.catalog();
             if (catalog != null) catalog.replace(json);
+            c.planNext(); // 5.4: a finished download may now be the next song's source: re-check the warmup
         });
     }
 

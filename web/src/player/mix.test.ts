@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
 import { AudioEngine } from './engine.ts'
 import { bassCurves, fallbackPlan, gainCurves, type MixPlan, MixPlanner, timeline } from './mixPlan.ts'
 import { createPlayerStore } from './store.ts'
@@ -82,7 +82,8 @@ class FakeAudio {
   ended = false
   error = null
   private handlers: Record<string, (() => void)[]> = {}
-  load() { this.readyState = 1; this.fire('loadedmetadata') }
+  loads = 0
+  load() { this.loads++; this.readyState = 1; this.fire('loadedmetadata') }
   play() { this.paused = false; this.fire('playing'); return Promise.resolve() }
   pause() { this.paused = true; this.fire('pause') }
   removeAttribute() { this.src = '' }
@@ -225,5 +226,54 @@ describe('the store adopts the next song at the handoff', () => {
     assert.equal(store.getState().index, 1)
     assert.deepEqual(reports, ['play_started:a', 'play_completed:a', 'play_started:b'])
     assert.deepEqual(loads, ['/s/a']) // B was never reloaded
+  })
+})
+
+describe('5.4 browser next-track warmup', () => {
+  it('warms the next song silently and promotes it on Next instead of reloading', async () => {
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      const { els: [a, b], engine } = mixRig()
+      engine.load('/a')
+      await engine.play()
+      engine.warmNext('/b')
+      assert.equal(b.src, '') // the current song settles first
+      mock.timers.tick(2000)
+      assert.equal(b.src, '/b')
+      assert.equal(b.paused, true) // warm, never audible
+      b.readyState = 4
+      engine.load('/b')
+      assert.equal(engine.mixState().active, 'B')
+      assert.equal(b.loads, 1) // not reloaded
+      assert.equal(a.src, '') // the old deck let go
+      engine.warmNext('/c')
+      mock.timers.tick(2000)
+      assert.equal(a.src, '/c') // the following song warms on the other deck
+      engine.stop()
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
+  it('a changed next song or a different source falls back to a normal load', async () => {
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      const { els: [a, b], engine } = mixRig()
+      engine.load('/a')
+      await engine.play()
+      engine.warmNext('/b')
+      mock.timers.tick(2000)
+      engine.warmNext('/x') // the queue changed: /b is no longer next
+      assert.equal(b.src, '')
+      mock.timers.tick(2000)
+      assert.equal(b.src, '/x')
+      b.readyState = 4
+      engine.load('/x?quality=low') // a different source than the one warmed
+      assert.equal(engine.mixState().active, 'A')
+      assert.equal(a.src, '/x?quality=low')
+      assert.equal(b.src, '')
+    } finally {
+      mock.timers.reset()
+    }
   })
 })

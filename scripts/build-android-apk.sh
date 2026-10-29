@@ -49,14 +49,13 @@ main() {
   commit="$(git rev-parse --short HEAD)"
   echo "==> Building PandaFM $branch @ $commit"
 
-  local icons="${PANDAFM_ANDROID_ICONS:-auto}"
-  if [ "$icons" = "auto" ]; then
-    icons=0
-    if ls web/assets/app-icon-foreground.png web/assets/app-icon-foreground.svg >/dev/null 2>&1; then icons=1; fi
-  fi
+  local icons
+  # 5.4: EITHER source (PNG or SVG) enables regeneration; damaged artwork is caught, not shipped.
+  icons="$(PANDAFM_ANDROID_ICONS="${PANDAFM_ANDROID_ICONS:-auto}" sh scripts/android-icons-mode.sh .)" || exit 1
   [ "$icons" = "1" ] && echo "==> Launcher icons will be regenerated from web/assets"
 
   PANDAFM_ANDROID_ALLOW_HTTP="${PANDAFM_ANDROID_ALLOW_HTTP:-1}" PANDAFM_ANDROID_ICONS="$icons" ./web/android/build-apk.sh
+  if [ "$icons" = "1" ] && command -v python3 >/dev/null 2>&1; then python3 scripts/check-android-icons.py --stamp; fi  # the icons now match these sources
 
   local apk="$repo/web/android/app/build/outputs/apk/debug/app-debug.apk"
   if [ ! -f "$apk" ]; then

@@ -117,6 +117,9 @@ def test_a_persistent_panda_mix_playlist(mixer):
     ready = mixer.client.get("/api/mix/playlists/pl1").json()
     assert ready["status"] == "ready" and sorted(ready["order"]) == ["s1", "s2", "s3", "x4", "x5"] and ready["analysed"] == 5
     assert mixer.client.get("/api/mix/playlists/pl1").json()["order"] == ready["order"]  # stable
+    assert set(ready["facts"]) == {"s1", "s2", "s3", "x4", "x5"} and ready["facts"]["x4"]["status"] == "failed"
+    assert ready["facts"]["s1"]["status"] == "ready" and "bpm" in ready["facts"]["s1"]  # only confident values (else None)
+    assert len(ready["why"]) == 4 and all(w["reasons"] for w in ready["why"])
     _playlist(fake, ["s1", "s3", "x4", "x5", "s2b"])  # s2 removed, s2b added in Navidrome
     edited = mixer.client.get("/api/mix/playlists/pl1").json()["order"]
     assert "s2" not in edited and "s2b" in edited

@@ -85,8 +85,12 @@ public class PlaybackService extends MediaLibraryService {
         return instance == null ? null : instance.mixPlans;
     }
 
+    private final DeckLoadControl[] loadControls = {new DeckLoadControl(), new DeckLoadControl()};
+    private int decksBuilt = 0;
+
     private ExoPlayer newDeck(DefaultDataSource.Factory sources, boolean focus) {
         return new ExoPlayer.Builder(this)
+            .setLoadControl(loadControls[decksBuilt++]) // 5.4: a standby deck buffers only a few seconds ahead
             .setAudioAttributes(music, focus) // only the logical deck handles audio focus (pause for calls, duck for navigation)
             .setHandleAudioBecomingNoisy(true) // headphones unplugged: pause
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -148,12 +152,15 @@ public class PlaybackService extends MediaLibraryService {
         NativePlatform.Api api = new NativePlatform.Api(this);
         engine = new ExoEngine(this, player);
         engine2 = new ExoEngine(this, player2);
+        engine.useLoadControl(loadControls[0]);
+        engine2.useLoadControl(loadControls[1]);
         NativePlatform.Sources sourcesForQueue = new NativePlatform.Sources(this, catalog);
         dj = new PandaDjEngine(engine.core, engine, engine2.core, engine2, main::postDelayed, new PandaDjEngine.Host() {
             public String uriFor(QueueItem item) { return sourcesForQueue.uriFor(item); } // resolved at preload time
             public void onLogicalDeck(int deck) { followDeck(deck); }
             public void log(String message) { Log.i(TAG, message); }
             public long nowMs() { return System.currentTimeMillis(); }
+            public boolean online() { return NetworkState.of(PlaybackService.this).connected; }
         });
         queueFile = new NativePlatform.QueueFile(this);
         controller = new QueueController(new NativeQueue(() -> UUID.randomUUID().toString(), new Random()), dj,

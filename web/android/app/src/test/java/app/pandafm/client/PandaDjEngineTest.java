@@ -33,8 +33,17 @@ public class PandaDjEngineTest {
     };
     final EngineCore ca = new EngineCore(pa, (t, d) -> delayed.add(t), quiet, hooks), cb = new EngineCore(pb, (t, d) -> delayed.add(t), quiet, hooks);
     final List<Integer> logicalDecks = new ArrayList<>();
+    boolean networkUp = true;
+    String quality = "";
+    final Map<String, String> local = new LinkedHashMap<>();
+
+    String source(QueueItem item) {
+        return local.containsKey(item.trackId()) ? local.get(item.trackId()) : "https://music.example.com/api/tracks/" + item.trackId() + "/stream" + quality;
+    }
+
     final PandaDjEngine dj = new PandaDjEngine(ca, pa, cb, pb, (t, d) -> {}, new PandaDjEngine.Host() {
-        public String uriFor(QueueItem item) { return "https://music.example.com/api/tracks/" + item.trackId() + "/stream"; }
+        public String uriFor(QueueItem item) { return source(item); }
+        public boolean online() { return networkUp; }
         public void onLogicalDeck(int deck) { logicalDecks.add(deck); }
         public void log(String m) {}
         public long nowMs() { return 0; }
@@ -42,7 +51,7 @@ public class PandaDjEngineTest {
     final List<Map<String, Object>> events = new ArrayList<>();
     int ids;
     final QueueController controller = new QueueController(new NativeQueue(() -> "u" + (++ids), new Random(2)), dj,
-        item -> "https://music.example.com/api/tracks/" + item.trackId() + "/stream",
+        this::source,
         new QueueController.Store() {
             public void save(String json) {}
             public String load() { return null; }
@@ -433,18 +442,171 @@ public class PandaDjEngineTest {
     }
 
     @Test
-    public void normalPlayNeverTouchesTheSecondDeck() {
+    public void normalPlayOnlyWarmsTheSecondDeckNeverMixes() {
         controller.replace(NativeQueueTest.tracks("a", "b"), 0, NativeQueueTest.source("playlist", "Mix"), false, true);
         playing(0, 0);
         for (long t = 170_000; t <= 200_000; t += 2_000) {
             pa.position = t;
             dj.tick();
         }
+        assertFalse(pb.calls.contains("playWhenReady true")); // warm, never audible before the song changes
+        assertEquals(0f, pb.volume, 0f);
+        assertFalse(dj.running());
+        assertTrue(planned.isEmpty()); // no Panda Mix plan: no crossfade
         pa.state = STATE_ENDED;
         ca.onEnded();
         assertEquals("b", controller.queue.current().trackId());
-        assertTrue(pb.calls.isEmpty()); // exactly the 5.1 single-deck path
-        assertTrue(planned.isEmpty());
+    }
+
+    // ── 5.4 next-track warmup ──
+    void playNormal(String... ids) {
+        controller.replace(NativeQueueTest.tracks(ids), 0, NativeQueueTest.source("playlist", "Mix"), false, true);
+        playing(0, 0);
+    }
+
+    void warmB() {
+        pa.position = 2_500;
+        dj.tick();
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        dj.tick();
+    }
+
+    long loads(EngineCoreTest.FakePort port, String id) {
+        return port.calls.stream().filter(c -> c.startsWith("setMediaItem track:" + id + " ")).count();
+    }
+
+    @Test
+    public void ordinaryPlaybackWarmsTheNextSongSilently() {
+        playNormal("a", "b", "c");
+        pa.position = 1_000;
+        dj.tick();
+        assertTrue(pb.calls.isEmpty()); // the current song settles first
+        warmB();
+        assertEquals(Arrays.asList("setMediaItem track:b @0", "playWhenReady false", "prepare"), pb.calls);
+        assertEquals(0f, pb.volume, 0f);
+        assertEquals(Arrays.asList("play_started:a"), types()); // no play event, no scrobble for the warm song
+        assertEquals(0, controller.queue.index);
+        assertTrue(logicalDecks.isEmpty()); // the session stays with the current song
+        Map<String, Object> d = dj.diagnostics();
+        assertEquals("ready", d.get("warmupState"));
+        assertEquals("Original", d.get("warmupSource"));
+        assertEquals("B", d.get("standbyDeck"));
+    }
+
+    @Test
+    public void nextAdoptsTheWarmDeckInsteadOfReloading() {
+        playNormal("a", "b", "c");
+        warmB();
+        controller.next();
+        assertEquals("b", controller.queue.current().trackId());
+        assertEquals(1, loads(pb, "b")); // the prepared decoder is kept
+        assertTrue(pb.pwr && pb.volume == 1f);
+        assertTrue(pa.calls.contains("stop")); // the old song lets go; that deck becomes the standby
+        assertEquals(Arrays.asList(1), logicalDecks);
+        pb.playing = true;
+        playing(1, 0);
+        assertEquals("playing", controller.status);
+        assertEquals(1, types().stream().filter(t -> t.equals("play_started:b")).count());
+        pb.position = 2_500;
+        dj.tick(); // and the following song warms on the other deck
+        assertTrue(pa.calls.contains("setMediaItem track:c @0"));
+        assertTrue(String.valueOf(dj.diagnostics().get("events")).contains("warmup adopted b"));
+    }
+
+    @Test
+    public void aNaturalEndAdoptsTheWarmDeckWithoutAMix() {
+        playNormal("a", "b");
+        warmB();
+        pa.state = STATE_ENDED;
+        ca.onEnded();
+        assertEquals("b", controller.queue.current().trackId());
+        assertEquals(1, loads(pb, "b"));
+        assertFalse(dj.running());
+    }
+
+    @Test
+    public void aQueueChangeInvalidatesTheWarmup() {
+        playNormal("a", "b", "c");
+        warmB();
+        controller.playNext(NativeQueueTest.tracks("x"));
+        assertTrue(pb.calls.contains("stop")); // b is no longer next
+        dj.tick();
+        assertEquals(1, loads(pb, "x"));
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        controller.next();
+        assertEquals("x", controller.queue.current().trackId());
+        assertEquals(1, loads(pb, "x")); // never the stale b
+        assertTrue(String.valueOf(dj.diagnostics().get("events")).contains("warmup invalidated: queue changed"));
+    }
+
+    @Test
+    public void aDifferentSourceAtNextTimeLoadsNormally() {
+        playNormal("a", "b");
+        warmB();
+        quality = "?quality=low"; // e.g. the phone moved to mobile data with Data Saver
+        controller.next();
+        assertEquals(1, loads(pa, "b")); // loaded fresh with the right source
+        assertTrue(pb.calls.contains("stop"));
+        assertTrue(logicalDecks.isEmpty());
+    }
+
+    @Test
+    public void aFailedWarmupNeverBlocksNext() {
+        playNormal("a", "b");
+        warmB();
+        cb.onError(2001, "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED");
+        assertEquals("failed", dj.diagnostics().get("warmupState"));
+        controller.next();
+        assertEquals("b", controller.queue.current().trackId());
+        assertEquals(1, loads(pa, "b")); // the ordinary load path
+    }
+
+    @Test
+    public void offlineAndNotDownloadedIsNeverWarmed() {
+        networkUp = false;
+        playNormal("a", "b");
+        pa.position = 2_500;
+        dj.tick();
+        assertTrue(pb.calls.isEmpty()); // no stream opened, nothing retried
+        assertEquals("failed", dj.diagnostics().get("warmupState"));
+    }
+
+    @Test
+    public void aDownloadedNextSongWarmsItsLocalFileEvenOffline() {
+        networkUp = false;
+        local.put("b", "content://tree/PandaFM/b.flac");
+        playNormal("a", "b");
+        pa.position = 2_500;
+        dj.tick();
+        assertEquals(1, loads(pb, "b"));
+        assertEquals("content://tree/PandaFM/b.flac", pb.uri);
+        assertEquals("downloaded", dj.diagnostics().get("warmupSource"));
+    }
+
+    @Test
+    public void repeatOneWarmsNothing() {
+        playNormal("a", "b");
+        controller.cycleRepeat();
+        controller.cycleRepeat(); // one
+        pb.calls.clear();
+        pa.position = 2_500;
+        dj.tick();
+        assertTrue(pb.calls.isEmpty());
+    }
+
+    @Test
+    public void nextBeforeABlendAdoptsTheMixPreload() {
+        startMix("a", "b");
+        pa.position = 178_500;
+        dj.tick(); // b preloaded at its planned start (2 s in)
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        controller.next();
+        assertEquals("b", controller.queue.current().trackId());
+        assertEquals(1, loads(pb, "b"));
+        assertTrue(pb.calls.contains("seekTo 0")); // from the top, as Next means
     }
 
     @Test

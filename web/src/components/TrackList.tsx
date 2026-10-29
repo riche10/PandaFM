@@ -1,4 +1,5 @@
-import { type MouseEvent, type PointerEvent, useEffect, useRef, useState } from 'react'
+import { Fragment, type MouseEvent, type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react'
+import { useBackLayer } from '../hooks/useBackLayer'
 import { all, empty, extend, type Selection, toggle } from '../library/selection'
 import { SelectionBar } from './SelectionBar'
 import { Link } from 'react-router'
@@ -23,6 +24,10 @@ interface TrackListProps {
   /** Enables "Remove from this playlist" in the row menus. */
   playlist?: PlaylistSummary
   header?: boolean
+  /** 5.4: a short line of facts under a row (Panda Mix: "128 BPM · 8A"). */
+  facts?: (track: Track, index: number) => ReactNode
+  /** 5.4: something shown between this row and the one before it (Panda Mix: the transition bridge). */
+  between?: (index: number) => ReactNode
 }
 
 const LONG_PRESS_MS = 500
@@ -35,6 +40,8 @@ export function TrackList({
   showAlbum = variant !== 'album',
   playlist,
   header = true,
+  facts,
+  between,
 }: TrackListProps) {
   const current = useCurrentTrack()
   const status = usePlayer((s) => s.status)
@@ -50,6 +57,7 @@ export function TrackList({
     return () => window.removeEventListener('keydown', onKey)
   }, [selecting])
   const choose = (index: number, e?: { shiftKey?: boolean }) => setSelection((s) => (e?.shiftKey ? extend(s, index) : toggle(s, index)))
+  useBackLayer(selecting, () => setSelection(empty)) // Android Back leaves selection mode before navigating
   const rowPointerDown = (index: number, e: PointerEvent<HTMLLIElement>) => {
     if (e.pointerType !== 'touch') return
     const state = { fired: false, timer: setTimeout(() => { state.fired = true; choose(index) }, LONG_PRESS_MS) }
@@ -62,7 +70,9 @@ export function TrackList({
     const longPressed = press.current?.fired
     press.current = null
     const target = e.target as HTMLElement
-    if (target.closest('a, .track-favorite, .menu-button, [role="menu"], .track-select')) return // links and buttons keep their job
+    if (target.closest('.track-select-hit')) return // the checkbox handles itself
+    if (!selecting && target.closest('a, .track-favorite, .menu-button, [role="menu"]')) return // links and buttons keep their job
+    if (selecting && target.closest('.track-favorite, .menu-button, [role="menu"]')) return
     if (longPressed || selecting || e.ctrlKey || e.metaKey || e.shiftKey) {
       e.preventDefault()
       e.stopPropagation()
@@ -89,9 +99,11 @@ export function TrackList({
           const isCurrent = current?.id === track.id
           const showArtist = variant !== 'album' || track.artist !== albumArtist
           return (
+            <Fragment key={`${track.id}-${index}`}>
+            {index > 0 && between?.(index)}
             <li
-              key={`${track.id}-${index}`}
               className="track-row"
+              aria-selected={selecting ? selection.picked.has(index) : undefined}
               data-current={isCurrent ? '' : undefined}
               data-selected={selection.picked.has(index) ? '' : undefined}
               data-selecting={selecting ? '' : undefined}
@@ -102,14 +114,19 @@ export function TrackList({
               onClickCapture={(e) => rowClickCapture(index, e)}
               onContextMenu={(e) => press.current?.fired && e.preventDefault()}
             >
-              <input
-                type="checkbox"
-                className="track-select"
-                checked={selection.picked.has(index)}
-                aria-label={`Select ${track.title}`}
-                onChange={() => undefined}
-                onClick={(e) => { e.stopPropagation(); choose(index, e) }}
-              />
+              {/* 5.4: a 44×44 hit area; one tap selects (no long-press needed) and does nothing else */}
+              <span
+                className="track-select-hit"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  choose(index, e)
+                }}
+              >
+                <input type="checkbox" className="track-select" checked={selection.picked.has(index)} aria-label={`Select ${track.title}`} readOnly tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); choose(index, e) } }} />
+              </span>
               <span className="track-index">
                 {isCurrent ? (
                   <Equalizer playing={status === 'playing'} />
@@ -129,6 +146,7 @@ export function TrackList({
                   <span className="track-title">{track.title}</span>
                 </button>
                 <OfflineMark trackId={track.id} />
+                {facts && <span className="track-facts">{facts(track, index)}</span>}
                 {showArtist && (
                   <span className="track-sub">
                     {track.artist_id ? (
@@ -156,6 +174,7 @@ export function TrackList({
                 inPlaylist={playlist ? { playlist, index } : undefined}
               />
             </li>
+            </Fragment>
           )
         })}
       </ol>

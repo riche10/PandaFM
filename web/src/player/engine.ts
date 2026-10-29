@@ -25,6 +25,7 @@ interface Ctx {
 type Chain = { gain: Node & { gain: Param }; shelf: Node & { type: string; frequency: Param; gain: Param }; hp: Node & { type: string; frequency: Param; gain: Param } }
 
 const TICK_MS = 50
+const WARM_AFTER_MS = 2000 // let the current song settle before opening the next one
 const MIN_OVERLAP_S = 1.5 // a late incoming deck still gets a blend while at least this much of it is left
 
 /**
@@ -54,6 +55,7 @@ export class AudioEngine implements PlaybackEngine {
   private beganAt = 0
   private watch: ReturnType<typeof setInterval> | null = null
   private timers: ReturnType<typeof setTimeout>[] = []
+  private warm: { src: string; timer: ReturnType<typeof setTimeout> | null; loaded: boolean } | null = null
 
   private readonly createContext: () => Ctx | null
 
@@ -80,8 +82,50 @@ export class AudioEngine implements PlaybackEngine {
   }
 
   load(src: string): void {
+    // 5.4: exactly the warmed next song: promote the standby deck instead of reloading it
+    const w = this.warm
+    if (w?.loaded && w.src === src && !this.running && !this.pending && this.standby.element.readyState >= 2) {
+      const old = this.deck
+      this.active = this.standby.id
+      this.warm = null
+      old.unload()
+      const ctx = this.ctx
+      if (ctx) for (const id of ['A', 'B'] as DeckId[]) this.neutral(id, id === this.active ? 1 : 0, ctx.currentTime)
+      return
+    }
+    this.dropWarm()
     this.cancelTransition()
     this.deck.load(src)
+  }
+
+  /** 5.4: ordinary playback warms the next song on the standby deck (silently; the browser buffers it). */
+  warmNext(src: string | null): void {
+    if (!src || this.running || this.pending) {
+      this.dropWarm() // nothing next, or a Panda Mix owns the standby deck
+      return
+    }
+    if (this.warm?.src === src) return
+    this.dropWarm()
+    const w: NonNullable<AudioEngine['warm']> = { src, timer: null, loaded: false }
+    this.warm = w
+    w.timer = setTimeout(() => {
+      if (this.warm !== w || this.pending || this.running) return
+      this.standby.load(src)
+      w.loaded = true
+    }, WARM_AFTER_MS)
+  }
+
+  private dropWarm(): void {
+    const w = this.warm
+    if (!w) return
+    if (w.timer) clearTimeout(w.timer)
+    if (w.loaded && !this.running && !this.preloaded) this.standby.unload()
+    this.warm = null
+  }
+
+  /** Diagnostics: the warmed next song, if any. */
+  warmState() {
+    return this.warm ? { src: this.warm.src, loaded: this.warm.loaded, ready: this.warm.loaded && this.standby.element.readyState >= 2 } : null
   }
 
   play(): Promise<void> {
@@ -135,7 +179,8 @@ export class AudioEngine implements PlaybackEngine {
 
   // ── Panda Mix ──
   prepareNext(src: string | null, plan: MixPlan | null, onHandoff: () => boolean): void {
-    if (this.running) return // the current blend finishes first; the store re-plans after the handoff
+    if (this.running) return
+    if (src && plan) this.dropWarm() // the mix preload takes over the standby deck // the current blend finishes first; the store re-plans after the handoff
     if (!src || !plan) {
       this.dropPending()
       return

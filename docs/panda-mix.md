@@ -142,3 +142,41 @@ was smart, fallback, manual or intentional, and whether one was cancelled or
 dropped because the next song wasn't ready, with the plan, its source,
 confidence, BPMs, start, overlap, both decks' track/state/position/volume,
 progress and the last reason.
+
+
+## 5.4: a musically driven order, facts you can see, a bigger editor
+
+**The mixed order follows the music.** Panda weighs, in order: tempo (half and
+double time count as the same groove, so 64 ≈ 128 BPM; confident tempo
+differences count fully, uncertain ones are treated as neutral), harmonic fit
+(Camelot neighbours when the keys are confident; confident clashes are
+avoided; uncertain keys barely matter), loudness jumps, and usable intros and
+outros. Consecutive tracks of the same album stay together.
+
+**Remix explores, it doesn't scramble.** It builds several candidate orders,
+scores each with the same musical cost, throws away any that are clearly worse
+than the best (more than ~10%), and picks one that differs from your current
+mix. Measured on a 30-song test library: a 5.3 Remix cost 1.08× the best order
+(worst 1.12×); a 5.4 Remix 0.99× (worst 1.02×). Each Remix is repeatable (it
+keeps its seed), keeps songs you listed twice, and never touches the playlist
+in Navidrome.
+
+**In the playlist** (Panda Mix on): every song shows what Panda knows, e.g.
+"88 BPM · A minor · 8A" ("88 BPM · 8A" on phones), or honestly "Key
+uncertain", "Analyzing…", "Analysis pending". The status line says "Panda Mix
+analyzing · 17 / 24 tracks" until the final order is active ("Panda Mix ready
+· 24 tracks analyzed"). In the mixed order, each pair of neighbours has a
+bridge ("Smooth Blend · 8 sec / 128 → 130 BPM · 8A → 9A"): tap it for the
+details and Adjust Mix (the same transition the queue and playback use: an
+edit here is what plays), or "Why here?" for the reasons behind that
+neighbour.
+
+**Plans explain themselves**: tempo, key, loudness and sections, plus any
+limit they imposed: a loudness gap over 6 LU or a confident key clash keeps a
+blend to 8 s; poor intro and outro to 6 s.
+
+**Adjust Mix** is now wide (about 1000 px where it fits, full screen on
+phones) with large waveforms showing the transition region, the fade curve,
+its midpoint, each song's musical end (outgoing) or the point it gets going
+(incoming), and time labels; plus both songs' tempo and key and Panda's
+reasoning. No pitch shifting or time stretching.

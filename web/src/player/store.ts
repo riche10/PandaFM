@@ -195,10 +195,13 @@ export function createPlayerStore({
       const s = get()
       const mix = s.source?.mix
       const ni = Q.nextIndex(s)
-      if (!mix || !mixPlanner || s.index < 0 || ni === null || ni === s.index || s.repeat === 'one' || s.status === 'idle') {
+      const noNext = s.index < 0 || ni === null || ni === s.index || s.repeat === 'one' || s.status === 'idle'
+      if (!mix || !mixPlanner || noNext) {
         engine.prepareNext(null, null, () => false)
+        engine.warmNext?.(noNext || ni === null ? null : streamUrl(s.items[ni].track.id)) // 5.4: latency, not mixing
         return
       }
+      engine.warmNext?.(null)
       const a = s.items[s.index]
       const b = s.items[ni]
       const src = streamUrl(b.track.id)
