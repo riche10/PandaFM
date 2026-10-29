@@ -4511,3 +4511,11 @@ body {
     padding-bottom: 8rem;
   }
 }
+
+/* 5.4.1 Settings › App: update download progress */
+.update-progress {
+  width: 100%;
+  height: 0.5rem;
+  margin: 0.25rem 0 0.75rem;
+  accent-color: var(--accent);
+}

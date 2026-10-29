@@ -343,6 +343,14 @@ menu first, then goes back through PandaFM's pages, and only leaves the app
 from Home. With music queued, it moves PandaFM to the background so the
 music keeps going.
 
+## Android app updates (5.4.1)
+
+Your server can publish the Android app: run `scripts/build-and-publish-android.sh`
+on the build host, and phones update from **Settings › App** (Android's own
+installer asks you to confirm; downloads are checked against the release's
+SHA-256 and PandaFM's signing certificate). New devices install from
+`/download/android/`. See **[docs/android-updates.md](docs/android-updates.md)**.
+
 ## Panda Mix
 
 Turn **Panda Mix** on for a playlist and it stays mixed until you turn it off.

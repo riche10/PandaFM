@@ -61,6 +61,7 @@ services:
       PANDAFM_NAVIDROME_USER: ${PANDAFM_NAVIDROME_USER:-${NAVIDROME_USER:-}}
       PANDAFM_NAVIDROME_PASSWORD: ${PANDAFM_NAVIDROME_PASSWORD:-${NAVIDROME_PASSWORD:-}}
     volumes:
+      - ${PANDAFM_RELEASES_DIR:-/srv/pandafm/releases}:/releases:ro  # 5.4.1: published Android releases (read-only)
       - pandafm-config:/config
       - pandafm-cache:/cache
     healthcheck:
@@ -79,6 +80,8 @@ services:
       - pandafm-api
     ports:
       - "${PANDAFM_WEB_PORT:-8086}:80"
+    volumes:
+      - ${PANDAFM_RELEASES_DIR:-/srv/pandafm/releases}:/releases:ro  # 5.4.1: published Android releases (read-only)
 
 volumes:
   pandafm-db:

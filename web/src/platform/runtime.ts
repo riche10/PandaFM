@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
-import type { PandaPlayerPlugin, PandaStoragePlugin, PandaAuthPlugin } from './native'
+import type { PandaPlayerPlugin, PandaStoragePlugin, PandaAuthPlugin, PandaUpdaterPlugin } from './native'
 import { savedServer } from './server'
 import { configurePlatform } from './state'
 
@@ -13,5 +13,6 @@ export function initPlatform(): void {
     storage: registerPlugin<PandaStoragePlugin>('PandaStorage'),
     player: registerPlugin<PandaPlayerPlugin>('PandaPlayer'),
     auth: registerPlugin<PandaAuthPlugin>('PandaAuth'),
+    updater: registerPlugin<PandaUpdaterPlugin>('PandaUpdater'),
   })
 }

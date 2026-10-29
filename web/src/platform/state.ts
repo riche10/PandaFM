@@ -15,6 +15,8 @@ export interface PlatformState {
   player: PandaPlayerPlugin | null
   /** Native sign-in (Android). Null in browsers, which use an HttpOnly session cookie. */
   auth: import('./native').PandaAuthPlugin | null
+  /** 5.4.1 self-hosted app updates (Android). */
+  updater: import('./native').PandaUpdaterPlugin | null
 }
 
 export const platform: PlatformState = {
@@ -24,6 +26,7 @@ export const platform: PlatformState = {
   storage: null,
   player: null,
   auth: null,
+  updater: null,
 }
 
 export const isNative = () => platform.kind === 'android'
