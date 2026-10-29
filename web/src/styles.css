@@ -4183,6 +4183,8 @@ body {
 
 .offline-banner span {
   flex: 1 1 12rem;
+}
+
 /* ── 5.3 first-run setup and connection states ── */
 .setup-steps {
   display: flex;
@@ -4275,7 +4277,6 @@ body {
   .track-row:hover:not([data-selecting]) .track-select {
     opacity: 0; /* touch: a long-press starts selecting */
   }
-  margin-top: 0.75rem;
 }
 
 .connection-banner {
@@ -4501,5 +4502,12 @@ body {
 
   .mix-bridge-adjust {
     display: none;
+  }
+}
+
+/* 5.4: while selecting on a phone, the list can scroll every row above the fixed selection bar */
+@media (max-width: 640px) {
+  .tracks:has(.selection-bar) {
+    padding-bottom: 8rem;
   }
 }
