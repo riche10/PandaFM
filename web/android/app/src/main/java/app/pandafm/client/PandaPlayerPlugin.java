@@ -127,6 +127,8 @@ public class PandaPlayerPlugin extends Plugin {
                 d.put("lastError", c.error);
             }
             if (dj != null) d.putAll(dj.diagnostics());
+            int sessionDeck = PlaybackService.sessionDeck();
+            d.put("sessionDeck", sessionDeck < 0 ? null : sessionDeck == 0 ? "A" : "B");
             if (c != null) {
                 d.put("mixMode", c.mixMode());
                 d.put("mixPlaylist", c.mixMode() == null ? null : c.queue.source == null ? null : Json.str(c.queue.source, "name"));

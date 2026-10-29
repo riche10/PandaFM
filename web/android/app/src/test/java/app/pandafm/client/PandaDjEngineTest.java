@@ -33,6 +33,7 @@ public class PandaDjEngineTest {
     };
     final EngineCore ca = new EngineCore(pa, (t, d) -> delayed.add(t), quiet, hooks), cb = new EngineCore(pb, (t, d) -> delayed.add(t), quiet, hooks);
     final List<Integer> logicalDecks = new ArrayList<>();
+    final List<String> sessionMoves = new ArrayList<>();
     boolean networkUp = true;
     String quality = "";
     final Map<String, String> local = new LinkedHashMap<>();
@@ -44,7 +45,10 @@ public class PandaDjEngineTest {
     final PandaDjEngine dj = new PandaDjEngine(ca, pa, cb, pb, (t, d) -> {}, new PandaDjEngine.Host() {
         public String uriFor(QueueItem item) { return source(item); }
         public boolean online() { return networkUp; }
-        public void onLogicalDeck(int deck) { logicalDecks.add(deck); }
+        public void onLogicalDeck(int deck) {
+            logicalDecks.add(deck);
+            sessionMoves.add(deck + (port(deck).pwr ? ":playing" : ":paused")); // what Media3 would see at the swap
+        }
         public void log(String m) {}
         public long nowMs() { return 0; }
     });
@@ -659,4 +663,161 @@ public class PandaDjEngineTest {
         assertTrue("addSession(session) must stay: without it the service isn't a foreground media service (the 5.0.1 bug)", src.contains("addSession(session);"));
         assertEquals(Collections.emptyList(), Collections.emptyList());
     }
+
+    // ── 5.4.1: the standby deck is isolated; promotions and handoffs keep the service and timeline right ──
+    @Test
+    public void standbyBufferingReadyAndEndedNeverTouchTheCurrentSong() {
+        playNormal("a", "b", "c");
+        pa.position = 2_500;
+        dj.tick(); // b warming on deck B
+        pb.state = STATE_BUFFERING;
+        cb.onPlayerChanged();
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        dj.tick();
+        pb.state = STATE_ENDED;
+        cb.onEnded(); // even a stray ENDED from the standby
+        assertEquals("playing", controller.status);
+        assertTrue(pa.pwr && pa.volume == 1f && !pb.pwr && pb.volume == 0f);
+        assertEquals(0, controller.queue.index);
+        assertTrue(logicalDecks.isEmpty()); // the session never moved
+        assertEquals(Arrays.asList("play_started:a"), types());
+        assertEquals(pa.position, controller.positionMs()); // the timeline reads the logical deck
+    }
+
+    @Test
+    public void aStandbyNetworkOrSignInFailureNeverStopsTheCurrentSong() {
+        playNormal("a", "b");
+        warmB();
+        int retries = delayed.size();
+        cb.onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS"); // e.g. an expired token on the warm stream
+        assertEquals(retries, delayed.size()); // a standby never retries on its own
+        assertEquals("playing", controller.status);
+        assertEquals(null, controller.error);
+        assertTrue(pa.pwr);
+        assertEquals("a", controller.queue.current().trackId());
+        assertEquals("failed", dj.diagnostics().get("warmupState"));
+    }
+
+    @Test
+    public void lateCallbacksFromAnAbandonedWarmupAreIgnored() {
+        playNormal("a", "b", "c");
+        pa.position = 2_500;
+        dj.tick(); // b loading
+        controller.playNext(NativeQueueTest.tracks("x")); // b is no longer next
+        pb.state = STATE_READY;
+        cb.onPlayerChanged(); // late events from the abandoned b
+        cb.onError(2001, "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED");
+        cb.onEnded();
+        assertEquals("playing", controller.status);
+        assertEquals("a", controller.queue.current().trackId());
+        dj.tick();
+        assertTrue(String.valueOf(dj.diagnostics().get("warmupTrack")).startsWith("x"));
+        assertEquals(1, loads(pb, "x"));
+    }
+
+    @Test
+    public void aPromotionStartsTheNewDeckBeforeTheSessionMoves() {
+        playNormal("a", "b");
+        warmB();
+        controller.next();
+        assertEquals(Arrays.asList("1:playing"), sessionMoves); // Media3 never sees a paused logical player
+    }
+
+    @Test
+    public void theTimelineFollowsThePromotedDeckAtOnce() {
+        playNormal("a", "b");
+        warmB();
+        pb.duration = 123_000;
+        controller.next();
+        pb.playing = true;
+        pb.position = 1_234;
+        assertEquals(1_234, controller.positionMs());
+        assertEquals(123_000, controller.durationMs());
+        assertTrue(PandaPlayerPlugin.shouldTick(controller.status));
+    }
+
+    @Test
+    public void bufferingAndRecoveryKeepTheSongAndTheTicker() {
+        playNormal("a", "b");
+        pa.position = 30_000;
+        pa.state = STATE_BUFFERING;
+        pa.playing = false;
+        ca.onPlayerChanged();
+        assertEquals("buffering", controller.status);
+        assertTrue(controller.intendsToPlay() && PandaPlayerPlugin.shouldTick(controller.status));
+        pa.state = STATE_READY;
+        pa.playing = true;
+        pa.position = 30_500;
+        ca.onPlayerChanged();
+        assertEquals("playing", controller.status);
+        assertEquals("a", controller.queue.current().trackId());
+        assertEquals(30_500, controller.positionMs());
+        assertEquals(Arrays.asList("play_started:a"), types()); // no pause/resume recorded
+    }
+
+    @Test
+    public void aRefusedHandoffGivesTheDecksTheirRolesBack() {
+        startMix("a", "b", "c");
+        pa.position = 178_500;
+        dj.tick();
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        pa.position = 190_000;
+        dj.tick(); // blending a → b
+        pb.playing = true;
+        controller.remove(controller.queue.items.get(1).uid); // b leaves the queue mid-blend
+        pa.position = 195_500;
+        dj.tick(); // the midpoint: the handoff is refused, a stays current
+        assertEquals("a", controller.queue.current().trackId());
+        assertFalse(ca.isStandby()); // 5.4 left the playing deck flagged as the standby
+        assertFalse(pa.standbyBuffering);
+        assertTrue(cb.isStandby());
+    }
+
+    @Test
+    public void onlyIntendedPlaybackKeepsTheServiceInTheForeground() {
+        playNormal("a", "b");
+        assertTrue(PlaybackService.keepForeground(controller));
+        pa.state = STATE_BUFFERING;
+        pa.playing = false;
+        ca.onPlayerChanged();
+        assertTrue(PlaybackService.keepForeground(controller)); // buffering still means to play
+        pa.state = STATE_READY;
+        pa.playing = true;
+        ca.onPlayerChanged();
+        warmB();
+        controller.pause();
+        assertFalse(PlaybackService.keepForeground(controller)); // a warmed next song alone keeps nothing alive
+        assertFalse(PlaybackService.keepForeground(null));
+    }
+
+    @Test
+    public void twentyNaturalSongChangesWithWarmupAdvanceExactlyOnceEach() {
+        String[] ids = new String[21];
+        for (int k = 0; k < ids.length; k++) ids[k] = "s" + k;
+        playNormal(ids);
+        int deck = 0;
+        for (int k = 1; k <= 20; k++) {
+            EngineCoreTest.FakePort cur = port(deck), nxt = port(1 - deck);
+            cur.position = 2_500;
+            dj.tick(); // warm the next song
+            nxt.state = STATE_READY;
+            core(1 - deck).onPlayerChanged();
+            dj.tick();
+            cur.position = cur.duration;
+            cur.state = STATE_ENDED;
+            cur.playing = false;
+            core(deck).onEnded(); // the song ends naturally
+            deck = 1 - deck;
+            assertEquals("s" + k, controller.queue.current().trackId());
+            assertEquals(k, controller.queue.index);
+            playing(deck, 0);
+            assertEquals("playing", controller.status);
+            assertFalse(dj.running()); // ordinary playback: never a blend
+        }
+        for (String id : ids) assertEquals(id, 1, loads(pa, id) + loads(pb, id)); // every song loaded exactly once
+        assertEquals(21, types().stream().filter(t -> t.startsWith("play_started")).count());
+    }
+
 }

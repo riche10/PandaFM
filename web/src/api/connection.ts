@@ -1,6 +1,6 @@
 import { createStore, useStore } from 'zustand'
 import { isNative, platform } from '../platform/state'
-import { type ConnectionState, deriveConnection, isPandaHealth, type Probe } from '../platform/connection'
+import { type ConnectionState, deriveConnection, isPandaHealth, type Probe, whileRechecking } from '../platform/connection'
 import { authStore, checkAuth } from './auth'
 import { apiUrl } from './client'
 
@@ -38,8 +38,7 @@ async function fetchJson(path: string): Promise<unknown> {
 function update() {
   const s = connectionStore.getState()
   const auth = authStore.getState().state
-  connectionStore.setState({
-    state: deriveConnection({
+  const next = deriveConnection({
       native: isNative(),
       hasServer: !!platform.server || !isNative(),
       probe: s.probe,
@@ -48,8 +47,8 @@ function update() {
       musicServerConfigured: s.setup?.music_server_configured,
       musicServerOk: s.musicServerOk ?? undefined,
       offlineChosen: s.offlineChosen,
-    }),
   })
+  connectionStore.setState({ state: whileRechecking(s.state, next) })
 }
 // Signing in (or creating the owner) changes what the server will tell us (e.g. owner now exists,
 // music server still missing): fetch the facts again. checkConnection() reuses a run in progress.

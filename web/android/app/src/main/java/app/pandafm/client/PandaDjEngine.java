@@ -228,12 +228,15 @@ final class PandaDjEngine implements QueueController.Engine {
         cores[old].setStandby(true);
         cores[primary].setStandby(false);
         cores[primary].adopt(gen);
-        host.onLogicalDeck(primary); // the session, lock screen and audio focus follow
         if (Math.abs(cores[primary].positionMs() - startMs) > 250) cores[primary].seekTo(startMs); // e.g. a mix preload at its planned start
         setVol(primary, userVolume);
         paused = !play;
         if (play) cores[primary].play();
         else cores[primary].pause();
+        // 5.4.1: only now do the session, lock screen and audio focus follow. In 5.4 they moved first,
+        // so for a moment Media3 saw a paused logical player at every song change, the state it
+        // uses to keep the service in the foreground.
+        host.onLogicalDeck(primary);
         record((warm ? "warmup adopted " : "preloaded mix song adopted ") + item.trackId());
         host.log("PandaDJ " + (warm ? "warmup adopted" : "preload adopted") + " track=" + item.trackId());
         warmItem = null;
@@ -466,6 +469,10 @@ final class PandaDjEngine implements QueueController.Engine {
         host.onLogicalDeck(primary);
         if (!controller.onHandoff(planGen, nextItem.uid)) { // the queue moved on meanwhile: undo, A stays current
             primary = before;
+            // 5.4.1: give the decks their roles back. 5.4 left the deck still playing flagged as the standby,
+            // so it stopped retrying network errors (a blip then ended the song) and capped its buffer.
+            cores[primary].setStandby(false);
+            cores[inDeck].setStandby(true);
             host.onLogicalDeck(primary);
             record("handoff refused (queue changed)");
             cancelled++;
@@ -584,6 +591,11 @@ final class PandaDjEngine implements QueueController.Engine {
         m.put("warmupSource", warmItem == null ? null : sourceOf(warmUri));
         m.put("warmupBuffered", warmLoaded ? String.format(java.util.Locale.ROOT, "~%.1f s", cores[other()].bufferedMs() / 1000.0) : null);
         m.put("standbyDeck", other() == 0 ? "A" : "B");
+        m.put("standbyEngineState", cores[other()].item() == null ? "idle" : cores[other()].state());
+        m.put("standbyPlaybackState", EngineCore.stateName(ports[other()].playbackState()));
+        m.put("standbyTrack", cores[other()].item() == null ? null : cores[other()].item().trackId());
+        m.put("logicalSuppression", (long) ports[primary].suppressionReason());
+        m.put("logicalFlaggedStandby", cores[primary].isStandby()); // must always be false
         m.put("transitionKinds", "smart " + smart + " · fallback " + fallbacks + " · manual " + manual + " · intentional " + intentional
             + " · cancelled " + cancelled + " · not ready " + notReady);
         java.util.List<Object> events = new ArrayList<>(Json.list(m.get("events")) == null ? new ArrayList<>() : Json.list(m.get("events")));
