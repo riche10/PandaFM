@@ -55,3 +55,13 @@ export function displayHost(url: string): string {
     return url
   }
 }
+
+/**
+ * 5.4.1: a re-check (back online, after sign-in) while PandaFM is already usable keeps the current
+ * screen until the result is in. 5.3 went back to 'checking' every time, which unmounted the whole
+ * app (Now Playing included) on every network reconnect, for up to the probe's timeout.
+ */
+export function whileRechecking(current: ConnectionState, next: ConnectionState): ConnectionState {
+  const usable = current === 'ready' || current === 'degraded' || current === 'offline'
+  return next === 'checking' && usable ? current : next
+}

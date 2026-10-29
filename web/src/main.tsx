@@ -9,6 +9,8 @@ import './styles.css'
 
 startAppearance() // theme before the first render
 startOffline()
+// 5.4.1: a quiet update check shortly after start-up (Android only; at most every 12 h; failures stay silent).
+setTimeout(() => void import('./updates').then((u) => u.autoCheckForUpdates()), 8000)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

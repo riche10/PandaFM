@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 5.4.1: only PandaFM's private update downloads (cache/updates/) are shared, and only with
+     Android's installer for the one APK being installed. Nothing else (no external storage). -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <cache-path name="updates" path="updates/" />
 </paths>

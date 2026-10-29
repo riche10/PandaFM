@@ -14,7 +14,7 @@ from app.deps import require_auth
 from app.config import Settings, get_settings
 from app.db import create_engine, create_session_factory
 from app.errors import register_error_handlers
-from app.routers import auth, downloads, events, explore, mix, setup, favorites, health, library, me, media, playlists, radio, sync
+from app.routers import auth, downloads, events, explore, mix, releases, setup, favorites, health, library, me, media, playlists, radio, sync
 from app.services.conversions import ConversionCache
 from app.services.library_sync import LibrarySyncer
 
@@ -96,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(setup.public, prefix="/api")  # booleans only: which setup screen to show
+    app.include_router(releases.router, prefix="/api")  # 5.4.1: the published Android release (public, nothing private)
     # Everything else needs a signed-in owner (5.0). Routes with a UserId parameter
     # get the same check through it; the router-level dependency covers the rest.
     signed_in = [Depends(require_auth)]

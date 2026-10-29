@@ -106,14 +106,43 @@ public class PlaybackService extends MediaLibraryService {
     private void followDeck(int deck) {
         if (deck == logicalDeck || session == null) return;
         ExoPlayer[] players = {player, player2};
-        players[logicalDeck].setAudioAttributes(music, false);
-        players[deck].setAudioAttributes(music, true);
+        if (players[logicalDeck].isPlaying()) {
+            // A Panda Mix handoff: the old song is still fading out. It lets go of focus first, so the
+            // new deck's request doesn't pause it.
+            players[logicalDeck].setAudioAttributes(music, false);
+            players[deck].setAudioAttributes(music, true);
+        } else {
+            // 5.4.1: a warmup promotion (the old deck already stopped): the new deck takes focus before
+            // the old one lets go, so there is no gap in which other apps get focus back at every song.
+            players[deck].setAudioAttributes(music, true);
+            players[logicalDeck].setAudioAttributes(music, false);
+        }
         session.setPlayer(sessionPlayers[deck]);
         logicalDeck = deck;
+        Log.i(TAG, "Session and audio focus follow deck " + (deck == 0 ? "A" : "B"));
     }
 
     static boolean running() {
         return instance != null;
+    }
+
+    static int sessionDeck() {
+        return instance == null ? -1 : instance.logicalDeck;
+    }
+
+    /**
+     * 5.4.1: Media3 keeps the service in the foreground from the session player's momentary state.
+     * Ordinary playback now changes that player at every song (warmup promotion), so the foreground
+     * decision also follows PandaFM's own intent: playing, loading, buffering or mid-blend keeps it,
+     * while a paused queue (even with a warmed next song) doesn't.
+     */
+    @Override
+    public void onUpdateNotification(MediaSession session, boolean startInForegroundRequired) {
+        super.onUpdateNotification(session, startInForegroundRequired || keepForeground(controller));
+    }
+
+    static boolean keepForeground(QueueController c) {
+        return c != null && c.intendsToPlay();
     }
 
     /** Swiped away from Recents: keep going while PandaFM still means to play (buffering included). */

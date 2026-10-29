@@ -10,6 +10,7 @@ import { ServerSetupView } from './ServerSetupView'
 import { AppearanceSettings } from './settings/AppearanceSettings'
 import { RadioSettings } from './settings/RadioSettings'
 import { Diagnostics } from './settings/Diagnostics'
+import { AppSettings } from './settings/AppSettings'
 import { AccountSettings } from './settings/AccountSettings'
 import { MusicServerSettings } from './settings/MusicServerSettings'
 import { StreamingQuality } from './settings/StreamingQuality'
@@ -158,6 +159,7 @@ export function SettingsView() {
         {isNative() && <button type="button" className="button button--quiet" onClick={() => setChanging(true)}>Change server</button>}
       </section>
       <MusicServerSettings />
+      <AppSettings />
       <Diagnostics />
     </div>
   )

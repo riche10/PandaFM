@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { type ConnectionFacts, deriveConnection, displayHost, isPandaHealth } from './connection.ts'
+import { type ConnectionFacts, deriveConnection, displayHost, isPandaHealth, whileRechecking } from './connection.ts'
 import { normalizeServerUrl } from './server.ts'
 
 const ready: ConnectionFacts = { native: true, hasServer: true, probe: 'pandafm', ownerConfigured: true, signedIn: true, musicServerConfigured: true, musicServerOk: true }
@@ -70,5 +70,18 @@ describe('server address normalisation', () => {
     assert.throws(() => normalizeServerUrl(''))
     assert.throws(() => normalizeServerUrl('ftp://music.example.com'))
     assert.throws(() => normalizeServerUrl('https://me:pw@music.example.com'))
+  })
+})
+
+describe('5.4.1: re-checks keep a usable app mounted', () => {
+  it('a re-check while ready, degraded or offline keeps the screen', () => {
+    for (const current of ['ready', 'degraded', 'offline'] as const) assert.equal(whileRechecking(current, 'checking'), current)
+  })
+
+  it('the first check still shows Connecting, and real results still apply', () => {
+    assert.equal(whileRechecking('checking', 'checking'), 'checking')
+    assert.equal(whileRechecking('ready', 'server-unreachable'), 'server-unreachable')
+    assert.equal(whileRechecking('ready', 'sign-in-required'), 'sign-in-required')
+    assert.equal(whileRechecking('server-unreachable', 'checking'), 'checking')
   })
 })

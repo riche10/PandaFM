@@ -121,6 +121,10 @@ final class EngineCore implements QueueController.Engine {
         released = true;
     }
 
+    boolean isStandby() {
+        return standby;
+    }
+
     void setStandby(boolean s) {
         standby = s;
         port.setStandbyBuffering(s);

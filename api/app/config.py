@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # Interactive API docs: off by default; when on, owner-only.
     api_docs: bool = False
 
+    # 5.4.1: published Android releases (a read-only volume; the build host's publish script writes it).
+    releases_dir: str = "/releases"
+
     # 5.2 Panda Mix: analysis only for tracks a Panda Mix needs, never the whole library.
     mix_enabled: bool = True
     mix_analysis_workers: int = 1  # concurrent analyses (each mostly one ffmpeg + a little numpy), niced

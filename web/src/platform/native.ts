@@ -91,3 +91,24 @@ export interface PandaAuthPlugin {
   accessToken(options?: { forceRefresh?: boolean }): Promise<{ token: string | null }>
   signOut(): Promise<void>
 }
+
+/** 5.4.1 self-hosted updates (Android). PandaFM never installs anything itself: Android's installer asks. */
+export interface UpdateCheck {
+  status: 'available' | 'current' | 'newer-installed' | 'none'
+  installedCode: number
+  versionName?: string
+  versionCode?: number
+  size?: number
+  notes?: string | null
+  releasedAt?: string | null
+  downloaded?: boolean
+}
+
+export interface PandaUpdaterPlugin {
+  info(): Promise<{ versionName: string; versionCode: number; canInstall: boolean }>
+  check(): Promise<UpdateCheck>
+  download(): Promise<{ ready: boolean }>
+  cancel(): Promise<void>
+  install(): Promise<{ started?: boolean; needsPermission?: boolean }>
+  addListener(event: 'updateProgress', listener: (e: { received: number; total: number }) => void): Promise<{ remove: () => Promise<void> }>
+}
