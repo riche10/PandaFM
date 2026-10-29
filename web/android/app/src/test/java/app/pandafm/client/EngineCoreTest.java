@@ -501,17 +501,31 @@ public class EngineCoreTest {
         assertEquals("b", controller.queue.current().trackId());
     }
 
+    static androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException media3HttpError(
+        int status,
+        String message,
+        Map<String, List<String>> headers,
+        byte[] body
+    ) {
+        androidx.media3.datasource.DataSpec spec = new androidx.media3.datasource.DataSpec.Builder()
+            .setUri("https://example.invalid/api/tracks/test/stream")
+            .build();
+        return new androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(
+            status, message, null, headers, spec, body
+        );
+    }
+
     @Test
     public void theRealHttpAnswerIsReadFromMedia3sException() {
         Map<String, List<String>> headers = new java.util.HashMap<>();
         headers.put("retry-after", Arrays.asList("5"));
         headers.put("x-pandafm-error", Arrays.asList("navidrome_unavailable"));
-        Exception wrapped = new RuntimeException(new androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(503, headers, new byte[0]));
+        Exception wrapped = new RuntimeException(media3HttpError(503, "Service Unavailable", headers, new byte[0]));
         HttpFailure f = ExoEngine.httpFailureOf(wrapped);
         assertEquals("HTTP 503 · navidrome_unavailable", f.label());
         assertEquals(Integer.valueOf(5), f.retryAfterS);
-        HttpFailure body = ExoEngine.httpFailureOf(new androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(
-            404, new java.util.HashMap<>(), "{\"error\":{\"code\":\"not_found\",\"message\":\"x\"}}".getBytes()));
+        HttpFailure body = ExoEngine.httpFailureOf(media3HttpError(
+            404, "Not Found", new java.util.HashMap<>(), "{\"error\":{\"code\":\"not_found\",\"message\":\"x\"}}".getBytes()));
         assertEquals("HTTP 404 · not_found", body.label()); // no header: the small JSON body
         assertEquals(null, ExoEngine.httpFailureOf(new java.io.IOException("socket closed")));
     }
