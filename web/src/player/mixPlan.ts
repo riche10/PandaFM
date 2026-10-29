@@ -29,6 +29,8 @@ export interface MixPlan {
   source?: 'smart' | 'fallback' | 'manual'
   /** a deliberately conservative choice (Clean Handoff, Quick Switch, Gapless): never a failure */
   intentional?: boolean
+  /** 5.4: the musical facts behind the choice (tempo, key, loudness, sections, caps). */
+  reasons?: string[]
   index?: number
 }
 

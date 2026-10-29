@@ -4297,3 +4297,209 @@ body {
 .form-note--error {
   color: var(--danger, #c0392b);
 }
+
+/* ── 5.4 multi-select: a real touch target, visible on touch screens, not colour alone ── */
+.track-select-hit {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-top: -22px;
+  cursor: pointer;
+}
+
+.track-select-hit .track-select {
+  position: static;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.track-row:hover .track-select-hit .track-select,
+.track-row:focus-within .track-select-hit .track-select,
+.track-row[data-selecting] .track-select-hit .track-select {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .track-select-hit .track-select,
+  .track-row:hover:not([data-selecting]) .track-select-hit .track-select {
+    opacity: 0.75; /* touch: always tappable, no long-press needed */
+  }
+
+  .track-row .track-index {
+    visibility: hidden;
+  }
+}
+
+.track-row[data-selected] .track-title::before {
+  content: "✓ ";
+  font-weight: 700;
+}
+
+.track-facts {
+  display: block;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .selection-bar {
+    position: fixed;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: calc(var(--player-bar-height, 4.5rem) + env(safe-area-inset-bottom, 0px) + 0.5rem);
+    margin: 0;
+  }
+
+  .selection-bar .button {
+    min-height: 44px;
+  }
+
+  .track-facts .fact-key-name {
+    display: none; /* "88 BPM · 8A" on small screens */
+  }
+}
+
+/* ── 5.4 Adjust Mix: a wide editor with large waveforms ── */
+.modal:has(.mix-editor),
+.modal:has(.mix-summary) {
+  width: min(1000px, calc(100vw - 2rem));
+  max-width: none;
+}
+
+.mix-editor .mix-wave {
+  height: clamp(110px, 18vh, 160px);
+}
+
+.mix-wave-marker {
+  stroke: var(--text-primary, currentColor);
+  stroke-width: 2;
+  stroke-dasharray: 2 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.mix-wave-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: -0.25rem 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mix-wave-labels-mid {
+  overflow: hidden;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mix-editor-tracks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.mix-editor-role {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mix-editor-title {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.mix-editor-facts {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.mix-why-panel {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+}
+
+.mix-why-title {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+
+.mix-why {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+}
+
+.mix-editor-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.mix-bridge--playlist {
+  margin-left: 3rem;
+}
+
+.mix-bridge-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+
+.mix-bridge-facts {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+
+.mix-bridge-adjust {
+  margin-left: 0.5rem;
+  text-decoration: underline;
+}
+
+.mix-why-toggle {
+  margin-left: 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .modal:has(.mix-editor) {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .mix-bridge--playlist {
+    margin-left: 1rem;
+  }
+
+  .mix-bridge-adjust {
+    display: none;
+  }
+}

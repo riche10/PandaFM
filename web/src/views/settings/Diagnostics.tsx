@@ -15,6 +15,7 @@ const LABELS: Record<string, string> = {
   logicalDeck: 'Current deck', deckA: 'Deck A', deckB: 'Deck B', standbyReady: 'Standby ready', transitionRunning: 'Transition running',
   transitionProgress: 'Transition progress', lastTransition: 'Last transition', lastReason: 'Last cancellation / fallback reason',
   transitionsDone: 'Completed transitions', transitionKinds: 'Transition outcomes',
+  warmupState: 'Next-track warmup', warmupTrack: 'Warm track', warmupSource: 'Warm source', warmupBuffered: 'Buffered', standbyDeck: 'Standby deck',
 }
 
 const ms = (v: unknown) => (typeof v === 'number' ? `${Math.floor(v / 60000)}:${String(Math.floor((v % 60000) / 1000)).padStart(2, '0')}` : '—')

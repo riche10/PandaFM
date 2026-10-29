@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { getPlaylist } from '../api/library'
 import { PlayCircle, ShuffleButton } from '../components/Cards'
-import { inMixOrder, PandaMixControls, PandaMixStatus, useMixPlaylist } from '../components/PandaMix'
+import { FactsLine, inMixOrder, PandaMixControls, PandaMixStatus, PlaylistBridge, useMixPlaylist, usePlaylistBridges } from '../components/PandaMix'
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
 import { Icon } from '../components/Icon'
@@ -26,6 +26,8 @@ export function PlaylistView() {
   const downloaded = useOffline((s) => !!s.collections[`playlist:${playlistId}`])
   const mix = useMixPlaylist(playlistId) // 5.3: Panda Mix as a lasting setting of this playlist
   const [mixView, setMixView] = useState<'mixed' | 'original'>('mixed')
+  const bridgeOrder = playlist && mix.state?.enabled ? inMixOrder(playlist.tracks, mix.state.order) : []
+  const bridges = usePlaylistBridges(bridgeOrder, mix.state?.mode, playlistId, !!mix.state?.enabled && mixView === 'mixed', mix.state?.analysed ?? 0)
 
   if (resource.state === 'error') {
     return (
@@ -39,6 +41,9 @@ export function PlaylistView() {
   const source: QueueSource = { kind: 'playlist', id: playlist.id, name: playlist.name }
   const mixed = !!mix.state?.enabled && mixView === 'mixed'
   const shown = mixed ? inMixOrder(playlist.tracks, mix.state?.order) : playlist.tracks
+  const mixOn = !!mix.state?.enabled
+  const factsFor = mixOn ? (t: { id: string }) => <FactsLine facts={mix.state?.facts?.[t.id]} /> : undefined
+  const whyFor = new Map((mix.state?.why ?? []).map((w) => [`${w.from}|${w.to}`, w.reasons]))
   return (
     <div className="page page--detail">
       <DetailHero
@@ -95,9 +100,17 @@ export function PlaylistView() {
       ) : (
         mixed ? (
           // Mixed order: play from here as a Panda Mix. Editing (by position) happens in the original order.
-          <TrackList tracks={shown} onPlay={(i) => player.playCollection(shown, { startIndex: i, source: { ...source, mix: { mode: mix.state?.mode ?? 'auto', playlistId: playlist.id } } })} />
+          <TrackList
+            tracks={shown}
+            onPlay={(i) => player.playCollection(shown, { startIndex: i, source: { ...source, mix: { mode: mix.state?.mode ?? 'auto', playlistId: playlist.id } } })}
+            facts={factsFor}
+            between={(i) => (
+              <PlaylistBridge from={shown[i - 1]} to={shown[i]} plan={bridges.get(`${shown[i - 1].id}|${shown[i].id}`)} why={whyFor.get(`${shown[i - 1].id}|${shown[i].id}`)}
+                mode={mix.state?.mode ?? 'auto'} playlistId={playlist.id} />
+            )}
+          />
         ) : (
-          <TrackList tracks={playlist.tracks} onPlay={(i) => player.playCollection(playlist.tracks, { startIndex: i, source })} playlist={playlist} />
+          <TrackList tracks={playlist.tracks} onPlay={(i) => player.playCollection(playlist.tracks, { startIndex: i, source })} playlist={playlist} facts={factsFor} />
         )
       )}
     </div>

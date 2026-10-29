@@ -25,6 +25,28 @@ export interface MixPlaylistState {
   analysed?: number
   total?: number
   order?: string[]
+  /** 5.4: per song, only confident values (else null) and the analysis status. */
+  facts?: Record<string, TrackFacts>
+  /** 5.4: why each neighbour of the mixed order is there. */
+  why?: { from: string; to: string; reasons: string[] }[]
+}
+
+export interface TrackFacts {
+  status: 'ready' | 'failed' | 'pending' | 'queued' | 'analysing'
+  bpm?: number | null
+  key?: string | null
+  camelot?: string | null
+}
+
+/** "88 BPM · A minor · 8A", or an honest state: never a value Panda isn't sure about. */
+export function FactsLine({ facts }: { facts?: TrackFacts }) {
+  if (!facts) return null
+  if (facts.status === 'analysing') return <>Analyzing…</>
+  if (facts.status === 'pending' || facts.status === 'queued') return <>Analysis pending</>
+  if (facts.status === 'failed') return <>Couldn’t analyse this song</>
+  const tempo = facts.bpm ? `${facts.bpm} BPM` : 'Tempo uncertain'
+  if (!facts.camelot) return <>{tempo} · Key uncertain</>
+  return <>{tempo} · {facts.key && <span className="fact-key-name">{facts.key} · </span>}{facts.camelot}</>
 }
 
 /** A playlist's Panda Mix (5.3): on or off, its personality, and its stable mixed order (re-read while preparing). */
@@ -142,13 +164,65 @@ export function PandaMixControls({ playlist, source, mix, view, onView }: {
   )
 }
 
-/** One line under the playlist title: what Panda Mix is doing for this playlist. */
+/** One line under the playlist title: is Panda Mix still preparing, or is the final order active? */
 export function PandaMixStatus({ mix, view }: { mix: ReturnType<typeof useMixPlaylist>; view: 'mixed' | 'original' }) {
   const s = mix.state
   if (!s?.enabled) return null
   const label = MODES.find((m) => m.id === s.mode)?.label ?? 'Auto'
-  const progress = s.status === 'preparing' ? `Preparing ${s.analysed ?? 0}/${s.total ?? 0}…` : view === 'mixed' ? 'Mixed order' : 'Showing the original order'
-  return <p className="panda-mix-status"><Icon name="radio" /> Panda Mix · {label} · {progress}</p>
+  const total = s.total ?? 0
+  const state = s.status === 'preparing' ? `Panda Mix analyzing · ${s.analysed ?? 0} / ${total} tracks` : `Panda Mix ready · ${total} tracks analyzed`
+  const shown = view === 'mixed' ? (s.status === 'preparing' ? 'playlist order until analysis finishes' : 'mixed order') : 'original order'
+  return <p className="panda-mix-status" role="status"><Icon name="radio" /> {state} · {label} · {shown}</p>
+}
+
+/** 5.4: plans for every neighbour of the playlist's mixed order (the same records the queue uses). */
+export function usePlaylistBridges(order: Track[], mode: MixMode | undefined, playlistId: string, enabled: boolean, analysed: number) {
+  const [plans, setPlans] = useState(new Map<string, MixPlan>())
+  const key = order.map((t) => t.id).join(',')
+  useEffect(() => {
+    if (!enabled || order.length < 2 || !mode) return
+    let live = true
+    void mixPlanner.bridges(order, mode, playlistId).then((list) => {
+      if (live) setPlans(new Map(list.map((p) => [`${p.from}|${p.to}`, p])))
+    })
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, mode, playlistId, enabled, analysed])
+  return plans
+}
+
+/** The transition between two songs of the playlist's mixed order: tap for its details and Adjust Mix. */
+export function PlaylistBridge({ from, to, plan, why, mode, playlistId }: {
+  from: Track
+  to: Track
+  plan: MixPlan | undefined
+  why: string[] | undefined
+  mode: MixMode
+  playlistId: string
+}) {
+  const [open, setOpen] = useState(false)
+  const facts = plan && [
+    plan.bpm_out && plan.bpm_in ? `${Math.round(plan.bpm_out)} → ${Math.round(plan.bpm_in)} BPM` : null,
+    plan.key_out && plan.key_in ? `${plan.key_out} → ${plan.key_in}` : null,
+  ].filter(Boolean).join(' · ')
+  return (
+    <li className="mix-bridge mix-bridge--playlist">
+      <button type="button" className="mix-bridge-button" disabled={!plan}
+        onClick={() => plan && openDialog({ type: 'mix-transition', plan, from, to, mode, playlistId })}
+        aria-label={plan ? `Transition from ${from.title} to ${to.title}: ${plan.summary}. Adjust Mix` : 'Preparing the transition'}>
+        <Icon name="radio" />
+        <span className="mix-bridge-text">
+          <span>{plan ? (plan.ready ? plan.summary : `${plan.summary} · Preparing…`) : 'Preparing…'}{plan?.manual ? ' · yours' : ''}</span>
+          {facts && <span className="mix-bridge-facts">{facts}</span>}
+        </span>
+        <span className="mix-bridge-adjust">Adjust Mix</span>
+      </button>
+      {why && why.length > 0 && (
+        <button type="button" className="mix-why-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>Why here?</button>
+      )}
+      {open && why && <ul className="mix-why">{why.map((r) => <li key={r}>{r}</li>)}</ul>}
+    </li>
+  )
 }
 
 /** The plans for the queue's next few transitions (shared by the bridges). */

@@ -7,6 +7,7 @@ import { offline, useOffline } from '../offline'
 import { player } from '../player'
 import { isNative } from '../platform/state'
 import { Icon } from './Icon'
+import { MenuButton, MenuItem } from './Menu'
 
 const songs = (n: number) => `${n} ${n === 1 ? 'song' : 'songs'}`
 
@@ -47,25 +48,32 @@ export function SelectionBar({ selection, tracks, playlist, onClear, onSelectAll
     for (const t of chosen) await offline()?.removeTrack(t.id).catch(() => undefined)
     done(`Removed ${songs(count)} from this device (still in your library)`)
   }
+  const selectAllButton = chosen.length < tracks.length
   return (
     <div className="selection-bar" role="toolbar" aria-label="Selected songs">
-      <span className="selection-count">{songs(chosen.length)} selected</span>
+      <span className="selection-count">{chosen.length} selected</span>
       <button type="button" className="button" onClick={() => { player.playCollection(chosen, { source: { kind: 'tracks', name: 'Selected songs' } }); onClear() }}>
         <Icon name="play" /> Play
       </button>
       <button type="button" className="button button--quiet" onClick={() => { player.playNext(chosen); done(`${songs(chosen.length)} will play next`) }}>Play next</button>
-      <button type="button" className="button button--quiet" onClick={() => { player.addToQueue(chosen); done(`Added ${songs(chosen.length)} to the queue`) }}>Add to queue</button>
-      <button type="button" className="button button--quiet" onClick={() => { openDialog({ type: 'add-to-playlist', tracks: chosen }); onClear() }}>Add to playlist</button>
-      <button type="button" className="button button--quiet" onClick={() => void favorite()}>{allFavorite ? 'Remove from Favorites' : 'Add to Favorites'}</button>
+      <button type="button" className="button button--quiet" onClick={() => { player.addToQueue(chosen); done(`Added ${songs(chosen.length)} to the queue`) }}>Queue</button>
+      <button type="button" className="button button--quiet" onClick={() => { openDialog({ type: 'add-to-playlist', tracks: chosen }); onClear() }}>Playlist</button>
       {isNative() && (
         <button type="button" className="button button--quiet" onClick={() => { openDialog({ type: 'download', target: { kind: 'tracks', id: null, ids: chosen.map((t) => t.id), name: songs(chosen.length) } }); onClear() }}>
           Download
         </button>
       )}
-      {isNative() && downloaded > 0 && <button type="button" className="button button--quiet" onClick={() => void removeDownloads()}>Remove downloads</button>}
-      {playlist && !playlist.readonly && <button type="button" className="button button--quiet" onClick={() => void removeFromPlaylist(playlist)}>Remove from {playlist.name}</button>}
+      <MenuButton label="More actions for the selected songs">
+        {(close) => (
+          <>
+            <MenuItem icon="heart" label={allFavorite ? 'Remove from Favorites' : 'Add to Favorites'} onSelect={() => { close(); void favorite() }} />
+            {isNative() && downloaded > 0 && <MenuItem icon="trash" label="Remove downloads (keeps them on the server)" onSelect={() => { close(); void removeDownloads() }} />}
+            {playlist && !playlist.readonly && <MenuItem icon="trash" label={`Remove from ${playlist.name} (the songs stay in your library)`} onSelect={() => { close(); void removeFromPlaylist(playlist) }} />}
+            {selectAllButton && <MenuItem icon="check" label="Select all" onSelect={() => { close(); onSelectAll() }} />}
+          </>
+        )}
+      </MenuButton>
       <span className="selection-spacer" />
-      {chosen.length < tracks.length && <button type="button" className="button button--quiet" onClick={onSelectAll}>Select all</button>}
       <button type="button" className="button button--quiet" onClick={onClear} aria-label="Clear selection">Clear</button>
     </div>
   )

@@ -37,4 +37,6 @@ export interface PlaybackEngine {
   prepareNext?(src: string | null, plan: import('./mixPlan').MixPlan | null, onHandoff: () => boolean): void
   inTransitionBeforeHandoff?(): boolean
   completeTransitionNow?(): void
+  /** 5.4: ordinary playback: keep this (true next) song's source warm on the standby deck; null clears it. */
+  warmNext?(src: string | null): void
 }
