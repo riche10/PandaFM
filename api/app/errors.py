@@ -20,6 +20,7 @@ from app.navidrome.client import (
     NavidromeError,
     NavidromeForbidden,
     NavidromeNotFound,
+    NavidromeSlow,
     NavidromeUnavailable,
     PlaylistChanged,
 )
@@ -28,7 +29,29 @@ log = logging.getLogger(__name__)
 
 
 def error_response(status_code: int, code: str, message: str, headers: dict[str, str] | None = None) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"error": {"code": code, "message": message}}, headers=headers)
+    # 5.4.2: the safe error code also travels as a header, so a media player that never reads the
+    # body (Android's HTTP data source) can still tell "missing song" from "music server asleep".
+    return JSONResponse(status_code=status_code, content={"error": {"code": code, "message": message}}, headers={"X-PandaFM-Error": code, **(headers or {})})
+
+
+TRANSIENT_RETRY_AFTER_S = "5"
+
+
+def classify(exc: Exception) -> tuple[int, str]:
+    """The (status, code) a Navidrome failure becomes: shared by the handler and the stream log."""
+    if isinstance(exc, NavidromeNotFound):
+        return 404, "not_found"
+    if isinstance(exc, PlaylistChanged):
+        return 409, "playlist_changed"
+    if isinstance(exc, NavidromeForbidden):
+        return 403, "forbidden"
+    if isinstance(exc, NavidromeAuthError):
+        return 503, "navidrome_auth"
+    if isinstance(exc, NavidromeNotConfigured):
+        return 503, "music_server_not_configured"
+    if isinstance(exc, NavidromeUnavailable):
+        return 503, "navidrome_unavailable"
+    return 502, "navidrome_error"
 
 
 async def navidrome_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -56,12 +79,18 @@ async def navidrome_error_handler(request: Request, exc: Exception) -> JSONRespo
         return error_response(503, "music_server_not_configured",
                               "PandaFM isn’t connected to a music server yet. The owner can connect one in Settings › Music server.")
 
+    if isinstance(exc, NavidromeSlow):
+        log.warning("Navidrome slow on %s: %s", request.url.path, exc)
+        return error_response(503, "navidrome_unavailable", "The music server is taking longer than expected to respond.",
+                              headers={"Retry-After": TRANSIENT_RETRY_AFTER_S})
+
     if isinstance(exc, NavidromeUnavailable):
         log.warning("Navidrome unavailable on %s: %s", request.url.path, exc)
         return error_response(
             503,
             "navidrome_unavailable",
             "Navidrome isn’t responding, so your library can’t load right now.",
+            headers={"Retry-After": TRANSIENT_RETRY_AFTER_S},
         )
 
     log.warning("Navidrome error on %s: %s", request.url.path, exc)

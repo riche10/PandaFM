@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     navidrome_user: str | None = None
     navidrome_password: SecretStr | None = None
     navidrome_timeout_seconds: float = 10.0
+    # 5.4.2: opening an audio stream may wait for sleeping NAS disks to spin up (often 10-20 s), so
+    # /rest/stream gets its own bounded wait (time to the response headers, and between chunks).
+    # Every other Navidrome call keeps the short timeout above.
+    navidrome_stream_timeout_seconds: float = 30.0
 
     log_level: str = "info"
     # Keep the track cache in step with Navidrome in the background.
