@@ -9,7 +9,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Response
 
-from app.deps import ItemId, NavidromeDep
+from app.deps import ItemId, NavidromeDep, SessionDep, UserId
+from app.services.favorites import with_likes
 from app.schemas.library import (
     Playlist,
     PlaylistAddTracks,
@@ -32,8 +33,8 @@ async def create_playlist(body: PlaylistCreate, navidrome: NavidromeDep) -> Play
 
 
 @router.get("/playlists/{playlist_id}", response_model=Playlist)
-async def get_playlist(playlist_id: ItemId, navidrome: NavidromeDep) -> Playlist:
-    return await navidrome.get_playlist(playlist_id)
+async def get_playlist(playlist_id: ItemId, navidrome: NavidromeDep, db: SessionDep, user_id: UserId) -> Playlist:
+    return await with_likes(db, user_id, await navidrome.get_playlist(playlist_id))
 
 
 @router.patch("/playlists/{playlist_id}", response_model=Playlist)
@@ -49,9 +50,9 @@ async def delete_playlist(playlist_id: ItemId, navidrome: NavidromeDep) -> Respo
 
 
 @router.post("/playlists/{playlist_id}/tracks", response_model=Playlist)
-async def add_tracks(playlist_id: ItemId, body: PlaylistAddTracks, navidrome: NavidromeDep) -> Playlist:
+async def add_tracks(playlist_id: ItemId, body: PlaylistAddTracks, navidrome: NavidromeDep, db: SessionDep, user_id: UserId) -> Playlist:
     await navidrome.add_to_playlist(playlist_id, body.track_ids)
-    return await navidrome.get_playlist(playlist_id)
+    return await with_likes(db, user_id, await navidrome.get_playlist(playlist_id))
 
 
 @router.delete("/playlists/{playlist_id}/tracks/{index}", response_model=Playlist)

@@ -1,14 +1,12 @@
-"""Favorites: Navidrome's starred songs, albums and artists.
-
-Navidrome stays the source of truth, so favorites set in PandaFM show up in
-any other Subsonic app, and vice versa.
-"""
+"""Favorites (5.5.2): PandaFM owns song likes (see services/favorites.py); album and artist favorites
+still follow the music server's stars."""
 
 import logging
 
 from fastapi import APIRouter, Request, Response
 
-from app.deps import ItemId, NavidromeDep
+from app.deps import ItemId, NavidromeDep, SessionDep, UserId
+from app.services import favorites
 from app.navidrome.client import NavidromeError
 from app.schemas.events import TrackSnapshot
 from app.schemas.library import FavoriteKind, Favorites
@@ -20,8 +18,29 @@ router = APIRouter(tags=["favorites"])
 
 
 @router.get("/favorites", response_model=Favorites)
-async def list_favorites(navidrome: NavidromeDep) -> Favorites:
-    return await navidrome.get_favorites()
+async def list_favorites(db: SessionDep, user_id: UserId, navidrome: NavidromeDep) -> Favorites:
+    """Liked Songs come from PandaFM (5.5.2): a music server with no stars can't empty them. Album and
+    artist favorites still come from the music server; if it doesn't answer, the songs still do."""
+    tracks = await favorites.liked_tracks(db, user_id)
+    try:
+        starred = await navidrome.get_favorites()
+        albums, artists = starred.albums, starred.artists
+    except NavidromeError as exc:
+        log.warning("Album/artist favorites unavailable (%s); Liked Songs come from PandaFM", type(exc).__name__)
+        albums, artists = [], []
+    return Favorites(tracks=tracks, albums=albums, artists=artists)
+
+
+@router.put("/tracks/{item_id}/favorite", status_code=204, name="favorite_track", summary="Like a song")
+async def favorite_track(item_id: ItemId, db: SessionDep, user_id: UserId, navidrome: NavidromeDep) -> Response:
+    await favorites.set_track_like(db, user_id, navidrome, item_id, True)
+    return Response(status_code=204)
+
+
+@router.delete("/tracks/{item_id}/favorite", status_code=204, name="unfavorite_track", summary="Unlike a song")
+async def unfavorite_track(item_id: ItemId, db: SessionDep, user_id: UserId, navidrome: NavidromeDep) -> Response:
+    await favorites.set_track_like(db, user_id, navidrome, item_id, False)
+    return Response(status_code=204)
 
 
 def _register(kind: FavoriteKind, collection: str) -> None:
@@ -66,6 +85,5 @@ async def _remember(kind: FavoriteKind, item_id: str, favorite: bool, navidrome,
 
 # PUT /api/tracks/{id}/favorite, DELETE /api/tracks/{id}/favorite, and the same
 # for albums and artists. PUT/DELETE are idempotent, so retries are harmless.
-_register(FavoriteKind.track, "tracks")
 _register(FavoriteKind.album, "albums")
 _register(FavoriteKind.artist, "artists")
