@@ -20,8 +20,9 @@ const reconnectListeners = new Set<() => void>()
 export const isOnline = () => network.connected && (typeof navigator === 'undefined' || navigator.onLine !== false)
 
 /** Something to run whenever the network comes back (e.g. sending buffered listening events). */
-export function onReconnect(listener: () => void): void {
+export function onReconnect(listener: () => void): () => void {
   reconnectListeners.add(listener)
+  return () => reconnectListeners.delete(listener)
 }
 
 function networkChanged(next: { connected: boolean; metered: boolean; wifi: boolean }) {

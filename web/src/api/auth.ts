@@ -72,7 +72,14 @@ export async function checkAuth(): Promise<void> {
   try {
     const status = await serverStatus()
     let signedIn = status.signed_in
-    if (platform.auth && !status.setup_required) signedIn = (await platform.auth.status()).signedIn && (await bearer(true)) !== null
+    if (platform.auth && !status.setup_required && (await platform.auth.status()).signedIn) {
+      // 5.5.1: refresh now, but only the device's credential decides: a refresh that fails for network
+      // reasons keeps it (and the app); a refused one makes the native side forget it (signed out).
+      await bearer(true).catch(() => null)
+      signedIn = (await platform.auth.status()).signedIn
+    } else if (platform.auth && !status.setup_required) {
+      signedIn = false
+    }
     authStore.setState({ state: status.setup_required ? 'setup' : signedIn ? 'signed-in' : 'signed-out', username: status.username, https: status.https })
   } catch {
     // The server can't be reached. The app can still play downloads if this device was signed in.

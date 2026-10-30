@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { resolveSource } from '../../offline'
 import { useCurrentTrack } from '../../player'
+import { useConnection } from '../../api/connection'
 import { bridgeErrors } from '../../player/nativeStore'
 import { isNative, platform } from '../../platform/state'
 import { toast } from '../../library'
@@ -39,12 +40,17 @@ export function Diagnostics() {
     const timer = setInterval(refresh, 2000)
     return () => clearInterval(timer)
   }, [refresh])
+  const connState = useConnection((c) => c.state)
+  const connFailures = useConnection((c) => c.failures)
+  const connEvents = useConnection((c) => c.events)
   const source = track ? resolveSource(track.id) : null
   const rows: [string, string][] = [
     ['PandaFM version', __APP_VERSION__],
     ['Platform', isNative() ? 'Android' : 'Browser'],
     ['Playback engine', isNative() ? (failed ? 'Native player unavailable' : 'Media3 (native queue)') : 'HTML audio (browser), web queue'],
   ]
+  // 5.5.1: the app's connection state and how it got there (trigger, from → to, probe, failures)
+  rows.push(['Connection', `${connState} (failures ${connFailures})`], ['Connection events', connEvents.length ? connEvents.join('\n') : '—'])
   if (!isNative()) {
     rows.push(['Source', !source ? 'Nothing playing' : 'Server stream'])
     rows.push(['Codec', track?.quality ? `${track.quality.codec}${track.quality.detail ? ` · ${track.quality.detail}` : ''}` : '—'])

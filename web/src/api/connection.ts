@@ -1,8 +1,8 @@
 import { createStore, useStore } from 'zustand'
-import { isNative, platform } from '../platform/state'
-import { type ConnectionState, deriveConnection, isPandaHealth, type Probe, whileRechecking } from '../platform/connection'
-import { authStore, checkAuth } from './auth'
-import { apiUrl } from './client'
+import { isNative, platform } from '../platform/state.ts'
+import { type ConnectionState, deriveConnection, isPandaHealth, type Probe, RETRY_AFTER_MS, whileRechecking } from '../platform/connection.ts'
+import { authStore, checkAuth } from './auth.ts'
+import { apiUrl } from './client.ts'
 
 export interface SetupState {
   owner_configured: boolean
@@ -17,9 +17,17 @@ interface ConnectionStore {
   setup: SetupState | null
   musicServerOk: boolean | null
   offlineChosen: boolean
+  /** 5.5.1: this session has had a usable connection to `serverKey` */
+  everUsable: boolean
+  serverKey: string
+  /** consecutive failed probes (0 after any success) */
+  failures: number
+  /** recent transitions, newest first, for Settings › Diagnostics */
+  events: string[]
 }
 
-export const connectionStore = createStore<ConnectionStore>()(() => ({ state: 'checking', probe: 'pending', setup: null, musicServerOk: null, offlineChosen: false }))
+const initial = (): ConnectionStore => ({ state: 'checking', probe: 'pending', setup: null, musicServerOk: null, offlineChosen: false, everUsable: false, serverKey: '', failures: 0, events: [] })
+export const connectionStore = createStore<ConnectionStore>()(initial)
 export const useConnection = <T,>(selector: (s: ConnectionStore) => T) => useStore(connectionStore, selector)
 
 const PROBE_TIMEOUT_MS = 8000
@@ -35,35 +43,85 @@ async function fetchJson(path: string): Promise<unknown> {
   }
 }
 
-function update() {
+const serverKey = () => (isNative() ? platform.server : '') || ''
+const EVENTS = 20
+
+function update(trigger?: string) {
   const s = connectionStore.getState()
   const auth = authStore.getState().state
+  const sameServer = s.serverKey === serverKey()
+  const everUsable = s.everUsable && sameServer // a changed address starts over
+  // Once usable, a failed auth *request* (offline, unreachable) is the network, not a sign-out: only the
+  // server or the device's credential saying so signs this app out.
+  const transientAuth = auth === 'offline' || auth === 'unreachable'
   const next = deriveConnection({
-      native: isNative(),
-      hasServer: !!platform.server || !isNative(),
-      probe: s.probe,
-      ownerConfigured: s.setup?.owner_configured,
-      signedIn: auth === 'unknown' ? undefined : auth === 'signed-in',
-      musicServerConfigured: s.setup?.music_server_configured,
-      musicServerOk: s.musicServerOk ?? undefined,
-      offlineChosen: s.offlineChosen,
+    native: isNative(),
+    hasServer: !!platform.server || !isNative(),
+    probe: s.probe,
+    ownerConfigured: s.setup?.owner_configured,
+    signedIn: everUsable && transientAuth ? true : auth === 'unknown' ? undefined : auth === 'signed-in',
+    musicServerConfigured: s.setup?.music_server_configured,
+    musicServerOk: s.musicServerOk ?? undefined,
+    offlineChosen: s.offlineChosen,
+    everUsable,
   })
-  connectionStore.setState({ state: whileRechecking(s.state, next) })
+  const state = whileRechecking(s.state, next)
+  // usable *for this server*: only a state derived from a real answer counts, never one kept on screen
+  // while a check (perhaps for a new address) is still pending
+  const usableNow = s.probe === 'pandafm' && (next === 'ready' || next === 'degraded')
+  const events = state !== s.state || trigger
+    ? [`${new Date().toISOString().slice(11, 19)} ${trigger ?? 'update'}: ${s.state} → ${state} (probe ${s.probe}, failures ${s.failures})`, ...s.events].slice(0, EVENTS)
+    : s.events
+  connectionStore.setState({ state, everUsable: everUsable || usableNow, serverKey: everUsable || usableNow ? serverKey() : s.serverKey, events })
+  scheduleRetry()
 }
+
 // Signing in (or creating the owner) changes what the server will tell us (e.g. owner now exists,
 // music server still missing): fetch the facts again. checkConnection() reuses a run in progress.
 authStore.subscribe((now, before) => {
-  if (now.state === 'signed-in' && before.state !== 'signed-in') void checkConnection()
+  if (now.state === 'signed-in' && before.state !== 'signed-in') void checkConnection({ trigger: 'sign-in' })
   else update()
 })
 
 let running: Promise<void> | null = null
+let generation = 0
+let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-/** Gather the facts once (launch, Try again, after sign-in or setup, back online) and derive the state. */
-export function checkConnection(): Promise<void> {
-  running ??= (async () => {
+/** While interrupted, check again on a short schedule (5, 15, 30 s, then every minute) until it answers. */
+function scheduleRetry() {
+  const s = connectionStore.getState()
+  if (s.state !== 'interrupted') {
+    if (retryTimer) clearTimeout(retryTimer)
+    retryTimer = null
+    return
+  }
+  if (retryTimer || running) return
+  const ms = RETRY_AFTER_MS[Math.min(s.failures - 1, RETRY_AFTER_MS.length - 1)] ?? RETRY_AFTER_MS[0]
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    void checkConnection({ trigger: 'retry' })
+  }, ms)
+}
+
+/**
+ * Gather the facts (launch, Try again, after sign-in or setup, back online) and derive the state.
+ * Calls while a check runs share it, unless `fresh` (Try again, a settings change): then a new check
+ * starts and the older one's result is discarded when it lands. A result is also discarded if the
+ * server address changed meanwhile. A failure after this session has been usable doesn't tear the
+ * app down ('interrupted'); see deriveConnection.
+ */
+export function checkConnection(opts: { fresh?: boolean; trigger?: string } = {}): Promise<void> {
+  if (running && !opts.fresh) return running
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+  const mine = ++generation
+  const server = serverKey()
+  const current = () => mine === generation && server === serverKey()
+  const run = (async () => {
     connectionStore.setState({ probe: 'pending', offlineChosen: false })
-    update()
+    update(opts.trigger ?? 'check')
     if (isNative() && !platform.server) return update()
     let probe: Probe = 'unreachable'
     let musicServerOk: boolean | null = null
@@ -74,17 +132,33 @@ export function checkConnection(): Promise<void> {
     } catch {
       probe = 'unreachable'
     }
-    let setup: SetupState | null = null
+    if (!current()) return // a newer check (or another server) owns the state now
+    let setup: SetupState | null = connectionStore.getState().setup
     if (probe === 'pandafm') {
-      setup = (await fetchJson('/setup/state').catch(() => null)) as SetupState | null
+      setup = ((await fetchJson('/setup/state').catch(() => null)) as SetupState | null) ?? setup
       await checkAuth()
+      if (!current()) return
+      connectionStore.setState({ probe, setup, musicServerOk, failures: 0 })
+    } else {
+      // keep the last known facts: only the probe and the failure count change
+      connectionStore.setState({ probe, failures: connectionStore.getState().failures + 1 })
     }
-    connectionStore.setState({ probe, setup, musicServerOk })
-    update()
+    update(probe === 'pandafm' ? 'answered' : `probe ${probe}`)
   })().finally(() => {
-    running = null
+    if (running === run) running = null
+    scheduleRetry()
   })
-  return running
+  running = run
+  return run
+}
+
+/** Test only: back to a fresh session. */
+export function resetConnectionForTests(): void {
+  generation++
+  running = null
+  if (retryTimer) clearTimeout(retryTimer)
+  retryTimer = null
+  connectionStore.setState(initial())
 }
 
 /** "Continue offline": play downloads without the server (the saved address is kept). */
