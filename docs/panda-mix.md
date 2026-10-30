@@ -237,3 +237,30 @@ history line; it says what Panda planned, what happened and why.
 - **Each personality** on the same playlist: Gentle should be audibly shorter and cleaner than Energetic.
 - **Adjust Mix → Preview** then the real transition: they should sound the same.
 - **A cold NAS** during a preload: a shorter blend or a plain handoff, never a stop.
+
+
+## 5.5.1: half/double time, midpoint alignment, reasons
+
+- **Half/double time is first-class.** 174 ↔ 87, 140 ↔ 70 and 150 ↔ 75 get exactly what an equal-tempo
+  pair gets: the drift is computed between Song A's beat and Song B's beat *after folding* (87 counts
+  as 174), never between mismatched raw beat intervals. Diagnostics show both (`beat_ms_out`,
+  `beat_ms_in_folded`) and the slip per beat.
+- **What makes 174 → 85 short:** 85 isn't half of 174 (2 × 85 = 170), so the two are 2.3% apart after
+  folding. Without time-stretching the beats slip ~8 ms per beat; the drift budget then limits the
+  blend, exactly as it would for 174 → 170. The reasons say so.
+- **Midpoint alignment.** The beats are aligned at the blend's midpoint (both decks equally loud), so
+  the unavoidable slip is split ± around it: the worst misalignment stays within the personality's
+  budget (20 / 30 / 30 / 45 ms) while the blend can be twice as long as when aligned at the start.
+  Energetic may use up to 24 beats in a moderate blend (16 otherwise).
+- **Reasons** read one fact per line, then what limited the transition, then the result:
+
+```
+Tempo: 174 → 85 BPM (half/double time)
+Beat grid: strong
+Bars: aligned
+Key: uncertain
+Vocals: low collision
+Bass: low
+Limited by: Half/double time, but 2.3% apart after folding: without time-stretching the beats slip 8 ms per beat, so the blend is limited to 8 beats
+Result: Short blend, 2.8 s
+```

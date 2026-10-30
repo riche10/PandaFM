@@ -26,7 +26,7 @@ from starlette.responses import StreamingResponse
 from app.audio.live import live_aac
 from app.audio.profiles import plan
 from app.audio.quality import revision
-from app.errors import classify, error_response
+from app.errors import classify, error_response, upstream_class
 from app.navidrome.client import NavidromeError
 from app.navidrome.parse import facts_of
 from app.services.conversions import ConversionError
@@ -151,8 +151,8 @@ async def stream_track(
         response = await _stream_track(track_id, navidrome, request, db, user_id, quality, range_header, if_range)
     except NavidromeError as exc:
         status, code = classify(exc)
-        stream_log.warning("stream_open track=%s quality=%s range=%s failed elapsed_ms=%d panda_status=%d error=%s",
-                    track_id, quality, ranged, (time.monotonic() - started) * 1000, status, code)
+        stream_log.warning("stream_open track=%s quality=%s range=%s failed elapsed_ms=%d panda_status=%d error=%s upstream=%s",
+                    track_id, quality, ranged, (time.monotonic() - started) * 1000, status, code, upstream_class(exc))
         raise
     stream_log.info("stream_open track=%s quality=%s range=%s ready elapsed_ms=%d status=%d",
              track_id, quality, ranged, (time.monotonic() - started) * 1000, getattr(response, "status_code", 200))

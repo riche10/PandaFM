@@ -140,3 +140,25 @@ def test_a_failed_stream_open_is_logged_without_secrets(caplog):
     text = " ".join(lines)
     assert "secret" not in text and "Authorization" not in text
     assert not re.search(r"[?&](t|s|u|p)=", text)  # no Subsonic credential query parameters
+
+
+
+def test_a_502_names_what_navidrome_actually_did(caplog):
+    """5.5.1: repeated 'HTTP 502 · navidrome_error' must be explainable from one log line."""
+    from app.navidrome.client import NavidromeError
+    from app.routers.media import stream_track
+
+    cases = [(NavidromeError("Error opening file", 0), "panda_status=502 error=navidrome_error upstream=subsonic_0"),
+             (NavidromeUnavailable("Navidrome returned HTTP 500 for stream"), "panda_status=503 error=navidrome_unavailable upstream=http_500"),
+             (NavidromeUnavailable("Cannot reach Navidrome (ConnectError: refused)"), "upstream=connect"),
+             (NavidromeSlow("Navidrome didn't start the audio within 30s"), "upstream=timeout")]
+    caplog.set_level(logging.INFO, logger="pandafm.stream")
+    for exc, expected in cases:
+        class Fake:
+            async def open_stream(self, track_id, **kwargs):
+                raise exc
+        caplog.clear()
+        with pytest.raises(type(exc)):
+            asyncio.run(stream_track("trk9", Fake(), None, None, 1, "original", None, None))
+        line = [r.getMessage() for r in caplog.records if r.name == "pandafm.stream"][-1]
+        assert expected in line and "track=trk9 quality=original" in line, line

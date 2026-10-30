@@ -596,3 +596,20 @@ docker logs pandafm-api 2>&1 | grep stream_open
 
 Each request logs `waiting_for_navidrome`, then `ready elapsed_ms=… status=…`
 or `failed elapsed_ms=… panda_status=… error=…` (no tokens or credentials).
+
+
+## When the server doesn't answer (5.5.1)
+
+Once PandaFM has reached its server in a session, a check that fails (a phone waking up, Wi-Fi changing,
+a busy server) no longer replaces the app with "PandaFM not available". The app stays as it is, Now
+Playing, the queue and native playback included, with a banner: "Reconnecting to PandaFM…" after one
+miss, "PandaFM server is temporarily unreachable. Playback may continue from buffer or downloads." after
+more, and a Try again button (it checks at once). PandaFM checks again by itself after 5, 15 and 30 s,
+then every minute, and the banner goes away on the first answer. The full "can't reach" screen is only
+for a session that has never reached the server, or a changed server address. A sign-in check that fails
+for network reasons never signs the device out; only the server or the device's credential can.
+Settings › Diagnostics lists the recent connection changes (what triggered them, from → to).
+
+The server log's stream line now also says what Navidrome did when a stream fails:
+`stream_open track=… quality=… failed elapsed_ms=… panda_status=502 error=navidrome_error upstream=subsonic_0`
+(`subsonic_<code>`, `http_<status>`, `timeout`, `connect` or `bad_response`).

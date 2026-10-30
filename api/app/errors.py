@@ -37,6 +37,25 @@ def error_response(status_code: int, code: str, message: str, headers: dict[str,
 TRANSIENT_RETRY_AFTER_S = "5"
 
 
+def upstream_class(exc: Exception) -> str:
+    """5.5.1: what Navidrome itself did, from PandaFM's own exception (never a URL, query or credential):
+    subsonic_<code>, http_<status>, timeout, connect or bad_response."""
+    import re
+
+    text = str(exc)
+    if isinstance(exc, NavidromeSlow) or "did not answer within" in text or "didn't start the audio" in text:
+        return "timeout"
+    m = re.search(r"returned HTTP (\d{3})", text)
+    if m:
+        return f"http_{m.group(1)}"
+    if text.startswith("Cannot reach Navidrome"):
+        return "connect"
+    if isinstance(exc, NavidromeUnavailable):
+        return "bad_response"
+    code = getattr(exc, "code", None)
+    return f"subsonic_{code}" if code is not None else "unknown"
+
+
 def classify(exc: Exception) -> tuple[int, str]:
     """The (status, code) a Navidrome failure becomes: shared by the handler and the stream log."""
     if isinstance(exc, NavidromeNotFound):
