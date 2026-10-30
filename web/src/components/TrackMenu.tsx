@@ -59,7 +59,7 @@ export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay:
             <MenuItem icon="playNext" label="Play next" onSelect={run(() => { player.playNext([track]); toast(`“${track.title}” will play next`) })} />
             <MenuItem icon="queue" label="Add to queue" onSelect={run(() => { player.addToQueue([track]); toast(`Added “${track.title}” to the queue`) })} />
             <MenuItem
-              icon={favorite ? 'heart' : 'heartOutline'}
+              icon={favorite ? 'paw' : 'pawOutline'}
               label={favorite ? 'Remove from Favorites' : 'Add to Favorites'}
               onSelect={run(() => void toggleFavorite('track', track.id, favorite))}
             />

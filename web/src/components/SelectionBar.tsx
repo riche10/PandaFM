@@ -73,7 +73,7 @@ export function SelectionBar({ selection, tracks, playlist, playlistIndexes, mix
       <MenuButton label="More actions for the selected songs">
         {(close) => (
           <>
-            <MenuItem icon="heart" label={allFavorite ? 'Remove from Favorites' : 'Add to Favorites'} onSelect={() => { close(); void favorite() }} />
+            <MenuItem icon={allFavorite ? 'paw' : 'pawOutline'} label={allFavorite ? 'Remove from Favorites' : 'Add to Favorites'} onSelect={() => { close(); void favorite() }} />
             {isNative() && downloaded > 0 && <MenuItem icon="trash" label="Remove downloads (keeps them on the server)" onSelect={() => { close(); void removeDownloads() }} />}
             {playlist && !playlist.readonly && <MenuItem icon="trash" label={`Remove from ${playlist.name} (the songs stay in your library)`} onSelect={() => { close(); void removeFromPlaylist(playlist) }} />}
             {selectAllButton && <MenuItem icon="check" label="Select all" onSelect={() => { close(); onSelectAll() }} />}

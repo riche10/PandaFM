@@ -26,7 +26,7 @@ export function FavoritesView() {
         color="hsl(340 32% 26%)"
         art={
           <span className="hero-art-tile hero-art-tile--favorites">
-            <Icon name="heart" />
+            <Icon name="paw" />
           </span>
         }
         kind="Collection"
@@ -49,8 +49,8 @@ export function FavoritesView() {
       ) : !data ? (
         <Loading label="Loading favorites…" />
       ) : !tracks.length && !data.albums.length && !data.artists.length ? (
-        <EmptyState icon="heartOutline" title="Nothing here yet">
-          <p>Tap the heart on a song, album or artist to keep it here. Favorites are saved in Navidrome, so other apps see them too.</p>
+        <EmptyState icon="pawOutline" title="Nothing here yet">
+          <p>Tap the paw on a song, album or artist to keep it here. Your favorite songs are kept by PandaFM and shared with your music server, so other apps see them too.</p>
         </EmptyState>
       ) : (
         <>

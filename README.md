@@ -113,7 +113,7 @@ tap it for Now Playing.
   every matching song (5.5.2; it used to stop at 20), and playing from there plays all of them.
 - **Library**: Albums (recently added, A–Z, random), Artists, Songs (all,
   in Navidrome's order, or random) and Playlists.
-- **Favorites**: tap a heart on any song, album or artist. Song likes belong to PandaFM (5.5.2):
+- **Favorites**: tap the paw on any song, album or artist. Song likes belong to PandaFM (5.5.2):
   they're saved in PandaFM first and mirrored to your music server's stars so other Subsonic apps see
   them too, but a music server with no stars (a fresh install, a new server) never removes them. Album
   and artist favorites still follow your music server's stars.

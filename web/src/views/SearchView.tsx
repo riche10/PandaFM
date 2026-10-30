@@ -92,7 +92,7 @@ function SearchStart() {
         <QuickTile to="/library/artists" icon="artist" label="Artists" tone="linear-gradient(135deg, #2a3d33, #151f1a)" />
         <QuickTile to="/library/songs" icon="music" label="Songs" tone="linear-gradient(135deg, #3a2f4a, #1c1725)" />
         <QuickTile to="/library/playlists" icon="playlist" label="Playlists" tone="linear-gradient(135deg, #46332a, #221915)" />
-        <QuickTile to="/favorites" icon="heart" label="Favorites" tone="linear-gradient(135deg, #4a2a3a, #23161d)" />
+        <QuickTile to="/favorites" icon="paw" label="Favorites" tone="linear-gradient(135deg, #4a2a3a, #23161d)" />
         <QuickTile to="/library/albums?sort=random" icon="shuffle" label="Random albums" tone="linear-gradient(135deg, #3d3a26, #1f1d14)" />
       </nav>
     </>
