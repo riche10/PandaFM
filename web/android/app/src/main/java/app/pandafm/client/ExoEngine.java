@@ -112,13 +112,18 @@ final class ExoEngine implements EngineCore.PlayerPort {
         for (Throwable t = error; t != null; t = t.getCause()) {
             if (t instanceof HttpDataSource.InvalidResponseCodeException) {
                 HttpDataSource.InvalidResponseCodeException e = (HttpDataSource.InvalidResponseCodeException) t;
-                String code = header(e.headerFields, "X-PandaFM-Error");
-                if (code == null || !code.matches("[a-z_]{1,40}")) code = HttpFailure.codeFromBody(e.responseBody);
-                return new HttpFailure(e.responseCode, HttpFailure.seconds(header(e.headerFields, "Retry-After")), code);
+                return httpFailure(e.responseCode, e.headerFields, e.responseBody);
             }
             if (t.getCause() == t) break;
         }
         return null;
+    }
+
+    /** Pure part of HTTP failure decoding, kept JVM-testable without android.net.Uri/DataSpec. */
+    static HttpFailure httpFailure(int status, java.util.Map<String, java.util.List<String>> headers, byte[] body) {
+        String code = header(headers, "X-PandaFM-Error");
+        if (code == null || !code.matches("[a-z_]{1,40}")) code = HttpFailure.codeFromBody(body);
+        return new HttpFailure(status, HttpFailure.seconds(header(headers, "Retry-After")), code);
     }
 
     static String header(java.util.Map<String, java.util.List<String>> headers, String name) {
