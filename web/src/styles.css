@@ -548,11 +548,11 @@ button {
 
 @media (prefers-reduced-motion: no-preference) {
   .favorite-button[aria-pressed='true'] .icon {
-    animation: heart-pop 0.3s var(--ease);
+    animation: paw-pop 0.3s var(--ease);
   }
 }
 
-@keyframes heart-pop {
+@keyframes paw-pop {
   50% {
     transform: scale(1.25);
   }

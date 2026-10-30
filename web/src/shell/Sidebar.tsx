@@ -56,7 +56,7 @@ export function Sidebar() {
         <li>
           <NavLink to="/favorites" className="nav-link">
             <span className="nav-tile nav-tile--favorites">
-              <Icon name="heart" />
+              <Icon name="paw" />
             </span>
             <span>Favorites</span>
           </NavLink>

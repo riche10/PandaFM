@@ -98,7 +98,7 @@ function QuickAccess() {
 
   return (
     <nav className="quick-grid" aria-label="Quick access">
-      <QuickTile to="/favorites" icon="heart" label="Favorites" tone={TONES.favorites} />
+      <QuickTile to="/favorites" icon="paw" label="Favorites" tone={TONES.favorites} />
       <QuickTile to="/library/playlists" icon="playlist" label="Playlists" tone={TONES.playlists} />
       <QuickTile
         to="/library/albums?sort=newest"
@@ -200,7 +200,7 @@ function FavoriteSections() {
             />
           </div>
         ) : (
-          <p className="hint">Tap the heart on any song and it will wait for you here.</p>
+          <p className="hint">Tap the paw on any song and it will wait for you here.</p>
         )}
       </section>
       {data.albums.length > 0 && (

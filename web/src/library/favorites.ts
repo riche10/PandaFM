@@ -3,7 +3,7 @@ import type { FavoriteKind } from '../api/library'
 
 // Favorites live in Navidrome. Data from the API already says whether each
 // song/album/artist is a favorite; this store only remembers changes made
-// in this session, so every heart for the same item agrees immediately,
+// in this session, so every paw for the same item agrees immediately,
 // even in lists loaded before the change.
 
 export interface FavoritesState {

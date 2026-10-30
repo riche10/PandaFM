@@ -7,7 +7,7 @@ import { createPlaylistsStore } from './playlists.ts'
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('favorites store', () => {
-  it('flips the heart at once and keeps it when Navidrome agrees', async () => {
+  it('flips the paw at once and keeps it when Navidrome agrees', async () => {
     const calls: [FavoriteKind, string, boolean][] = []
     const messages: string[] = []
     const store = createFavoritesStore({

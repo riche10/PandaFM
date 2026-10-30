@@ -20,7 +20,7 @@ export function FavoriteButton({ kind, id, fromServer, label, className = '' }: 
       aria-label={favorite ? `Remove ${label} from Favorites` : `Add ${label} to Favorites`}
       onClick={() => void toggleFavorite(kind, id, favorite)}
     >
-      <Icon name={favorite ? 'heart' : 'heartOutline'} />
+      <Icon name={favorite ? 'paw' : 'pawOutline'} />
     </button>
   )
 }

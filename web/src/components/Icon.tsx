@@ -1,5 +1,5 @@
 // Simple geometric icons on a 24×24 grid. Filled unless marked as outlines.
-type IconDef = { d: string; outline?: boolean; evenOdd?: boolean }
+type IconDef = { d: string; outline?: boolean; evenOdd?: boolean; strokeWidth?: number }
 
 const ICONS = {
   play: { d: 'M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.9-6.8a.8.8 0 0 0 0-1.4L9.2 4.5A.8.8 0 0 0 8 5.2z' },
@@ -58,7 +58,10 @@ const ICONS = {
   info: { d: 'M12 2.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zM11 10.5v6.5h2v-6.5zm0-3.5v2h2V7z', evenOdd: true },
   filter: { d: 'M3 5h18v2H3zm3 6h12v2H6zm4 6h4v2h-4z' },
   tag: { d: 'M3 3h8.6l9.4 9.4-8.6 8.6L3 11.6zm4.5 2.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z', evenOdd: true },
-  paw: { d: 'M12 13c-2.8 0-5 2.3-5 4.6 0 1.6 1.2 2.4 2.6 2.4 1 0 1.6-.5 2.4-.5s1.4.5 2.4.5c1.4 0 2.6-.8 2.6-2.4 0-2.3-2.2-4.6-5-4.6zM6.5 12a2 2.4 0 1 0 0-4.8 2 2.4 0 0 0 0 4.8zm11 0a2 2.4 0 1 0 0-4.8 2 2.4 0 0 0 0 4.8zM9.5 8a2 2.5 0 1 0 0-5 2 2.5 0 0 0 0 5zm5 0a2 2.5 0 1 0 0-5 2 2.5 0 0 0 0 5z' },
+  // PandaFM's paw (5.5.2): Panda Radio, and the Favorites symbol. One main pad, four toes; the outline is
+  // the same shape stroked a little lighter, so five small shapes stay open at row and menu sizes.
+  paw: { d: 'M12 12.9c-3.1 0-5.6 2.6-5.6 5.1 0 1.9 1.3 3 3 3 1.2 0 1.8-.6 2.6-.6s1.4.6 2.6.6c1.7 0 3-1.1 3-3 0-2.5-2.5-5.1-5.6-5.1zM4.4 13a2 2.4 0 1 0 0-4.8 2 2.4 0 0 0 0 4.8zm15.2 0a2 2.4 0 1 0 0-4.8 2 2.4 0 0 0 0 4.8zM8.9 7.5a2.1 2.6 0 1 0 0-5.2 2.1 2.6 0 0 0 0 5.2zm6.2 0a2.1 2.6 0 1 0 0-5.2 2.1 2.6 0 0 0 0 5.2z' },
+  pawOutline: { d: 'M12 12.9c-3.1 0-5.6 2.6-5.6 5.1 0 1.9 1.3 3 3 3 1.2 0 1.8-.6 2.6-.6s1.4.6 2.6.6c1.7 0 3-1.1 3-3 0-2.5-2.5-5.1-5.6-5.1zM4.4 13a2 2.4 0 1 0 0-4.8 2 2.4 0 0 0 0 4.8zm15.2 0a2 2.4 0 1 0 0-4.8 2 2.4 0 0 0 0 4.8zM8.9 7.5a2.1 2.6 0 1 0 0-5.2 2.1 2.6 0 0 0 0 5.2zm6.2 0a2.1 2.6 0 1 0 0-5.2 2.1 2.6 0 0 0 0 5.2z', outline: true, strokeWidth: 1.7 },
   download: { d: 'M11 3.5h2v9.2l3.3-3.3 1.4 1.4-5.7 5.7-5.7-5.7 1.4-1.4 3.3 3.3zM5 18h14v2.5H5z' },
   downloaded: { d: 'M12 2.5a9.5 9.5 0 1 1 0 19 9.5 9.5 0 0 1 0-19zm-1.4 12.4-3-3-1.4 1.4 4.4 4.4 7.4-7.4-1.4-1.4z', evenOdd: true },
   cloud: { d: 'M7 19a5 5 0 0 1-.6-10A6.5 6.5 0 0 1 19 10a4.5 4.5 0 0 1-.5 9zm0-2h11.5a2.5 2.5 0 0 0 .2-5l-1-.1-.1-1A4.5 4.5 0 0 0 8.4 10l-.2.9-.9.1A3 3 0 0 0 7 17z' },
@@ -74,7 +77,7 @@ export function Icon({ name, className = 'icon' }: { name: IconName; className?:
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       {icon.outline ? (
-        <path d={icon.d} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        <path d={icon.d} fill="none" stroke="currentColor" strokeWidth={icon.strokeWidth ?? 2} strokeLinejoin="round" />
       ) : (
         <path d={icon.d} fill="currentColor" fillRule={icon.evenOdd ? 'evenodd' : undefined} />
       )}
