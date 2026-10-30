@@ -1010,4 +1010,91 @@ public class PandaDjEngineTest {
         assertEquals(1f, end[1], 1e-6f);
     }
 
+
+    // ── 5.5.2: Panda Mix live edits (mode, Remix) while that playlist plays ──
+    List<String> uids() {
+        List<String> out = new ArrayList<>();
+        for (QueueItem it : controller.queue.items) out.add(it.trackId() + ":" + it.uid);
+        return out;
+    }
+
+    List<String> ids() {
+        List<String> out = new ArrayList<>();
+        for (QueueItem it : controller.queue.items) out.add(it.trackId());
+        return out;
+    }
+
+    @Test
+    public void aModeChangeKeepsTheSongAndPlansTheFutureInTheNewMode() {
+        startMix("a", "b", "c");
+        List<String> modes = new ArrayList<>();
+        controller.setMixPlans((from, to, mode, playlist, window) -> {
+            modes.add(mode);
+            return MixFallback.plan(from, to, mode);
+        });
+        pa.position = 50_000;
+        pa.calls.clear();
+        String current = controller.queue.current().uid;
+        assertTrue(controller.updateMix("p1", "energetic", null));
+        assertEquals("energetic", controller.mixMode());
+        assertEquals(current, controller.queue.current().uid);
+        assertEquals(0, controller.queue.index);
+        assertTrue(pa.pwr);
+        assertEquals(50_000L, pa.position);
+        assertFalse(pa.calls.stream().anyMatch(c -> c.startsWith("setMediaItem") || c.startsWith("seekTo"))); // no reload, no seek
+        assertTrue(modes.contains("energetic")); // the next transition is planned in the new mode
+    }
+
+    @Test
+    public void aRemixReordersOnlyTheUpcomingSongsAndKeepsEachItem() {
+        startMix("a", "b", "c", "d", "e");
+        List<String> before = uids();
+        assertTrue(controller.updateMix("p1", null, Arrays.asList("c", "a", "e", "b", "d")));
+        assertEquals(Arrays.asList("a", "e", "b", "d", "c"), ids()); // after a: e, b, d, then around to c
+        assertEquals(before.get(0), uids().get(0)); // the current song is the same item
+        assertTrue(uids().containsAll(before)); // every item kept its identity
+        assertTrue(pa.pwr);
+    }
+
+    @Test
+    public void aRemixKeepsDuplicateOccurrencesApart() {
+        startMix("a", "b", "a", "c");
+        String secondA = controller.queue.items.get(2).uid;
+        assertTrue(controller.updateMix("p1", null, Arrays.asList("a", "c", "a", "b")));
+        assertEquals(Arrays.asList("a", "c", "a", "b"), ids());
+        assertEquals(secondA, controller.queue.items.get(2).uid); // the later A is still its own occurrence
+        assertEquals(4, new java.util.HashSet<>(uids()).size());
+    }
+
+    @Test
+    public void songsAddedByHandStayAfterTheRemixedMix() {
+        startMix("a", "b", "c");
+        controller.playNext(NativeQueueTest.tracks("x"));
+        assertTrue(controller.updateMix("p1", null, Arrays.asList("a", "c", "b")));
+        assertEquals(Arrays.asList("a", "c", "b", "x"), ids());
+    }
+
+    @Test
+    public void anotherPlaylistsSettingChangesNothingHere() {
+        startMix("a", "b", "c");
+        assertFalse(controller.updateMix("other", "gentle", Arrays.asList("c", "b", "a")));
+        assertEquals("auto", controller.mixMode());
+        assertEquals(Arrays.asList("a", "b", "c"), ids());
+    }
+
+    @Test
+    public void aBlendUnderWayKeepsItsNextSong() {
+        startMix("a", "b", "c", "d");
+        pa.position = 178_500;
+        dj.tick();
+        pb.state = STATE_READY;
+        cb.onPlayerChanged();
+        pa.position = 190_000;
+        dj.tick(); // blending a → b, before the handoff
+        assertTrue(dj.running());
+        controller.updateMix("p1", null, Arrays.asList("a", "d", "c", "b"));
+        assertEquals("b", controller.queue.items.get(1).trackId()); // b is already fading in: it stays next
+        assertEquals(Arrays.asList("a", "b", "d", "c"), ids());
+    }
+
 }

@@ -27,7 +27,10 @@ interface ConnectionStore {
 }
 
 const initial = (): ConnectionStore => ({ state: 'checking', probe: 'pending', setup: null, musicServerOk: null, offlineChosen: false, everUsable: false, serverKey: '', failures: 0, events: [] })
-export const connectionStore = createStore<ConnectionStore>()(initial)
+export const connectionStore = createStore<ConnectionStore>()(() => {
+  const start = { ...initial(), events: [`${new Date().toISOString().slice(11, 19)} app started`, ...loadEvents()].slice(0, 30) }
+  return start
+})
 export const useConnection = <T,>(selector: (s: ConnectionStore) => T) => useStore(connectionStore, selector)
 
 const PROBE_TIMEOUT_MS = 8000
@@ -44,7 +47,36 @@ async function fetchJson(path: string): Promise<unknown> {
 }
 
 const serverKey = () => (isNative() ? platform.server : '') || ''
-const EVENTS = 20
+const EVENTS = 30
+const EVENTS_KEY = 'pandafm.connection.events'
+
+// 5.5.2: the log survives the app (WebView) restarting, so Diagnostics can show what happened just before.
+function loadEvents(): string[] {
+  try {
+    const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(EVENTS_KEY)
+    const list = raw ? (JSON.parse(raw) as unknown) : []
+    return Array.isArray(list) ? list.filter((e): e is string => typeof e === 'string').slice(0, EVENTS) : []
+  } catch {
+    return []
+  }
+}
+
+function saveEvents(events: string[]) {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(EVENTS_KEY, JSON.stringify(events.slice(0, EVENTS)))
+  } catch {
+    // storage full or unavailable: the in-memory log still works
+  }
+}
+
+const stamp = () => new Date().toISOString().slice(11, 19)
+
+/** 5.5.2: a line in the connection log (no addresses, tokens or credentials: callers pass plain facts). */
+export function noteConnectionEvent(text: string): void {
+  const events = [`${stamp()} ${text}`, ...connectionStore.getState().events].slice(0, EVENTS)
+  connectionStore.setState({ events })
+  saveEvents(events)
+}
 
 function update(trigger?: string) {
   const s = connectionStore.getState()
@@ -69,10 +101,14 @@ function update(trigger?: string) {
   // usable *for this server*: only a state derived from a real answer counts, never one kept on screen
   // while a check (perhaps for a new address) is still pending
   const usableNow = s.probe === 'pandafm' && (next === 'ready' || next === 'degraded')
-  const events = state !== s.state || trigger
-    ? [`${new Date().toISOString().slice(11, 19)} ${trigger ?? 'update'}: ${s.state} → ${state} (probe ${s.probe}, failures ${s.failures})`, ...s.events].slice(0, EVENTS)
-    : s.events
+  const lines: string[] = []
+  if (state !== s.state || trigger) lines.push(`${stamp()} ${trigger ?? 'update'}: ${s.state} → ${state} (probe ${s.probe}, failures ${s.failures})`)
+  if (s.everUsable && !sameServer) lines.push(`${stamp()} server address changed: the new one must answer first`)
+  if (!s.everUsable && usableNow) lines.push(`${stamp()} usable this session`)
+  const events = lines.length ? [...lines.reverse(), ...s.events].slice(0, EVENTS) : s.events
   connectionStore.setState({ state, everUsable: everUsable || usableNow, serverKey: everUsable || usableNow ? serverKey() : s.serverKey, events })
+  if (lines.length) saveEvents(events)
+  if (!s.everUsable && usableNow && isNative()) void platform.player?.markSessionUsable?.({ server: serverKey() }).catch(() => undefined)
   scheduleRetry()
 }
 
@@ -85,6 +121,29 @@ authStore.subscribe((now, before) => {
 
 let running: Promise<void> | null = null
 let generation = 0
+let seeded = false
+
+/**
+ * 5.5.2: the UI can restart (a WebView or Activity recreated) while the app process, and the music, carry
+ * on. If this process already reached this same server, the restarted UI is not a first launch: a failed
+ * first check is 'interrupted' (the app, Now Playing and the queue stay), not the full unreachable screen.
+ * The marker lives in the native process, so it is gone after a real cold start.
+ */
+async function seedFromNativeSession(): Promise<void> {
+  if (seeded) return
+  seeded = true
+  const s = connectionStore.getState()
+  if (s.everUsable || !isNative() || !platform.player?.getSession) return
+  try {
+    const session = await Promise.race([platform.player.getSession(), new Promise<null>((r) => setTimeout(() => r(null), 800))])
+    if (session?.usableServer && session.usableServer === serverKey()) {
+      connectionStore.setState({ everUsable: true, serverKey: serverKey() })
+      noteConnectionEvent('app restarted under a live session: reconnecting, not a first launch')
+    }
+  } catch {
+    // no native session to ask: a normal first launch
+  }
+}
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 /** While interrupted, check again on a short schedule (5, 15, 30 s, then every minute) until it answers. */
@@ -120,6 +179,7 @@ export function checkConnection(opts: { fresh?: boolean; trigger?: string } = {}
   const server = serverKey()
   const current = () => mine === generation && server === serverKey()
   const run = (async () => {
+    await seedFromNativeSession()
     connectionStore.setState({ probe: 'pending', offlineChosen: false })
     update(opts.trigger ?? 'check')
     if (isNative() && !platform.server) return update()
@@ -132,12 +192,12 @@ export function checkConnection(opts: { fresh?: boolean; trigger?: string } = {}
     } catch {
       probe = 'unreachable'
     }
-    if (!current()) return // a newer check (or another server) owns the state now
+    if (!current()) return noteConnectionEvent('a stale check was discarded') // a newer check (or another server) owns the state now
     let setup: SetupState | null = connectionStore.getState().setup
     if (probe === 'pandafm') {
       setup = ((await fetchJson('/setup/state').catch(() => null)) as SetupState | null) ?? setup
       await checkAuth()
-      if (!current()) return
+      if (!current()) return noteConnectionEvent('a stale check was discarded')
       connectionStore.setState({ probe, setup, musicServerOk, failures: 0 })
     } else {
       // keep the last known facts: only the probe and the failure count change
@@ -156,6 +216,7 @@ export function checkConnection(opts: { fresh?: boolean; trigger?: string } = {}
 export function resetConnectionForTests(): void {
   generation++
   running = null
+  seeded = false
   if (retryTimer) clearTimeout(retryTimer)
   retryTimer = null
   connectionStore.setState(initial())

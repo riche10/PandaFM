@@ -7,6 +7,8 @@ new songs where they fit and drop removed ones, without reshuffling the rest.
 Remix draws a new order on purpose. Navidrome's playlist is never modified.
 """
 
+import asyncio
+import logging
 import random
 from collections import Counter
 
@@ -18,6 +20,7 @@ from app.models import MixPlaylist
 from app.services.mix import MixAnalyzer, usable_analyses
 
 MODES = ("auto", "gentle", "flow", "energetic")
+log = logging.getLogger("pandafm.mix")
 PRIORITY = 50  # behind the songs about to play
 
 
@@ -55,7 +58,14 @@ async def state(db: AsyncSession, navidrome, analyzer: MixAnalyzer | None, user_
 
     meta = _meta(playlist.tracks)
     if row.status == "preparing" and all(i in found for i in ids):
-        order = mix_order.mixed_order(playlist_ids, meta, ready, row.seed, current=row.mixed_order)  # optimised once, then stable
+        # Optimised once, then stable. 5.5.2: off the event loop (a long playlist must not hold up streams,
+        # /health or the player's transition plans), and an ordering failure keeps the saved order rather
+        # than failing every later request for this playlist's mix (a crashed Remix used to leave it
+        # 'preparing', so each mode change or page load hit the same error again).
+        try:
+            order = await asyncio.to_thread(mix_order.mixed_order, playlist_ids, meta, ready, row.seed, row.mixed_order)
+        except Exception:
+            log.exception("Panda Mix ordering failed for playlist %s; keeping its saved order", playlist_id)
         row.status = "ready"
     else:
         missing = Counter(playlist_ids)

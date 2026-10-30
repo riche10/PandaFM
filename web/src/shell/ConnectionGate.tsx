@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { Loading } from '../components/States'
 import { SetupSteps } from '../components/SetupSteps'
 import { Wordmark } from '../components/Wordmark'
-import { checkConnection, continueOffline, useConnection } from '../api/connection'
+import { checkConnection, continueOffline, noteConnectionEvent, useConnection } from '../api/connection'
 import { hasDownloads, onReconnect } from '../offline'
 import { displayHost, interruptedMessage } from '../platform/connection'
 import { isNative, platform } from '../platform/state'
@@ -18,6 +18,7 @@ import { SignInView } from '../views/SignInView'
 export function ConnectionGate({ children }: { children: ReactNode }) {
   const state = useConnection((s) => s.state)
   useEffect(() => {
+    noteConnectionEvent('connection gate mounted')
     void checkConnection({ trigger: 'launch' })
     return onReconnect(() => void checkConnection({ trigger: 'back online' }))
   }, [])
