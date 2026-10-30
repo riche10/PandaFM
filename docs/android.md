@@ -613,3 +613,14 @@ Settings › Diagnostics lists the recent connection changes (what triggered the
 The server log's stream line now also says what Navidrome did when a stream fails:
 `stream_open track=… quality=… failed elapsed_ms=… panda_status=502 error=navidrome_error upstream=subsonic_0`
 (`subsonic_<code>`, `http_<status>`, `timeout`, `connect` or `bad_response`).
+
+
+## If the app's screen restarts while music plays (5.5.2)
+
+Android can rebuild PandaFM's screen while the app (and the music) keep running, for example when its
+WebView restarts. The music doesn't stop, and the rebuilt screen reconnects to the queue that's playing
+instead of acting like a first launch: if the server doesn't answer at that moment, you get the
+"Reconnecting to PandaFM…" banner, not the full "Can't reach your PandaFM server" screen. If the WebView
+itself crashes, PandaFM rebuilds the screen rather than letting Android close the whole app. Settings ›
+Diagnostics keeps its connection history across such restarts (app starts, the gate appearing, checks,
+Panda Mix changes made while playing), without addresses or credentials.

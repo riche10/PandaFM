@@ -220,8 +220,8 @@ export const playlistApi = {
   remove: (playlistId: string) => apiSend('DELETE', `/playlists/${id(playlistId)}`),
   addTracks: (playlistId: string, trackIds: string[]) =>
     apiSend<Playlist>('POST', `/playlists/${id(playlistId)}/tracks`, { track_ids: trackIds }),
-  removeTrack: (playlistId: string, index: number, trackId: string) =>
-    apiSend<Playlist>('DELETE', `/playlists/${id(playlistId)}/tracks/${index}?${new URLSearchParams({ track_id: trackId })}`),
+  removeTrack: (playlistId: string, index: number, trackId: string, mixIndex?: number) =>
+    apiSend<Playlist>('DELETE', `/playlists/${id(playlistId)}/tracks/${index}?${new URLSearchParams({ track_id: trackId, ...(mixIndex === undefined ? {} : { mix_index: String(mixIndex) }) })}`),
 }
 
 /** Artwork sizes the UI asks for. A few fixed sizes keep Navidrome's resize cache warm. */

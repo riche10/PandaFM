@@ -23,6 +23,12 @@ interface TrackListProps {
   showAlbum?: boolean
   /** Enables "Remove from this playlist" in the row menus. */
   playlist?: PlaylistSummary
+  /** 5.5.2: each row's position in the playlist itself, when the rows are shown in another order (Panda Mix) */
+  playlistIndexes?: number[]
+  /** 5.5.2: the rows are the playlist's Panda Mix order: removal also drops that mixed position */
+  mixed?: boolean
+  /** called after rows were removed from the playlist (e.g. to reload its Panda Mix order) */
+  onRemoved?: () => void
   header?: boolean
   /** 5.4: a short line of facts under a row (Panda Mix: "128 BPM · 8A"). */
   facts?: (track: Track, index: number) => ReactNode
@@ -39,6 +45,9 @@ export function TrackList({
   albumArtist,
   showAlbum = variant !== 'album',
   playlist,
+  playlistIndexes,
+  mixed,
+  onRemoved,
   header = true,
   facts,
   between,
@@ -171,14 +180,14 @@ export function TrackList({
               <TrackMenu
                 track={track}
                 onPlay={() => onPlay(index)}
-                inPlaylist={playlist ? { playlist, index } : undefined}
+                inPlaylist={playlist ? { playlist, index: playlistIndexes?.[index] ?? index, mixIndex: mixed ? index : undefined, onRemoved } : undefined}
               />
             </li>
             </Fragment>
           )
         })}
       </ol>
-      <SelectionBar selection={selection} tracks={tracks} playlist={playlist} onClear={() => setSelection(empty)} onSelectAll={() => setSelection(all(tracks.length))} />
+      <SelectionBar selection={selection} tracks={tracks} playlist={playlist} playlistIndexes={playlistIndexes} mixed={mixed} onRemoved={onRemoved} onClear={() => setSelection(empty)} onSelectAll={() => setSelection(all(tracks.length))} />
     </div>
   )
 }

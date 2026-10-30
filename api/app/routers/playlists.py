@@ -61,6 +61,13 @@ async def remove_track(
     index: Annotated[int, Path(ge=0, le=100_000)],
     track_id: Annotated[str, Query(min_length=1, max_length=200, description="Song expected at that position")],
     navidrome: NavidromeDep,
+    db: SessionDep,
+    user_id: UserId,
+    mix_index: Annotated[int | None, Query(ge=0, le=100_000, description="5.5.2: its position in the Panda Mix order, when removed from there")] = None,
 ) -> Playlist:
-    await navidrome.remove_from_playlist(playlist_id, index, track_id)
-    return await navidrome.get_playlist(playlist_id)
+    await navidrome.remove_from_playlist(playlist_id, index, track_id)  # by its position in the playlist itself
+    if mix_index is not None:
+        from app.services import mix_playlists
+
+        await mix_playlists.remove_occurrence(db, user_id, playlist_id, mix_index, track_id)
+    return await with_likes(db, user_id, await navidrome.get_playlist(playlist_id))

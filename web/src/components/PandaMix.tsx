@@ -67,29 +67,8 @@ export function useMixPlaylist(playlistId: string) {
 }
 
 /** The playlist's tracks in Panda Mix order (songs the order doesn't know yet keep their place at the end). */
-export function inMixOrder(tracks: Track[], order: string[] | undefined): Track[] {
-  if (!order?.length) return tracks
-  // Preserve repeated playlist entries: consume matching original positions one at a time.
-  const positions = new Map<string, number[]>()
-  tracks.forEach((t, i) => {
-    const list = positions.get(t.id) ?? []
-    list.push(i)
-    positions.set(t.id, list)
-  })
-  const used = new Set<number>()
-  const out: Track[] = []
-  for (const id of order) {
-    const i = positions.get(id)?.shift()
-    if (i !== undefined) {
-      used.add(i)
-      out.push(tracks[i])
-    }
-  }
-  tracks.forEach((t, i) => {
-    if (!used.has(i)) out.push(t)
-  })
-  return out
-}
+import { inMixOrder } from '../library/mixOrder'
+export { inMixOrder, mixEntries } from '../library/mixOrder'
 
 /**
  * 5.5.2: apply a mode change or Remix to the playing queue if it is this playlist's Panda Mix:

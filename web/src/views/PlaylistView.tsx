@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { getPlaylist } from '../api/library'
 import { PlayCircle, ShuffleButton } from '../components/Cards'
-import { FactsLine, inMixOrder, PandaMixControls, PandaMixStatus, PlaylistBridge, useMixPlaylist, usePlaylistBridges } from '../components/PandaMix'
+import { FactsLine, inMixOrder, mixEntries, PandaMixControls, PandaMixStatus, PlaylistBridge, useMixPlaylist, usePlaylistBridges } from '../components/PandaMix'
 import { Cover } from '../components/Cover'
 import { DetailHero } from '../components/DetailHero'
 import { Icon } from '../components/Icon'
@@ -40,7 +40,9 @@ export function PlaylistView() {
 
   const source: QueueSource = { kind: 'playlist', id: playlist.id, name: playlist.name }
   const mixed = !!mix.state?.enabled && mixView === 'mixed'
-  const shown = mixed ? inMixOrder(playlist.tracks, mix.state?.order) : playlist.tracks
+  // 5.5.2: each mixed row keeps its position in the playlist itself, so it can be removed from there
+  const entries = mixed ? mixEntries(playlist.tracks, mix.state?.order) : null
+  const shown = entries ? entries.map((e) => e.track) : playlist.tracks
   const mixOn = !!mix.state?.enabled
   const factsFor = mixOn ? (t: { id: string }) => <FactsLine facts={mix.state?.facts?.[t.id]} /> : undefined
   const whyFor = new Map((mix.state?.why ?? []).map((w) => [`${w.from}|${w.to}`, w.reasons]))
@@ -99,9 +101,13 @@ export function PlaylistView() {
         </EmptyState>
       ) : (
         mixed ? (
-          // Mixed order: play from here as a Panda Mix. Editing (by position) happens in the original order.
+          // Mixed order: play from here as a Panda Mix; removing a row removes that exact occurrence (5.5.2)
           <TrackList
             tracks={shown}
+            playlist={playlist}
+            playlistIndexes={entries?.map((e) => e.index)}
+            mixed
+            onRemoved={() => void mix.reload()}
             onPlay={(i) => player.playCollection(shown, { startIndex: i, source: { ...source, mix: { mode: mix.state?.mode ?? 'auto', playlistId: playlist.id } } })}
             facts={factsFor}
             between={(i) => (

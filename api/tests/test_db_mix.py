@@ -131,3 +131,41 @@ def test_a_persistent_panda_mix_playlist(mixer):
     assert mixer.client.get("/api/mix/playlists/pl1").json() == {"playlist_id": "pl1", "enabled": False}
     with mixer.engine.begin() as conn:
         assert conn.execute(text("SELECT count(*) FROM mix_track_analysis")).scalar() >= 5  # analyses are kept
+
+
+def test_removing_a_song_in_mixed_order_removes_that_exact_occurrence(mixer):
+    """5.5.2: the playlist [A, B, A, C] shown mixed as [A, C, A, B]: removing the first A shown removes the
+    playlist's first A (by its own position) and that position from the saved mixed order."""
+    import json as _json
+
+    from sqlalchemy import text as _text
+
+    from app.schemas.library import Playlist, Track
+
+    fake = mixer.app.state.mix._navidrome
+    ids = ["s1", "s2", "s1", "s3"]
+
+    async def get_playlist(playlist_id):
+        return Playlist(id=playlist_id, name="Mix", tracks=[Track(id=i, title=i, artist="Panda") for i in ids])
+
+    async def remove_from_playlist(playlist_id, index, track_id):
+        assert ids[index] == track_id  # the expected song at that position
+        del ids[index]
+
+    fake.get_playlist = get_playlist
+    fake.remove_from_playlist = remove_from_playlist
+    assert mixer.client.put("/api/mix/playlists/p1", json={"mode": "auto"}).status_code == 200
+    with mixer.engine.begin() as conn:
+        conn.execute(_text("UPDATE mix_playlists SET mixed_order = CAST(:o AS jsonb), status = 'ready' WHERE playlist_id = 'p1'"),
+                     {"o": _json.dumps(["s1", "s3", "s1", "s2"])})
+    r = mixer.client.delete("/api/playlists/p1/tracks/0", params={"track_id": "s1", "mix_index": 0})
+    assert r.status_code == 200, r.text
+    assert ids == ["s2", "s1", "s3"]  # the playlist's first A went
+    with mixer.engine.begin() as conn:
+        order = conn.execute(_text("SELECT mixed_order FROM mix_playlists WHERE playlist_id = 'p1'")).scalar()
+    assert order == ["s3", "s1", "s2"]  # the A shown first went; the other A keeps its place
+    # a stale mixed position (it no longer holds that song) is skipped safely
+    r = mixer.client.delete("/api/playlists/p1/tracks/2", params={"track_id": "s3", "mix_index": 1})
+    assert r.status_code == 200
+    with mixer.engine.begin() as conn:
+        assert conn.execute(_text("SELECT mixed_order FROM mix_playlists WHERE playlist_id = 'p1'")).scalar() == ["s3", "s1", "s2"]

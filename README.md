@@ -22,6 +22,14 @@ Navidrome / OpenSubsonic server   (your music library: you run it, PandaFM reads
 
 PandaFM never modifies your music; Navidrome stays the source of truth.
 
+## Where your data lives (5.5.2)
+
+- **Your music server (Navidrome / OpenSubsonic)**: the music library, the audio streams, your playlists,
+  and album/artist favorites. It also gets a copy of your song likes (as stars), best-effort.
+- **PandaFM's own database**: your liked songs, listening history, Panda Radio's sense of your taste,
+  stations, Panda Mix settings and app state. Moving to another music server with the same music keeps
+  all of it: likes and history follow songs whose ids change when the match is unambiguous.
+
 ## Install
 
 1. **Have a Navidrome (or other OpenSubsonic) server** with your music. Any
@@ -101,11 +109,14 @@ tap it for Now Playing.
 - **Home**: quick access, Recently added, Favorite songs, your playlists
   and a random selection. *Recently played* appears only when Navidrome has
   play history (PandaFM doesn't report plays yet).
-- **Search**: results grouped into Songs, Artists and Albums.
+- **Search**: results grouped into Songs, Artists and Albums. Songs come in pages: *Show all* loads
+  every matching song (5.5.2; it used to stop at 20), and playing from there plays all of them.
 - **Library**: Albums (recently added, A–Z, random), Artists, Songs (all,
   in Navidrome's order, or random) and Playlists.
-- **Favorites**: tap a heart on any song, album or artist. Favorites are
-  Navidrome's "starred" items, so other Subsonic apps see them too.
+- **Favorites**: tap a heart on any song, album or artist. Song likes belong to PandaFM (5.5.2):
+  they're saved in PandaFM first and mirrored to your music server's stars so other Subsonic apps see
+  them too, but a music server with no stars (a fresh install, a new server) never removes them. Album
+  and artist favorites still follow your music server's stars.
 - **Playlists**: create from the sidebar or Library, add songs from any
   song's ⋯ menu (or a whole album from its ⋯ menu), remove, rename or delete
   from the playlist page. They are stored in Navidrome.
@@ -163,7 +174,7 @@ default; don't enable response caching for `/api`.
 
 PandaFM now remembers how you listen (plays, songs you finish, early and
 late skips, pauses and seeks) in its own PostgreSQL database, and uses
-that, plus your Navidrome favorites, for **Panda Radio**:
+that, plus your liked songs, for **Panda Radio**:
 
 - Start it from any song's ⋯ menu, an album or artist page, or the mode
   cards on Home: **Panda Radio** (balanced), **Study** (steady),

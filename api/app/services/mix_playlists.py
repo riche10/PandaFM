@@ -123,6 +123,20 @@ async def remix(db: AsyncSession, navidrome, analyzer, user_id: int, playlist_id
     return await state(db, navidrome, analyzer, user_id, playlist_id)
 
 
+async def remove_occurrence(db: AsyncSession, user_id: int, playlist_id: str, mix_index: int, track_id: str) -> bool:
+    """5.5.2: a song removed from the playlist while viewing its mixed order: drop that exact position from
+    the saved order (duplicates are separate occurrences). Skipped if the position no longer holds that
+    song (a stale view); the next state() then reconciles the order as a multiset."""
+    row = await _row(db, user_id, playlist_id)
+    if row is None or not (0 <= mix_index < len(row.mixed_order)) or row.mixed_order[mix_index] != track_id:
+        return False
+    order = list(row.mixed_order)
+    del order[mix_index]
+    row.mixed_order = order
+    await db.commit()
+    return True
+
+
 async def disable(db: AsyncSession, user_id: int, playlist_id: str) -> None:
     row = await _row(db, user_id, playlist_id)
     if row is not None:
