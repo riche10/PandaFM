@@ -854,4 +854,160 @@ public class PandaDjEngineTest {
         assertTrue(delayed.isEmpty());
     }
 
+
+    // ── 5.5: the envelope, readiness, measurements, history and rapid skipping ──
+    @Test
+    public void theEnvelopesNeverExceedUnityAndEndWhereTheyShould() {
+        for (String c : new String[] {"equal_power", "linear", "sharp", "under_tail"}) {
+            for (int k = 0; k <= 20; k++) {
+                float[] g = PandaDjEngine.gains(k / 20.0, c, -7, -7);
+                assertTrue(c, g[0] >= 0 && g[0] <= 1 && g[1] >= 0 && g[1] <= 1); // levelling only attenuates: no clipping
+            }
+            assertEquals(c, 1f, PandaDjEngine.gains(1, c, -7, -7)[1], 1e-4f); // B ends at its own level
+        }
+        assertTrue(PandaDjEngine.gains(0.2, "sharp", 0, 0)[1] < PandaDjEngine.gains(0.2, "equal_power", 0, 0)[1] / 2); // low ends meet briefly
+        assertEquals(PandaDjEngine.gains(0.5, "equal_power", 0, 0)[1], PandaDjEngine.gains(0.5, "sharp", 0, 0)[1], 1e-3f);
+        assertEquals((float) (Math.sin(Math.PI / 4) * Math.pow(10, -3.5 / 20)), PandaDjEngine.gains(0.5, "equal_power", 0, -7)[1], 1e-3f);
+    }
+
+    @Test
+    public void aBlendWaitsForEnoughBufferThenStartsShortened() {
+        startMix("a", "b", "c");
+        pa.position = 178_500;
+        dj.tick(); // preload
+        pb.state = STATE_READY;
+        pb.buffered = 800;
+        cb.onPlayerChanged();
+        pa.position = 190_000;
+        dj.tick();
+        assertFalse(dj.running()); // 0.8 s buffered can't carry a 10 s blend
+        pb.buffered = 2_500;
+        pa.position = 198_300;
+        dj.tick(); // the last moment: a shortened blend rather than none
+        assertTrue(dj.running());
+        assertTrue(String.valueOf(dj.diagnostics().get("transitionDegraded")).contains("blend shortened"));
+    }
+
+    @Test
+    public void anUnreadyIncomingDeckFallsBackToAPlainHandoffAndSaysWhy() {
+        startMix("a", "b", "c");
+        pa.position = 178_500;
+        dj.tick();
+        pb.state = STATE_READY;
+        pb.buffered = 400;
+        cb.onPlayerChanged();
+        pa.position = 190_000;
+        dj.tick();
+        pa.position = 199_000;
+        dj.tick(); // past the last moment with 0.4 s buffered
+        assertFalse(dj.running());
+        assertTrue(pa.pwr && pa.volume == 1f); // the music keeps playing: A plays to its end
+        String last = dj.historyLines().get(0);
+        assertTrue(last, last.contains("plain handoff") && last.contains("buffer"));
+    }
+
+    @Test
+    public void aDownloadedIncomingSongNeedsNoBuffer() {
+        local.put("b", "content://app.pandafm.client.downloads/b");
+        startMix("a", "b", "c");
+        pa.position = 178_500;
+        dj.tick();
+        pb.state = STATE_READY;
+        pb.buffered = 0;
+        cb.onPlayerChanged();
+        pa.position = 190_000;
+        dj.tick();
+        assertTrue(dj.running());
+    }
+
+    @Test
+    public void twentyTwoTransitionsAreMeasuredAndTheHistoryStaysBounded() {
+        String[] ids = new String[24];
+        for (int i = 0; i < ids.length; i++) ids[i] = "t" + i;
+        startMix(ids);
+        int from = 0;
+        for (int k = 0; k < 22; k++) {
+            blend(from);
+            from = 1 - from;
+            assertEquals("t" + (k + 1), controller.queue.current().trackId()); // advanced exactly once
+            assertEquals(from, dj.primaryDeck());
+            assertFalse(dj.running());
+        }
+        List<String> h = dj.historyLines();
+        assertEquals(PandaDjEngine.HISTORY, h.size());
+        assertTrue(h.get(0), h.get(0).startsWith("t21 → t22") && h.get(0).contains("actual") && h.get(0).contains("start late"));
+    }
+
+    @Test
+    public void twentyRapidSkipsLeaveOnlyTheLastChoicePlaying() {
+        String[] ids = new String[25];
+        for (int i = 0; i < ids.length; i++) ids[i] = "t" + i;
+        playNormal(ids);
+        pa.calls.clear();
+        pb.calls.clear();
+        for (int k = 0; k < 20; k++) {
+            controller.next(); // faster than any stream opens
+            int d = dj.primaryDeck();
+            EngineCoreTest.FakePort cp = d == 0 ? pa : pb;
+            cp.state = STATE_IDLE; // the waking server answers 503 before the song starts
+            (d == 0 ? ca : cb).onError(EngineCore.IO_BAD_HTTP_STATUS, "ERROR_CODE_IO_BAD_HTTP_STATUS", new HttpFailure(503, null, "navidrome_unavailable"));
+            dj.tick(); // no warmup opens while the current song sits at 0:00
+        }
+        long loads = java.util.stream.Stream.concat(pa.calls.stream(), pb.calls.stream()).filter(c -> c.startsWith("setMediaItem")).count();
+        assertEquals(20, loads); // one stream request per skip: no storm
+        List<Runnable> burst = new ArrayList<>(delayed);
+        delayed.clear();
+        pa.calls.clear();
+        pb.calls.clear();
+        for (Runnable r : burst) r.run(); // every old retry fires late, at once
+        long prepares = java.util.stream.Stream.concat(pa.calls.stream(), pb.calls.stream()).filter(c -> c.startsWith("prepare")).count();
+        assertTrue("only the final song's retry may act: " + prepares, prepares <= 1);
+        assertEquals("t20", controller.queue.current().trackId());
+        EngineCore logical = dj.primaryDeck() == 0 ? ca : cb;
+        assertEquals("t20", logical.item().trackId()); // the session and the queue agree
+        EngineCoreTest.FakePort standby = dj.primaryDeck() == 0 ? pb : pa;
+        assertFalse(standby.pwr); // no phantom audio from a skipped deck
+        assertTrue(controller.intendsToPlay());
+    }
+
+
+    @Test
+    public void theEnvelopeMatchesTheSharedReferenceValues() { // the same values pin web/src/player/envelope.test.ts
+        String[] curves = {"sharp", "equal_power", "equal_power", "under_tail", "linear", "sharp", "under_tail", "under_tail", "under_tail", "under_tail", "under_tail", "under_tail"};
+        double[][] ref = {
+            {0.2, 0, 0, 0.997898, 0.064806}, // sharp
+            {0.5, 0, -7, 0.707107, 0.472591}, // equal_power
+            {0.5, -6, 0, 0.500593, 0.707107}, // equal_power
+            {0.3, -4, -4, 0.792577, 0.065199}, // under_tail
+            {0.75, -3, -5, 0.192948, 0.649473}, // linear
+            {0.9, -2, -8, 0.014614, 0.911863}, // sharp
+            {0.0, 0, 0, 1, 0}, // under_tail
+            {0.25, 0, 0, 0.9375, 0.0625}, // under_tail
+            {0.5, 0, 0, 0.75, 0.25}, // under_tail
+            {0.75, 0, 0, 0.4375, 0.5625}, // under_tail
+            {1.0, 0, 0, 0, 1}, // under_tail
+            {0.6, -3, -6, 0.520212, 0.273088}, // under_tail
+        };
+        for (int k = 0; k < ref.length; k++) {
+            float[] g = PandaDjEngine.gains(ref[k][0], curves[k], ref[k][1], ref[k][2]);
+            assertEquals(curves[k] + " out @" + ref[k][0], ref[k][3], g[0], 1e-5);
+            assertEquals(curves[k] + " in @" + ref[k][0], ref[k][4], g[1], 1e-5);
+        }
+    }
+
+    @Test
+    public void underTailHasHeadroomAndStillLetsTheHeldNoteRingOut() {
+        double[][] levelling = {{0, 0}, {-4, -4}, {-8, 0}, {0, -8}};
+        for (double[] l : levelling) {
+            for (int k = 0; k <= 200; k++) {
+                float[] g = PandaDjEngine.gains(k / 200.0, "under_tail", l[0], l[1]);
+                assertTrue("p=" + k / 200.0 + ": " + g[0] + " + " + g[1], g[0] + g[1] <= 1 + 1e-6); // can't clip
+            }
+        }
+        for (int k = 0; k <= 100; k++) assertTrue(PandaDjEngine.gains(k / 200.0, "under_tail", 0, 0)[0] >= 0.75f - 1e-6f); // first half ≥ 75%
+        float[] end = PandaDjEngine.gains(1, "under_tail", 0, 0);
+        assertEquals(0f, end[0], 1e-6f);
+        assertEquals(1f, end[1], 1e-6f);
+    }
+
 }

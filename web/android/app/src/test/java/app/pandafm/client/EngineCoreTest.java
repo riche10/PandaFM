@@ -23,6 +23,12 @@ import org.junit.Test;
  */
 public class EngineCoreTest {
     static final class FakePort implements EngineCore.PlayerPort {
+        long buffered = 60_000; // 5.5: reported while READY, like ExoPlayer's buffered duration
+
+        public long bufferedMs() {
+            return state == STATE_READY ? buffered : 0;
+        }
+
         final List<String> calls = new ArrayList<>();
         int state = STATE_IDLE, suppression;
         boolean pwr, playing, seekable = true;

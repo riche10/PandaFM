@@ -180,3 +180,60 @@ phones) with large waveforms showing the transition region, the fade curve,
 its midpoint, each song's musical end (outgoing) or the point it gets going
 (incoming), and time labels; plus both songs' tempo and key and Panda's
 reasoning. No pitch shifting or time stretching.
+
+
+## 5.5: how Panda decides (and how to tell why)
+
+Panda Mix is a deterministic system: signal analysis plus rules. There is no machine learning in it.
+
+**Analysis v3** (re-analysed lazily, Panda Mix playlists only; ~2 s of CPU per 5-minute song at the
+lowest priority, one song at a time) measures tempo (to ~0.02 BPM), the beat with adaptive beat
+tracking, local beat grids for the first and last ~45 s, downbeats and meter (with a confidence, or
+"unknown"), a 2-second section profile (relative loudness, sustained bass, and a *vocal-likelihood
+heuristic*: voice-band energy that is harmonic and syllable-modulated; a hint, not vocal detection) and
+how the song ends (fade, held note or hard final hit).
+
+**The planner** turns that evidence into an ambition tier: *deep* (long, bar-aligned), *moderate*,
+*short* or *clean*. Personalities cap it: Gentle at short, Flow at moderate, Energetic at deep, Auto at
+deep only for confident dance material. Rules on top:
+
+- PandaFM doesn't time-stretch, so a blend is never longer than the number of beats over which the two
+  tempos drift apart by more than 20 ms (Gentle), 30 ms (Flow, Auto) or 45 ms (Energetic). Long blends
+  need near-identical tempos; that is physics, not caution.
+- With confident bars, Song A's transition starts on one of its bars and Song B's first downbeat lands
+  on it (B starts on its downbeat, skipping at most 8 s and never its first vocal).
+- Vocals on both sides across the overlap shrink it (in whole bars); dense on both sides is short; bass
+  on both sides hands the low end over quickly (the *sharp* curve; the browser also uses a low-shelf
+  Bass Handoff).
+- The louder side is turned down during the blend toward the other's level (attenuation only, never a
+  boost; the files are never changed).
+- A held final note rings out while Song B rises beneath it (the two levels always add up to at most
+  full scale, so the overlap can't clip); a hard final hit isn't buried under a long blend; at most
+  half of any blend reaches past Song A's musical end.
+
+**Playback** never sacrifices the music for the transition: a streamed incoming song must have
+`min(overlap, 6 s)` buffered before a blend starts; otherwise Panda waits, starts a shorter blend at the
+last moment, or lets Song A play to its end (a plain handoff), and records why. Android and the browser
+use the same envelope, and the Adjust Mix preview schedules it with the same code as the browser player.
+
+**Settings › Diagnostics** shows the planned tier, confidence, alignment, levelling, the facts and
+reasons behind the plan, and a history of the last 20 transitions, e.g.
+
+```
+t21 → t22 · Deep Blend · 15 s · 126 → 126 BPM · deep · planned 15.2 s · actual 15.2 s · start late 40 ms · buffered 8.1 s · confidence 0.85
+t5 → t6 · Smooth Blend · 4 s · moderate · planned 3.8 s · plain handoff · incoming buffer insufficient: plain handoff
+```
+
+### Real-device checklist
+
+Panda can't listen to your phone, so judging the sound is yours. For each rough transition, note the
+history line; it says what Panda planned, what happened and why.
+
+- **Normal playback, 30-60 min:** screen off, in the background, Bluetooth, Wi-Fi changes, aggressive
+  skipping (20 Nexts in a row: the last choice plays, nothing else sounds).
+- **Panda Mix, 20+ transitions** across genres: similar songs, very different songs, albums,
+  playlists. Expect long bar-aligned blends only for near-identical tempos, quick handoffs for very
+  different ones, short overlaps where both songs sing, and no loudness jumps.
+- **Each personality** on the same playlist: Gentle should be audibly shorter and cleaner than Energetic.
+- **Adjust Mix → Preview** then the real transition: they should sound the same.
+- **A cold NAS** during a preload: a shorter blend or a plain handoff, never a stop.

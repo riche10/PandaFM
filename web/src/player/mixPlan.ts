@@ -16,7 +16,15 @@ export interface MixPlan {
   outgoing_start_ms: number
   incoming_start_ms: number
   overlap_ms: number
-  curve: 'equal_power' | 'linear'
+  curve: 'equal_power' | 'linear' | 'sharp' | 'under_tail'
+  /** 5.5 levelling during the blend (attenuation only, dB ≤ 0) */
+  gain_out_db?: number
+  gain_in_db?: number
+  /** 5.5 how much the transition attempts, and why */
+  tier?: 'clean' | 'short' | 'moderate' | 'deep'
+  aligned?: 'bar' | 'beat' | 'time'
+  facts?: Record<string, unknown>
+  degradations?: string[]
   filter?: 'bass_swap' | 'highpass_out' | 'lowpass_in' | null
   bpm_out?: number | null
   bpm_in?: number | null
@@ -57,16 +65,71 @@ export function timeline(plan: MixPlan) {
   return { preloadAt: Math.max(0, start - PRELOAD_S), startAt: start, handoffAt: start + overlap / 2, endAt: start + overlap, overlap }
 }
 
-/** Gain curves for the outgoing and incoming decks: equal-power (no dip at the midpoint) or linear. */
-export function gainCurves(curve: MixPlan['curve'], n = 64): { out: Float32Array; in: Float32Array } {
+/** A logistic step through the midpoint, normalised to 0..1 (the 'sharp' curve). */
+export function sharpStep(p: number): number {
+  const lo = 1 / (1 + Math.exp(5))
+  const hi = 1 / (1 + Math.exp(-5))
+  return (1 / (1 + Math.exp(-10 * (p - 0.5))) - lo) / (hi - lo)
+}
+
+/**
+ * 5.5: the transition envelope at progress p, identical to Android's PandaDjEngine.gains():
+ * equal_power (no dip at the midpoint), linear, sharp (the change concentrated around the midpoint so two
+ * low ends overlap only briefly), under_tail (A's held note rings out while B rises slowly at first:
+ * in = p², out = 1 - p², so the two gains always sum to exactly 1 and the mix can't clip; A stays at 75% or
+ * more for the first half). Levelling only attenuates (never above unity): A eases down to outDb, B rises
+ * from inDb to 0 dB.
+ */
+export function envelope(p: number, curve: MixPlan['curve'], outDb = 0, inDb = 0): [number, number] {
+  p = Math.max(0, Math.min(1, p))
+  let out: number
+  let inn: number
+  if (curve === 'linear') {
+    out = 1 - p
+    inn = p
+  } else if (curve === 'under_tail') {
+    inn = p * p // headroom: out + in === 1 at every point (5.5 had out = 1 under a rising B: up to 2x full scale)
+    out = 1 - inn
+  } else {
+    const q = curve === 'sharp' ? sharpStep(p) : p
+    out = Math.cos((q * Math.PI) / 2)
+    inn = Math.sin((q * Math.PI) / 2)
+  }
+  out *= 10 ** ((Math.min(0, outDb) * p) / 20)
+  inn *= 10 ** ((Math.min(0, inDb) * (1 - p)) / 20)
+  return [Math.max(0, Math.min(1, out)), Math.max(0, Math.min(1, inn))]
+}
+
+/** The envelope sampled for setValueCurveAtTime. */
+export function gainCurves(curve: MixPlan['curve'], n = 64, outDb = 0, inDb = 0): { out: Float32Array; in: Float32Array } {
   const out = new Float32Array(n)
   const inn = new Float32Array(n)
   for (let i = 0; i < n; i++) {
-    const p = n === 1 ? 1 : i / (n - 1)
-    out[i] = curve === 'linear' ? 1 - p : Math.cos((p * Math.PI) / 2)
-    inn[i] = curve === 'linear' ? p : Math.sin((p * Math.PI) / 2)
+    const [o, g] = envelope(n === 1 ? 1 : i / (n - 1), curve, outDb, inDb)
+    out[i] = o
+    inn[i] = g
   }
   return { out, in: inn }
+}
+
+type Param = { setValueCurveAtTime(values: Float32Array, t: number, duration: number): unknown }
+export type DeckNodes = { gain: { gain: Param }; shelf?: { gain: Param }; hp?: { frequency: Param } }
+
+/**
+ * 5.5: schedules a whole transition (gains with levelling, the Bass Handoff low shelf, the high-pass
+ * glide). The engine and the Adjust Mix preview both call this, so the preview is what plays.
+ */
+export function scheduleTransition(out: DeckNodes, inn: DeckNodes, plan: Pick<MixPlan, 'curve' | 'filter' | 'gain_out_db' | 'gain_in_db'>, when: number, span: number): void {
+  const c = gainCurves(plan.curve, 64, plan.gain_out_db ?? 0, plan.gain_in_db ?? 0)
+  out.gain.gain.setValueCurveAtTime(c.out, when, span)
+  inn.gain.gain.setValueCurveAtTime(c.in, when, span)
+  if (plan.filter === 'bass_swap' && out.shelf && inn.shelf) {
+    const bass = bassCurves()
+    out.shelf.gain.setValueCurveAtTime(bass.out, when, span)
+    inn.shelf.gain.setValueCurveAtTime(bass.in, when, span)
+  } else if (plan.filter === 'highpass_out' && out.hp) {
+    out.hp.frequency.setValueCurveAtTime(new Float32Array(32).map((_, i) => 10 + 790 * (i / 31) ** 2), when, span)
+  }
 }
 
 /** Bass Handoff: the outgoing lows leave in the first half, the incoming lows arrive in the second (low-shelf dB). */

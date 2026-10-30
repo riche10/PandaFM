@@ -231,9 +231,15 @@ public class PandaPlayerPlugin extends Plugin {
     /** Streaming quality and Autoplay, chosen on this device in Settings. */
     @PluginMethod
     public void setPreferences(PluginCall call) {
-        android.content.SharedPreferences.Editor e = NativePlatform.Prefs.of(getContext()).edit();
+        android.content.SharedPreferences prefs = NativePlatform.Prefs.of(getContext());
+        android.content.SharedPreferences.Editor e = prefs.edit();
         String quality = call.getString("streamQuality");
-        if (quality != null) e.putString("streamQuality", quality);
+        String before = NativePlatform.Prefs.streamQuality(getContext());
+        boolean qualityChanged = quality != null && !quality.equals(before);
+        if (qualityChanged) {
+            e.putString("streamQuality", quality);
+            Log.i(TAG, "quality setting " + before + " → " + quality); // 5.5: every real change is visible in logcat
+        }
         Boolean autoplay = call.getBoolean("autoplayEnabled", null);
         if (autoplay != null) e.putBoolean("autoplayEnabled", autoplay);
         String preset = call.getString("autoplayPreset");
@@ -244,7 +250,7 @@ public class PandaPlayerPlugin extends Plugin {
             if (c != null) {
                 c.autoplayEnabled = NativePlatform.Prefs.of(getContext()).getBoolean("autoplayEnabled", true);
                 c.autoplayPreset = NativePlatform.Prefs.of(getContext()).getString("autoplayPreset", "panda");
-                c.planNext(); // 5.4: a new streaming quality changes the next song's source: re-check the warmup
+                if (qualityChanged) c.planNext(); // a new streaming quality changes the next song's source: re-check the warmup
             }
         });
         call.resolve();
