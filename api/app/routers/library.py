@@ -36,17 +36,26 @@ async def search(
     db: SessionDep,
     user_id: UserId,
     q: Annotated[str, Query(max_length=200, description="Words to search for")] = "",
-    limit: Annotated[int, Query(ge=1, le=50, description="Maximum songs to return")] = 20,
+    limit: Annotated[int, Query(ge=1, le=100, description="Songs per page")] = 20,
+    offset: Annotated[int, Query(ge=0, le=100_000, description="Songs to skip (the next page)")] = 0,
 ) -> SearchResults:
     query = q.strip()
     if not query:
         # Navidrome treats an empty query as "everything". PandaFM treats it as nothing.
         return SearchResults(query="")
-    results = await navidrome.search(query, track_count=limit)
-    try:  # "pop punk" finds the genre too; search itself never depends on the cache
-        results.genres = [explore.summary(g) for g in await explore.find_genres(db, query)]
-    except Exception:  # noqa: BLE001
-        log.warning("Genre search unavailable (database)", exc_info=True)
+    # 5.5.2: songs page (limit/offset); one extra song tells exactly whether another page exists. Artists,
+    # albums and genres come with the first page only.
+    first = offset == 0
+    results = await navidrome.search(query, track_count=limit + 1, track_offset=offset,
+                                     **({} if first else {"album_count": 0, "artist_count": 0}))
+    results.tracks_has_more = len(results.tracks) > limit
+    results.tracks = results.tracks[:limit]
+    results.track_offset, results.track_limit = offset, limit
+    if first:
+        try:  # "pop punk" finds the genre too; search itself never depends on the cache
+            results.genres = [explore.summary(g) for g in await explore.find_genres(db, query)]
+        except Exception:  # noqa: BLE001
+            log.warning("Genre search unavailable (database)", exc_info=True)
     return await with_likes(db, user_id, results)
 
 

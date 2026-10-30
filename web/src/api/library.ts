@@ -1,6 +1,6 @@
 import { currentStreamQuality } from '../platform/network.ts'
 import { withQuality } from '../player/streamQuality.ts'
-import { apiGet, apiSend, apiUrl } from './client'
+import { apiGet, apiSend, apiUrl } from './client.ts'
 
 // Mirrors api/app/schemas/library.py. Ids are Navidrome ids in Stage 2.
 
@@ -98,12 +98,50 @@ export interface SearchResults {
   albums: AlbumSummary[]
   artists: ArtistSummary[]
   genres?: GenreSummary[]
+  /** 5.5.2: songs come in pages (there is no reliable total from the music server) */
+  track_offset?: number
+  track_limit?: number | null
+  tracks_has_more?: boolean
+}
+
+export const SEARCH_PAGE = 50
+/** 5.5.2: the most songs "Show all" loads for one search (a safety net, far above real searches). */
+export const SEARCH_MAX_SONGS = 2000
+
+type SongPage = Pick<SearchResults, 'tracks' | 'tracks_has_more'>
+
+/**
+ * 5.5.2: every matching song: follows the pages after `first` until the server says there are no more
+ * (or the safety cap). Advances by the server's own offset; a song repeated by a shifting page is kept once.
+ */
+export async function loadAllSongs(first: SongPage, fetchPage: (offset: number) => Promise<SongPage>, cap = SEARCH_MAX_SONGS): Promise<{ tracks: Track[]; complete: boolean }> {
+  const tracks = [...first.tracks]
+  const seen = new Set(tracks.map((t) => t.id))
+  let offset = first.tracks.length
+  let more = !!first.tracks_has_more
+  while (more && tracks.length < cap) {
+    const page = await fetchPage(offset)
+    if (!page.tracks.length) break
+    offset += page.tracks.length
+    for (const t of page.tracks) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id)
+        tracks.push(t)
+      }
+    }
+    more = !!page.tracks_has_more
+  }
+  return { tracks, complete: !more }
 }
 
 const id = encodeURIComponent
 
 export const searchLibrary = (query: string, signal?: AbortSignal) =>
-  apiGet<SearchResults>(`/search?${new URLSearchParams({ q: query })}`, signal)
+  apiGet<SearchResults>(`/search?${new URLSearchParams({ q: query, limit: String(SEARCH_PAGE) })}`, signal)
+
+/** 5.5.2: the next page of songs for a search. */
+export const searchSongs = (query: string, offset: number, signal?: AbortSignal) =>
+  apiGet<SearchResults>(`/search?${new URLSearchParams({ q: query, limit: String(SEARCH_PAGE), offset: String(offset) })}`, signal)
 
 export const listAlbums = (kind: AlbumListKind, signal?: AbortSignal, size = 30) =>
   apiGet<AlbumList>(`/albums?${new URLSearchParams({ list: kind, size: String(size) })}`, signal)
