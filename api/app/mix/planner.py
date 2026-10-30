@@ -116,10 +116,14 @@ def evidence(a: dict, b: dict, aa: dict, ba: dict, mode: str = "auto") -> dict:
     ratio = tempo_ratio(aa.get("bpm"), ba.get("bpm"))
     diff = abs(ratio - 1) if ratio else None
     beat_a = aa.get("beat_interval_ms")
-    drift_beats = None
+    drift_beats = per_beat = None
     if ratio and beat_a and conf >= 0.4:
-        per_beat = abs(beat_a - beat_a / ratio)  # how far B's beat slips from A's on every beat
-        drift_beats = 10_000 if per_beat < 1e-3 else int(DRIFT_BUDGET_MS.get(mode, 30.0) // per_beat)
+        # B's beat after folding (a half-time 87 against 174 counts as 174), so drift is never computed
+        # from mismatched raw beat intervals; per_beat is how far it slips from A's on every A beat.
+        per_beat = abs(beat_a - beat_a / ratio)
+        # 5.5.1: the beats are aligned at the blend's midpoint (see plan), so the slip is split ± around
+        # it: the same worst case allows twice the beats.
+        drift_beats = 10_000 if per_beat < 1e-3 else int(2 * DRIFT_BUDGET_MS.get(mode, 30.0) // per_beat)
     grid = min(aa.get("beat_grid_confidence") or 0, ba.get("beat_grid_confidence") or 0)
     bars = _bars_ok(aa) and _bars_ok(ba) and aa.get("meter") == ba.get("meter")
     key_ok = camelot_compatible(aa.get("key_camelot") if p_key(aa) else None, ba.get("key_camelot") if p_key(ba) else None)
@@ -128,6 +132,9 @@ def evidence(a: dict, b: dict, aa: dict, ba: dict, mode: str = "auto") -> dict:
         "tempo_confidence": round(conf, 2), "tempo_diff_pct": None if diff is None else round(diff * 100, 2),
         "folded": bool(ratio and aa.get("bpm") and ba.get("bpm") and abs(aa["bpm"] / ba["bpm"] - 1) > 0.3),
         "drift_budget_beats": drift_beats, "grid_confidence": round(grid, 2), "bars": bars,
+        "ratio": None if ratio is None else round(ratio, 5), "beat_ms_out": None if not beat_a else round(beat_a, 2),
+        "beat_ms_in_folded": None if not (beat_a and ratio) else round(beat_a / ratio, 2),
+        "drift_ms_per_beat": None if per_beat is None else round(per_beat, 2), "max_slip_ms": None,
         "downbeat_confidence": round(min(aa.get("downbeat_confidence") or 0, ba.get("downbeat_confidence") or 0), 2),
         "key_fit": "compatible" if key_ok else "clash" if key_ok is False else "unknown",
         "key_confidence": round(min(aa.get("key_confidence") or 0, ba.get("key_confidence") or 0), 2),
@@ -153,7 +160,15 @@ def ambition(ev: dict, mode: str) -> tuple[str, list[str]]:
         why.append("Compatible tempos and a usable beat grid: a moderate, beat-aligned blend")
     elif diff <= 8:
         tier = "short"
-        why.append("Tempos are related but not close: a short blend")
+        apart = f"Tempos {diff:.1f}% apart" + (" after folding (half/double time)" if ev.get("folded") else "")
+        if grid < 0.25:
+            why.append("Beat grid too weak to beat-match: a short blend")
+        elif conf < 0.5:
+            why.append("Tempo not certain enough for a longer blend")
+        elif diff <= 4 and drift < 8:
+            why.append(f"{apart}: the beats would drift too far for a longer blend")
+        else:
+            why.append(f"{apart}: a short blend")
     else:
         tier = "clean"
         why.append("Very different tempos: a long overlap would sound muddy")
@@ -196,35 +211,35 @@ def plan(a: dict, b: dict, aa: dict | None, ba: dict | None, mode: str = "auto")
         p["summary"] = f"{TYPES[kind]}{'' if kind == 'gapless' else ' · ' + _fmt_s(overlap)}{bpm}"
         return p
 
-    reasons = _facts_lines(aa, ba, ev)
+    notes: list[str] = []  # 5.5.1: what shaped or limited this transition, in order
 
     # Continuous album neighbours (live albums, joined tracks): play them as one.
     continuous = (a.get("album_id") and a.get("album_id") == b.get("album_id") and a.get("track_number") and b.get("track_number")
                   and b["track_number"] == a["track_number"] + 1)
     if continuous and aa["trailing_silence_ms"] < 250 and ba["leading_silence_ms"] < 250:
         p = finish("gapless", 0, aa["duration_ms"], 0, 0.9, "These album tracks run into each other, so Panda plays them without a gap.",
-                   ["The next track on the same album"], tier="clean")
+                   _facts_lines(aa, ba, ev) + ["The next track on the same album"], tier="clean")
         p.update(outgoing_start_ms=aa["duration_ms"], incoming_start_ms=0)
         return p
 
     tier, why_tier = ambition(ev, mode)
-    reasons += why_tier
+    notes += why_tier
 
     # Loudness: level the louder side during the overlap (attenuation only: no clipping, files untouched)
     d = ev["loudness_diff_lu"]
     gains = {}
     if d is not None and abs(d) > 1.5:
         gains = {"gain_in_db": -round(min(8.0, d), 1)} if d > 0 else {"gain_out_db": -round(min(8.0, -d), 1)}
-        reasons.append(f"Levelling {abs(d):.0f} LU during the blend")
+        notes.append(f"Levelling {abs(d):.0f} LU during the blend")
 
     # Endings: a held final note is a place to come in under; a hard final hit is not to be cut.
     if aa.get("ending") == "sustain" and aa.get("last_hit_ms") and end - aa["last_hit_ms"] >= 1500 and tier != "clean":
         tail = min(6000, end - int(aa["last_hit_ms"]))
         return finish("smooth_blend", tail, int(aa["last_hit_ms"]), start, 0.6, "Song B comes in under Song A's held final note.",
-                      reasons + ["Song A ends on a held note: it rings out while Song B rises beneath it"], curve="under_tail", tier=tier, **gains)
+                      _facts_lines(aa, ba, ev) + notes + ["Song A ends on a held note: it rings out while Song B rises beneath it"], curve="under_tail", tier=tier, **gains)
     if aa.get("ending") == "hard" and TIERS.index(tier) > TIERS.index("short") and not ev["dance"]:
         tier = "short"
-        reasons.append("Song A ends on a hard final hit: kept short so it isn't buried")
+        notes.append("Song A ends on a hard final hit: kept short so it isn't buried")
 
     # Where the overlap should end: near A's musical end (5.3), never inside trailing silence
     mix_out = min(end, int(aa.get("mix_out_ms", end)))
@@ -255,24 +270,27 @@ def plan(a: dict, b: dict, aa: dict | None, ba: dict | None, mode: str = "auto")
     b_bass = _window(ba.get("profile"), "bass", in_start, 8000)
 
     # How long: beats for beat-matched tiers (capped by the drift budget), seconds otherwise
-    beats = {"deep": 64 if mode == "energetic" else 32, "moderate": 16, "short": 8, "clean": 0}[tier]
+    # Energetic allows longer rhythmic overlaps at every tier (still capped by its drift budget)
+    beats = {"deep": 64 if mode == "energetic" else 32, "moderate": 24 if mode == "energetic" else 16, "short": 8, "clean": 0}[tier]
     curve, kind, filt = "equal_power", {"deep": "deep_blend", "moderate": "smooth_blend", "short": "smooth_blend", "clean": "clean_handoff"}[tier], None
     vocal_clash = (a_voc or 0) >= 0.5 and (b_voc or 0) >= 0.5
     bass_clash = (a_bass or 0) >= 0.6 and (b_bass or 0) >= 0.6
     if vocal_clash and (a_bass or 0) >= 0.6 and (b_bass or 0) >= 0.6 and tier in ("moderate", "deep"):
         tier, kind, beats = "short", "smooth_blend", 8
-        reasons.append("Both sides are dense (vocals and bass): a short blend")
+        notes.append("Both sides are dense (vocals and bass): a short blend")
     elif vocal_clash:
         beats = min(beats, 8)
-        reasons.append("Vocals on both sides: the overlap stays short")
+        notes.append("Vocals on both sides: the overlap stays short")
     if bass_clash and tier in ("moderate", "deep"):
         curve = "sharp"  # hand the low end over quickly around the midpoint
         if ev["dance"] and mode in ("energetic", "auto") and tier == "deep":
             kind, filt = "bass_handoff", "bass_swap"
-        reasons.append("Bass on both sides: the low end changes hands quickly")
+        notes.append("Bass on both sides: the low end changes hands quickly")
     if beat_ms and tier in ("deep", "moderate", "short") and ev["tempo_confidence"] >= 0.4:
         if drift and beats > drift:
-            reasons.append(f"Tempos drift apart: limited to {drift} beats")
+            slip = ev["drift_ms_per_beat"] or 0
+            apart = f"Half/double time, but {ev['tempo_diff_pct']:.1f}% apart after folding" if ev["folded"] else f"Tempos {ev['tempo_diff_pct']:.1f}% apart"
+            notes.append(f"{apart}: without time-stretching the beats slip {slip:.0f} ms per beat, so the blend is limited to {max(4, drift - drift % 4)} beats")
             beats = max(4, drift - drift % 4)
         overlap = int(round(beats * beat_ms))
     else:
@@ -291,8 +309,8 @@ def plan(a: dict, b: dict, aa: dict | None, ba: dict | None, mode: str = "auto")
         if shared <= 4000 or overlap <= 4000:
             break
         overlap = max(4000, int(round((overlap / 2) / bar_ms) * bar_ms) if bar_ms else overlap // 2)
-        if "Vocals on both sides: the overlap stays short" not in reasons:
-            reasons.append("Vocals on both sides: the overlap stays short")
+        if "Vocals on both sides: the overlap stays short" not in notes:
+            notes.append("Vocals on both sides: the overlap stays short")
 
     # Place it: at most half of the overlap reaches past A's musical end (so a short blend isn't buried
     # in a fade: A stays at body level for at least half of it), then start on A's bar (or beat) so
@@ -308,13 +326,21 @@ def plan(a: dict, b: dict, aa: dict | None, ba: dict | None, mode: str = "auto")
         if snapped >= 0:
             out_start = int(round(snapped))
             aligned = "bar" if ev["bars"] else "beat"
-    reasons.append({"bar": "Starts on a bar: Song B's downbeat lands on it", "beat": "Starts on a beat",
-                    "time": "Not beat-matched"}[aligned])
+    # 5.5.1: centre the beat alignment on the blend's midpoint (both decks equally loud there), so the
+    # unavoidable slip without time-stretching is split ± around it instead of growing to the end.
+    if aligned != "time" and ev.get("ratio") and overlap > 0:
+        shift = (overlap / 2) * (1 / ev["ratio"] - 1)
+        if in_start + shift >= 0:
+            in_start = int(round(in_start + shift))
+        else:
+            out_start = int(round(out_start - shift))
+        ev["max_slip_ms"] = round(abs(shift), 1)
     confidence = {"deep": 0.85, "moderate": 0.7, "short": 0.55, "clean": 0.55}[tier]
     why = {"deep": "Close tempos, clear bars and compatible sections: a long, bar-aligned blend.",
            "moderate": "Compatible tempos and a clear beat: a moderate, beat-aligned blend.",
            "short": "A short blend: Panda isn't sure enough for a longer one.",
            "clean": "These songs don't blend well, so Panda hands over cleanly."}[tier]
+    reasons = _explain(aa, ba, ev, kind, overlap, aligned, notes, (a_voc, b_voc, a_bass, b_bass), mode)
     return finish(kind, overlap, out_start, in_start, confidence, why, reasons, curve=curve, filter=filt, tier=tier,
                   aligned=aligned, **gains)
 
@@ -341,6 +367,38 @@ def _first_above(profile: dict | None, key: str, threshold: float) -> int | None
         if v >= threshold:
             return i * (profile.get("step_ms") or 2000)
     return None
+
+
+def _explain(aa: dict, ba: dict, ev: dict, kind: str, overlap: int, aligned: str, notes: list[str],
+             sections: tuple, mode: str) -> list[str]:
+    """5.5.1: one line per fact, then what limited the transition, then the result, e.g.
+    'Tempo: 174 → 85 BPM (half/double time)', 'Vocals: overlap heavily', 'Result: Short blend, 2.0 s'."""
+    a_voc, b_voc, a_bass, b_bass = sections
+    lines = []
+    if ev["tempo_diff_pct"] is not None and ev["tempo_confidence"] >= 0.4:
+        lines.append(f"Tempo: {aa['bpm']:.0f} → {ba['bpm']:.0f} BPM" + (" (half/double time)" if ev["folded"] else ""))
+    else:
+        lines.append("Tempo: uncertain")
+    g = ev["grid_confidence"]
+    lines.append("Beat grid: " + ("strong" if g >= 0.6 else "usable" if g >= 0.3 else "weak"))
+    lines.append("Bars: " + {"bar": "aligned", "beat": "beats only (bars uncertain)", "time": "not beat-matched"}[aligned])
+    lines.append("Key: " + {"compatible": "compatible", "clash": "clash", "unknown": "uncertain"}[ev["key_fit"]])
+    if a_voc is None or b_voc is None:
+        lines.append("Vocals: unknown")
+    else:
+        lines.append("Vocals: " + ("overlap heavily" if a_voc >= 0.5 and b_voc >= 0.5 else "low collision"))
+    if a_bass is not None and b_bass is not None:
+        lines.append("Bass: " + ("dense on both sides" if a_bass >= 0.6 and b_bass >= 0.6 else "moderate" if max(a_bass, b_bass) >= 0.6 else "low"))
+    d = ev["loudness_diff_lu"]
+    if d is not None and abs(d) > 2:
+        lines.append(f"Loudness: Song B is {abs(d):.0f} LU {'louder' if d > 0 else 'quieter'} (levelled)")
+    limits = [n for n in notes if not n.startswith(("Close tempos", "Compatible tempos"))]
+    if limits:
+        lines.append("Limited by: " + "; ".join(limits))
+    label = {"deep_blend": "Deep blend", "smooth_blend": "Moderate blend" if overlap > 4500 else "Short blend", "bass_handoff": "Bass handoff",
+             "clean_handoff": "Clean handoff", "quick_switch": "Quick switch", "gapless": "Gapless"}.get(kind, TYPES.get(kind, kind))
+    lines.append(f"Result: {label}, {overlap / 1000:.1f} s")
+    return lines
 
 
 def _facts_lines(aa: dict, ba: dict, ev: dict) -> list[str]:

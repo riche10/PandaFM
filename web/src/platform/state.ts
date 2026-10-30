@@ -2,7 +2,7 @@
 // Capacitor import, so every module (and every unit test) can use it; the
 // Android runtime fills it in at start-up (platform/runtime.ts).
 
-import type { PandaPlayerPlugin, PandaStoragePlugin } from './native'
+import type { PandaPlayerPlugin, PandaStoragePlugin } from './native.ts'
 
 export interface PlatformState {
   kind: 'web' | 'android'

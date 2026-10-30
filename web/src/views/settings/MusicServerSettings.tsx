@@ -33,7 +33,7 @@ export function MusicServerSettings() {
         {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
       </dl>
       {editing ? (
-        <MusicServerForm initial={info} editing={info.configured} onSaved={() => { setEditing(false); toast('Music server saved'); load(); void checkConnection() }} />
+        <MusicServerForm initial={info} editing={info.configured} onSaved={() => { setEditing(false); toast('Music server saved'); load(); void checkConnection({ fresh: true, trigger: 'music server saved' }) }} />
       ) : (
         <div className="setup-actions">
           <button type="button" className="button button--quiet" onClick={() => setEditing(true)}>{info.configured ? 'Change' : 'Connect'}</button>

@@ -12,6 +12,7 @@ export type ConnectionState =
   | 'ready'
   | 'offline' // the user chose to continue with downloads
   | 'degraded' // PandaFM works, but its music server doesn't answer
+  | 'interrupted' // 5.5.1: this session reached PandaFM; it isn't answering right now (the app stays up)
 
 export type Probe = 'pending' | 'pandafm' | 'unreachable' | 'not-pandafm'
 
@@ -24,13 +25,17 @@ export interface ConnectionFacts {
   musicServerConfigured?: boolean
   musicServerOk?: boolean
   offlineChosen?: boolean
+  /** 5.5.1: this session already had a usable connection to this same server address */
+  everUsable?: boolean
 }
 
 export function deriveConnection(f: ConnectionFacts): ConnectionState {
   if (f.native && !f.hasServer) return 'no-server'
   if (f.offlineChosen && f.probe !== 'pandafm') return 'offline'
   if (f.probe === 'pending') return 'checking'
-  if (f.probe !== 'pandafm') return 'server-unreachable' // a network outage is not a lost configuration
+  // A network outage is not a lost configuration. And once this session has used this server, one failed
+  // probe (a phone waking up, a busy API) must not tear the app down: 'interrupted' keeps it mounted.
+  if (f.probe !== 'pandafm') return f.everUsable ? 'interrupted' : 'server-unreachable'
   if (f.ownerConfigured === false) return 'setup-required'
   if (f.signedIn === undefined || f.ownerConfigured === undefined) return 'checking'
   if (!f.signedIn) return 'sign-in-required'
@@ -62,6 +67,20 @@ export function displayHost(url: string): string {
  * app (Now Playing included) on every network reconnect, for up to the probe's timeout.
  */
 export function whileRechecking(current: ConnectionState, next: ConnectionState): ConnectionState {
-  const usable = current === 'ready' || current === 'degraded' || current === 'offline'
-  return next === 'checking' && usable ? current : next
+  return next === 'checking' && isUsableState(current) ? current : next
 }
+
+/** States in which the whole app (Now Playing, the queue, navigation) stays mounted, with at most a banner. */
+export function isUsableState(s: ConnectionState): boolean {
+  return s === 'ready' || s === 'degraded' || s === 'offline' || s === 'interrupted'
+}
+
+/** 5.5.1: the banner while PandaFM isn't answering: quiet after one miss, explicit after more. */
+export function interruptedMessage(failures: number): string {
+  return failures <= 1
+    ? 'Reconnecting to PandaFM…'
+    : 'PandaFM server is temporarily unreachable. Playback may continue from buffer or downloads.'
+}
+
+/** 5.5.1: automatic re-checks while interrupted (then every minute); "Try again" checks at once. */
+export const RETRY_AFTER_MS = [5_000, 15_000, 30_000, 60_000]

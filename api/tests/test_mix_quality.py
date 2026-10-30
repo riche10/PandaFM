@@ -86,7 +86,8 @@ def _lands_on_bar(an, p, a, b):
     bar_a, bar_b = 60 / A.bpm * 4, 60 / B.bpm * 4
     lead = (B.first_downbeat - p["incoming_start_ms"] / 1000) % bar_b
     d = (p["outgoing_start_ms"] / 1000 + lead - A.first_downbeat) % bar_a
-    return min(d, bar_a - d) <= 0.04
+    # 5.5.1: centred on the midpoint, so at the start B may sit up to max_slip_ms off A's bar
+    return min(d, bar_a - d) <= 0.04 + (p["facts"].get("max_slip_ms") or 0) / 1000
 
 
 def test_same_tempo_and_clear_bars_allow_a_long_bar_aligned_blend(an):
@@ -102,7 +103,9 @@ def test_near_tempos_never_drift_past_the_budget_and_personalities_differ(an):
         p = mix(an, "A", "B", mode)
         beats = p["overlap_ms"] / (60000 / 126)
         drift = beats * abs(60000 / 126 - 60000 / 127)
-        assert drift <= DRIFT_BUDGET_MS[mode] + 1, (mode, drift)
+        # 5.5.1: aligned at the midpoint, so the worst slip (at either end) is half the total drift
+        assert drift / 2 <= DRIFT_BUDGET_MS[mode] + 1, (mode, drift)
+        assert (p["facts"]["max_slip_ms"] or 0) <= DRIFT_BUDGET_MS[mode] + 1
         assert _lands_on_bar(an, p, "A", "B")
         lengths.append(p["overlap_ms"])
     assert lengths == sorted(lengths) and len(set(lengths)) == 3

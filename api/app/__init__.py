@@ -1,3 +1,3 @@
 """PandaFM API."""
 
-__version__ = "5.5.0"
+__version__ = "5.5.1"
