@@ -207,7 +207,8 @@ deep only for confident dance material. Rules on top:
   Bass Handoff).
 - The louder side is turned down during the blend toward the other's level (attenuation only, never a
   boost; the files are never changed).
-- A held final note rings out under Song B; a hard final hit isn't buried under a long blend; at most
+- A held final note rings out while Song B rises beneath it (the two levels always add up to at most
+  full scale, so the overlap can't clip); a hard final hit isn't buried under a long blend; at most
   half of any blend reaches past Song A's musical end.
 
 **Playback** never sacrifices the music for the transition: a streamed incoming song must have

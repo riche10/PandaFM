@@ -501,8 +501,10 @@ final class PandaDjEngine implements QueueController.Engine {
     /**
      * 5.5: the transition envelope, identical to the browser's (web/src/player/mixPlan.ts gains()):
      * equal_power (no dip at the midpoint), linear, sharp (the change concentrated around the midpoint,
-     * so two low ends overlap only briefly), under_tail (A keeps its own level and rings out; B fades in).
-     * Levelling (attenuation only, never above unity): A eases down to outDb, B rises from inDb to 0 dB.
+     * so two low ends overlap only briefly), under_tail (A's held note rings out while B rises slowly at
+     * first: in = p², out = 1 - p², so the two gains always sum to exactly 1 and the mix can't clip; A stays
+     * at 75% or more for the first half). Levelling only attenuates (never above unity): A eases down to
+     * outDb, B rises from inDb to 0 dB.
      */
     static float[] gains(double p, String curve, double outDb, double inDb) {
         p = Math.max(0, Math.min(1, p));
@@ -511,8 +513,8 @@ final class PandaDjEngine implements QueueController.Engine {
             out = 1 - p;
             in = p;
         } else if ("under_tail".equals(curve)) {
-            out = 1;
-            in = Math.sin(p * Math.PI / 2);
+            in = p * p; // headroom: out + in == 1 at every point (5.5 had out = 1 under a rising B: up to 2x full scale)
+            out = 1 - in;
         } else {
             double q = "sharp".equals(curve) ? sharp(p) : p;
             out = Math.cos(q * Math.PI / 2);

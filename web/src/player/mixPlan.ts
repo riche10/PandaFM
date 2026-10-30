@@ -75,8 +75,10 @@ export function sharpStep(p: number): number {
 /**
  * 5.5: the transition envelope at progress p, identical to Android's PandaDjEngine.gains():
  * equal_power (no dip at the midpoint), linear, sharp (the change concentrated around the midpoint so two
- * low ends overlap only briefly), under_tail (A keeps its own level and rings out; B fades in).
- * Levelling only attenuates (never above unity): A eases down to outDb, B rises from inDb to 0 dB.
+ * low ends overlap only briefly), under_tail (A's held note rings out while B rises slowly at first:
+ * in = p², out = 1 - p², so the two gains always sum to exactly 1 and the mix can't clip; A stays at 75% or
+ * more for the first half). Levelling only attenuates (never above unity): A eases down to outDb, B rises
+ * from inDb to 0 dB.
  */
 export function envelope(p: number, curve: MixPlan['curve'], outDb = 0, inDb = 0): [number, number] {
   p = Math.max(0, Math.min(1, p))
@@ -86,8 +88,8 @@ export function envelope(p: number, curve: MixPlan['curve'], outDb = 0, inDb = 0
     out = 1 - p
     inn = p
   } else if (curve === 'under_tail') {
-    out = 1
-    inn = Math.sin((p * Math.PI) / 2)
+    inn = p * p // headroom: out + in === 1 at every point (5.5 had out = 1 under a rising B: up to 2x full scale)
+    out = 1 - inn
   } else {
     const q = curve === 'sharp' ? sharpStep(p) : p
     out = Math.cos((q * Math.PI) / 2)

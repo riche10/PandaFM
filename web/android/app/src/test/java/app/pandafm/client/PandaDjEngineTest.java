@@ -865,7 +865,6 @@ public class PandaDjEngineTest {
             }
             assertEquals(c, 1f, PandaDjEngine.gains(1, c, -7, -7)[1], 1e-4f); // B ends at its own level
         }
-        assertEquals(1f, PandaDjEngine.gains(0.6, "under_tail", 0, 0)[0], 1e-6f); // A rings out untouched
         assertTrue(PandaDjEngine.gains(0.2, "sharp", 0, 0)[1] < PandaDjEngine.gains(0.2, "equal_power", 0, 0)[1] / 2); // low ends meet briefly
         assertEquals(PandaDjEngine.gains(0.5, "equal_power", 0, 0)[1], PandaDjEngine.gains(0.5, "sharp", 0, 0)[1], 1e-3f);
         assertEquals((float) (Math.sin(Math.PI / 4) * Math.pow(10, -3.5 / 20)), PandaDjEngine.gains(0.5, "equal_power", 0, -7)[1], 1e-3f);
@@ -974,20 +973,41 @@ public class PandaDjEngineTest {
 
     @Test
     public void theEnvelopeMatchesTheSharedReferenceValues() { // the same values pin web/src/player/envelope.test.ts
-        String[] curves = {"sharp", "equal_power", "equal_power", "under_tail", "linear", "sharp"};
+        String[] curves = {"sharp", "equal_power", "equal_power", "under_tail", "linear", "sharp", "under_tail", "under_tail", "under_tail", "under_tail", "under_tail", "under_tail"};
         double[][] ref = {
             {0.2, 0, 0, 0.997898, 0.064806}, // sharp
             {0.5, 0, -7, 0.707107, 0.472591}, // equal_power
             {0.5, -6, 0, 0.500593, 0.707107}, // equal_power
-            {0.3, -4, -4, 0.870964, 0.328887}, // under_tail
+            {0.3, -4, -4, 0.792577, 0.065199}, // under_tail
             {0.75, -3, -5, 0.192948, 0.649473}, // linear
             {0.9, -2, -8, 0.014614, 0.911863}, // sharp
+            {0.0, 0, 0, 1, 0}, // under_tail
+            {0.25, 0, 0, 0.9375, 0.0625}, // under_tail
+            {0.5, 0, 0, 0.75, 0.25}, // under_tail
+            {0.75, 0, 0, 0.4375, 0.5625}, // under_tail
+            {1.0, 0, 0, 0, 1}, // under_tail
+            {0.6, -3, -6, 0.520212, 0.273088}, // under_tail
         };
         for (int k = 0; k < ref.length; k++) {
             float[] g = PandaDjEngine.gains(ref[k][0], curves[k], ref[k][1], ref[k][2]);
-            assertEquals(curves[k] + " out", ref[k][3], g[0], 1e-5);
-            assertEquals(curves[k] + " in", ref[k][4], g[1], 1e-5);
+            assertEquals(curves[k] + " out @" + ref[k][0], ref[k][3], g[0], 1e-5);
+            assertEquals(curves[k] + " in @" + ref[k][0], ref[k][4], g[1], 1e-5);
         }
+    }
+
+    @Test
+    public void underTailHasHeadroomAndStillLetsTheHeldNoteRingOut() {
+        double[][] levelling = {{0, 0}, {-4, -4}, {-8, 0}, {0, -8}};
+        for (double[] l : levelling) {
+            for (int k = 0; k <= 200; k++) {
+                float[] g = PandaDjEngine.gains(k / 200.0, "under_tail", l[0], l[1]);
+                assertTrue("p=" + k / 200.0 + ": " + g[0] + " + " + g[1], g[0] + g[1] <= 1 + 1e-6); // can't clip
+            }
+        }
+        for (int k = 0; k <= 100; k++) assertTrue(PandaDjEngine.gains(k / 200.0, "under_tail", 0, 0)[0] >= 0.75f - 1e-6f); // first half ≥ 75%
+        float[] end = PandaDjEngine.gains(1, "under_tail", 0, 0);
+        assertEquals(0f, end[0], 1e-6f);
+        assertEquals(1f, end[1], 1e-6f);
     }
 
 }

@@ -221,7 +221,7 @@ def plan(a: dict, b: dict, aa: dict | None, ba: dict | None, mode: str = "auto")
     if aa.get("ending") == "sustain" and aa.get("last_hit_ms") and end - aa["last_hit_ms"] >= 1500 and tier != "clean":
         tail = min(6000, end - int(aa["last_hit_ms"]))
         return finish("smooth_blend", tail, int(aa["last_hit_ms"]), start, 0.6, "Song B comes in under Song A's held final note.",
-                      reasons + ["Song A ends on a held note: it rings out under Song B"], curve="under_tail", tier=tier, **gains)
+                      reasons + ["Song A ends on a held note: it rings out while Song B rises beneath it"], curve="under_tail", tier=tier, **gains)
     if aa.get("ending") == "hard" and TIERS.index(tier) > TIERS.index("short") and not ev["dance"]:
         tier = "short"
         reasons.append("Song A ends on a hard final hit: kept short so it isn't buried")

@@ -31,6 +31,15 @@ export const platform: PlatformState = {
 
 export const isNative = () => platform.kind === 'android'
 
+const platformListeners = new Set<() => void>()
+
 export function configurePlatform(next: Partial<PlatformState>): void {
   Object.assign(platform, next)
+  platformListeners.forEach((l) => l())
+}
+
+/** 5.5: told whenever the platform changes (e.g. the native player became available). */
+export function onPlatformChange(listener: () => void): () => void {
+  platformListeners.add(listener)
+  return () => platformListeners.delete(listener)
 }
