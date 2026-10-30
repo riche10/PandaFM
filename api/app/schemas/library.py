@@ -110,6 +110,10 @@ class AlbumList(BaseModel):
 class SearchResults(BaseModel):
     query: str
     tracks: list[Track] = Field(default_factory=list)
+    # 5.5.2: songs come in pages; there is no reliable total from the music server, so none is invented
+    track_offset: int = 0
+    track_limit: int | None = None
+    tracks_has_more: bool = False
     albums: list[AlbumSummary] = Field(default_factory=list)
     artists: list[ArtistSummary] = Field(default_factory=list)
     genres: list[GenreSummary] = Field(default_factory=list)

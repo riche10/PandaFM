@@ -264,3 +264,19 @@ Bass: low
 Limited by: Half/double time, but 2.3% apart after folding: without time-stretching the beats slip 8 ms per beat, so the blend is limited to 8 beats
 Result: Short blend, 2.8 s
 ```
+
+
+## 5.5.2: changing a Panda Mix while it plays; editing in mixed order
+
+- **Changing Auto / Gentle / Flow / Energetic while that playlist's Panda Mix plays** keeps the current song
+  playing (no restart, no jump) and plans the transitions still to come in the new style. **Remix** keeps
+  the current song too and reorders only the songs after it (songs you added by hand stay after the mix;
+  each duplicate stays its own occurrence; a blend already under way keeps its next song). If the queue
+  playing isn't this playlist's mix (or it's shuffled, for Remix), the change applies the next time it
+  plays, and PandaFM says so. Rapid changes are safe: the last choice wins.
+- **Remove from this playlist** works in the mixed order too, from a song's ⋯ menu or by selecting several.
+  A song that appears twice is two occurrences: the one you pick is the one removed, from the playlist and
+  from its place in the mixed order. The song playing right now keeps playing; the playing queue isn't
+  changed by editing the playlist.
+- A Remix on playlists made of whole albums no longer fails (album runs made its cost negative, which
+  rejected every candidate order).

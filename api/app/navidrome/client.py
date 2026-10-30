@@ -222,13 +222,15 @@ class NavidromeClient:
     # ── Library (JSON endpoints) ──────────────────────────────────────
 
     async def search(
-        self, query: str, *, track_count: int = 20, album_count: int = 8, artist_count: int = 8
+        self, query: str, *, track_count: int = 20, album_count: int = 8, artist_count: int = 8, track_offset: int = 0
     ) -> SearchResults:
-        """search3. Never call with an empty query: Navidrome returns everything."""
+        """search3. Never call with an empty query: Navidrome returns everything. 5.5.2: songs page with
+        songOffset, so every match is reachable."""
         body = await self._call(
             "search3",
             query=query,
             songCount=track_count,
+            songOffset=track_offset,
             albumCount=album_count,
             artistCount=artist_count,
         )

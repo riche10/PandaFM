@@ -110,3 +110,22 @@ def test_why_here_uses_only_confident_facts():
     unsure = explain({}, {}, an(128, conf=0.2), an(130, conf=0.2))
     assert unsure[:2] == ["Tempo uncertain", "Key uncertain"]
     assert explain({}, {}, an(75), an(150))[0] == "75 → 150 BPM (half/double time), close tempo"
+
+
+def test_remix_works_when_album_runs_make_the_cost_negative():
+    """5.5.2: album runs (a -2.5 bonus per pair) make path costs negative; Remix's 'never clearly worse than
+    the best' margin was best * (1 + slack), which is *below* a negative best: every candidate was
+    rejected and Remix crashed (rng.choice of an empty list)."""
+    import random as _r
+
+    from app.mix import order as mix_order
+
+    rng = _r.Random(3)
+    ids = [f"t{i}" for i in range(60)]
+    ready = {i: {"bpm": rng.choice([120, 124, 128]), "bpm_confidence": 0.9, "key_camelot": "8A", "key_confidence": 0.8,
+                 "integrated_lufs": -9.0, "intro_suitability": 0.5, "outro_suitability": 0.5} for i in ids}
+    meta = {i: {"album_id": f"al{k // 12}", "track_number": k % 12 + 1} for k, i in enumerate(ids)}
+    assert mix_order.order_cost(ids, meta, ready) < 0
+    for seed in (1, 2, 3):
+        out = mix_order.mixed_order(ids, meta, ready, seed, current=ids)
+        assert sorted(out) == sorted(ids)

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, it, mock, suite } from 'node:test'
 import { isUsableState } from '../platform/connection.ts'
 import { configurePlatform, platform } from '../platform/state.ts'
 import { authStore } from './auth.ts'
-import { checkConnection, connectionStore, resetConnectionForTests } from './connection.ts'
+import { checkConnection, connectionStore, noteConnectionEvent, resetConnectionForTests } from './connection.ts'
 
 // 5.5.1: a usable app is never torn down by one failed probe; stale results never win.
 type Mode = 'ok' | 'down' | 'auth-down'
@@ -134,5 +134,42 @@ suite('5.5.1 connection policy', () => {
     await new Promise((r) => setImmediate(r))
     assert.ok(calls > before, 'a re-check ran')
     assert.equal(state().state, 'ready')
+  })
+
+  // ── 5.5.2: a UI restarted under live playback; Panda Mix edits ──
+  it('a UI restarted under a live session is not a first launch: a failed probe is interrupted', async () => {
+    const marks: string[] = []
+    configurePlatform({ kind: 'android', server: 'https://one.example',
+      player: { getSession: async () => ({ usableServer: 'https://one.example', serviceRunning: true }), markSessionUsable: async (o: { server: string }) => { marks.push(o.server) } } } as never)
+    mode = 'down'
+    await checkConnection({ trigger: 'launch' })
+    assert.equal(state().state, 'interrupted') // the app, Now Playing and the queue stay
+    assert.ok(state().events.some((e) => e.includes('app restarted under a live session')))
+  })
+
+  it('a different server in the native session marker is still a first launch', async () => {
+    configurePlatform({ kind: 'android', server: 'https://two.example',
+      player: { getSession: async () => ({ usableServer: 'https://one.example', serviceRunning: true }) } } as never)
+    mode = 'down'
+    await checkConnection({ trigger: 'launch' })
+    assert.equal(state().state, 'server-unreachable')
+  })
+
+  it('once usable, the native session is marked (for a UI restart later)', async () => {
+    const marks: string[] = []
+    configurePlatform({ kind: 'android', server: 'https://one.example',
+      player: { getSession: async () => ({ usableServer: null, serviceRunning: true }), markSessionUsable: async (o: { server: string }) => { marks.push(o.server) } } } as never)
+    await checkConnection()
+    assert.equal(state().state, 'ready')
+    assert.deepEqual(marks, ['https://one.example'])
+  })
+
+  it('a health probe failing during a Panda Mix edit, after the app was usable, is interrupted', async () => {
+    await checkConnection()
+    noteConnectionEvent('Panda Mix edit while playing: mode flow')
+    mode = 'down'
+    await checkConnection({ fresh: true, trigger: 'back online' })
+    assert.equal(state().state, 'interrupted')
+    assert.ok(state().events.some((e) => e.includes('Panda Mix edit while playing')))
   })
 })

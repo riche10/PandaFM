@@ -111,6 +111,50 @@ public class PandaPlayerPlugin extends Plugin {
     }
 
     /** Settings › Diagnostics: safe playback facts (no URLs, no tokens). */
+    /**
+     * 5.5.2: "this app process already reached server X". A static, so it survives the WebView or the
+     * Activity being recreated (the UI then reconnects to the live queue instead of acting like a first
+     * launch), and is gone when the process ends (a real cold start).
+     */
+    private static volatile String sessionUsableServer;
+
+    @PluginMethod
+    public void markSessionUsable(PluginCall call) {
+        String server = call.getString("server");
+        if (server != null && !server.isEmpty()) sessionUsableServer = server;
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void getSession(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("usableServer", sessionUsableServer);
+        o.put("serviceRunning", PlaybackService.running());
+        call.resolve(o);
+    }
+
+    /** 5.5.2: a Panda Mix mode change or Remix while that playlist plays (see QueueController.updateMix). */
+    @PluginMethod
+    public void updateMix(PluginCall call) {
+        String playlistId = call.getString("playlistId");
+        String mode = call.getString("mode");
+        String orderJson = call.getString("order");
+        main.post(() -> {
+            QueueController c = PlaybackService.controller();
+            java.util.List<String> order = null;
+            if (orderJson != null) {
+                order = new java.util.ArrayList<>();
+                java.util.List<Object> parsed = Json.list(Json.parse(orderJson));
+                if (parsed != null) for (Object o : parsed) order.add(String.valueOf(o));
+            }
+            boolean applied = c != null && c.updateMix(playlistId, mode, order);
+            Log.i(TAG, "Panda Mix live edit" + (mode != null ? " mode=" + mode : "") + (order != null ? " remix" : "") + " applied=" + applied);
+            JSObject o = new JSObject();
+            o.put("applied", applied);
+            call.resolve(o);
+        });
+    }
+
     @PluginMethod
     public void getDiagnostics(PluginCall call) {
         main.post(() -> {

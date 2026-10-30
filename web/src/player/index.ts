@@ -202,6 +202,7 @@ export const resyncPlayer = () => (nativeQueue ? resyncNativePlayer() : Promise.
 export const player = {
   playCollection: (...args: Parameters<PlayerStoreState['playCollection']>) => playerStore.getState().playCollection(...args),
   playNext: (...args: Parameters<PlayerStoreState['playNext']>) => playerStore.getState().playNext(...args),
+  updateMix: (...args: Parameters<PlayerStoreState['updateMix']>) => playerStore.getState().updateMix(...args),
   addToQueue: (...args: Parameters<PlayerStoreState['addToQueue']>) => playerStore.getState().addToQueue(...args),
   removeFromQueue: (uid: string) => playerStore.getState().removeFromQueue(uid),
   clearQueue: (which?: 'all' | 'manual') => playerStore.getState().clearQueue(which),

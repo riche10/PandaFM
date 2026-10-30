@@ -28,7 +28,7 @@ def test_blank_search_returns_nothing_without_asking_navidrome():
     with api_client(fake) as client:
         body = client.get("/api/search", params={"q": "   "}).json()
 
-    assert body == {"query": "", "tracks": [], "albums": [], "artists": [], "genres": []}
+    assert body == {"query": "", "tracks": [], "albums": [], "artists": [], "genres": [], "track_offset": 0, "track_limit": None, "tracks_has_more": False}
     assert fake.requests == []
 
 

@@ -299,3 +299,48 @@ export function endRadio(state: QueueState): QueueState {
   if (state.source?.kind !== 'radio') return state
   return { ...state, source: { kind: 'tracks', name: state.source.name } }
 }
+
+
+/**
+ * 5.5.2: the queue with only its upcoming songs (after the current one, and after `keep` committed ones)
+ * following `order`. The order is read from just after the current song and wraps around, so no
+ * upcoming song is lost; songs are matched as a multiset (each duplicate keeps its own item); songs the
+ * order doesn't mention (added by hand) keep their relative order after the mix. Same rule as Android's
+ * QueueController.reorderUpcoming().
+ */
+export function reorderUpcoming<T>(items: T[], index: number, order: string[], idOf: (t: T) => string, keep = 0): T[] {
+  const from = Math.min(items.length, index + 1 + Math.max(0, keep))
+  const out = items.slice(0, from)
+  const rest = items.slice(from)
+  const byId = new Map<string, T[]>()
+  for (const it of rest) byId.set(idOf(it), [...(byId.get(idOf(it)) ?? []), it])
+  const pos = index >= 0 && index < items.length ? order.indexOf(idOf(items[index])) : -1
+  const sequence = pos >= 0 ? [...order.slice(pos + 1), ...order.slice(0, pos + 1)] : order
+  const used = new Set<T>()
+  for (const id of sequence) {
+    const it = byId.get(id)?.shift()
+    if (it !== undefined) {
+      out.push(it)
+      used.add(it)
+    }
+  }
+  for (const it of rest) if (!used.has(it)) out.push(it)
+  return out
+}
+
+/**
+ * 5.5.2: a Panda Mix setting changed while its playlist plays: a new mode for the transitions still to
+ * come, and/or a Remix of the upcoming songs. The current song is untouched. null when the queue isn't
+ * this playlist's Panda Mix (the change then applies the next time it's played).
+ */
+export function updateMix(state: QueueState, playlistId: string, change: { mode?: string; order?: string[] }): QueueState | null {
+  const mix = (state.source as (QueueSource & { mix?: { mode?: string; playlistId?: string } }) | null)?.mix
+  if (!mix || mix.playlistId !== playlistId || state.index < 0) return null
+  let next = state
+  if (change.mode && change.mode !== mix.mode) next = { ...next, source: { ...(state.source as QueueSource), mix: { ...mix, mode: change.mode } } as QueueSource }
+  if (change.order && !state.shuffle) {
+    const items = reorderUpcoming(state.items, state.index, change.order, (i) => i.track.id)
+    if (items.some((it, k) => it !== state.items[k])) next = { ...next, items }
+  }
+  return next === state ? null : next
+}

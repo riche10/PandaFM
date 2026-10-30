@@ -299,6 +299,13 @@ final class LibraryTree {
     }
 
     // ── search and voice ──
+    /** 5.5.2: songs come from the API in pages (it used to be one request capped at 20). */
+    static final int SEARCH_PAGE = 100, SEARCH_MAX_PAGES = 20, VOICE_PAGES = 2;
+
+    private Map<String, Object> searchPage(String q, int offset) throws ApiError {
+        return map(api.get("/search?q=" + enc(q) + "&limit=" + SEARCH_PAGE + (offset > 0 ? "&offset=" + offset : "")));
+    }
+
     List<Node> search(String query, int page, int size, boolean signedIn, boolean online) throws ApiError {
         List<Node> out = new ArrayList<>();
         String q = query == null ? "" : query.trim();
@@ -307,7 +314,7 @@ final class LibraryTree {
             for (Map<String, Object> t : offlineMatches(q)) out.add(trackNode("downloaded:songs", t));
             return slice(out, page, size);
         }
-        Map<String, Object> res = map(api.get("/search?q=" + enc(q) + "&limit=20"));
+        Map<String, Object> res = searchPage(q, 0);
         for (Map<String, Object> g : list(res, "genres")) out.add(new Node("genre:" + Json.str(g, "key"), Json.str(g, "name"), "Genre", null, true, true, "genre", null));
         for (Map<String, Object> a : list(res, "artists")) out.add(new Node("artist:" + Json.str(a, "id"), Json.str(a, "name"), "Artist", Json.str(a, "cover_art_id"), true, true, "artist", null));
         out.addAll(albums(list(res, "albums")));
@@ -316,8 +323,23 @@ final class LibraryTree {
             if (lc(Json.str(p, "name")).contains(lower)) out.add(new Node("playlist:" + Json.str(p, "id"), Json.str(p, "name"), "Playlist", Json.str(p, "cover_art_id"), true, true, "playlist", null));
         for (Map<String, Object> s : Json.maps(api.get("/radio/stations")))
             if (lc(Json.str(s, "name")).contains(lower)) out.add(new Node("station:" + Json.str(s, "id"), Json.str(s, "name"), "Station", null, false, true, "radio", null));
-        for (Map<String, Object> t : list(res, "tracks")) out.add(trackNode("track", t));
+        // Songs come last: fetch further pages until the requested page is full or there are no more.
+        List<Map<String, Object>> tracks = new ArrayList<>(list(res, "tracks"));
+        boolean more = Boolean.TRUE.equals(res.get("tracks_has_more"));
+        for (int pages = 1; more && out.size() + tracks.size() < (page + 1) * size && pages < SEARCH_MAX_PAGES; pages++) {
+            Map<String, Object> next = searchPage(q, tracks.size());
+            List<Map<String, Object>> got = list(next, "tracks");
+            if (got.isEmpty()) break;
+            tracks.addAll(got);
+            more = Boolean.TRUE.equals(next.get("tracks_has_more"));
+        }
+        for (Map<String, Object> t : tracks) out.add(trackNode("track", t));
         return slice(out, page, size);
+    }
+
+    private static boolean hasTitle(List<Map<String, Object>> tracks, String q) {
+        for (Map<String, Object> t : tracks) if (q.equals(lc(Json.str(t, "title")))) return true;
+        return false;
     }
 
     /**
@@ -339,8 +361,18 @@ final class LibraryTree {
         }
         if (wantsStation && station(q, r)) return r;
         if (wantsPlaylist && playlist(q, r, true)) return r;
-        Map<String, Object> res = map(api.get("/search?q=" + enc(q) + "&limit=20"));
-        List<Map<String, Object>> tracks = list(res, "tracks");
+        Map<String, Object> res = searchPage(q, 0);
+        List<Map<String, Object>> tracks = new ArrayList<>(list(res, "tracks"));
+        // 5.5.2: an exact title may sit beyond the first page: look at up to VOICE_PAGES pages (200 songs)
+        // for it, and only fetch more while there is no exact match yet.
+        boolean more = Boolean.TRUE.equals(res.get("tracks_has_more"));
+        for (int pages = 1; more && pages < VOICE_PAGES && !hasTitle(tracks, q); pages++) {
+            Map<String, Object> next = searchPage(q, tracks.size());
+            List<Map<String, Object>> got = list(next, "tracks");
+            if (got.isEmpty()) break;
+            tracks.addAll(got);
+            more = Boolean.TRUE.equals(next.get("tracks_has_more"));
+        }
         for (int k = 0; k < tracks.size(); k++) if (q.equals(lc(Json.str(tracks.get(k), "title")))) return play(r, tracks, k, source("search", "Search", null));
         for (Map<String, Object> a : list(res, "artists"))
             if (q.equals(lc(Json.str(a, "name")))) return play(r, contextTracks("artist:" + Json.str(a, "id")), 0, source("artist", Json.str(a, "name"), Json.str(a, "id")));

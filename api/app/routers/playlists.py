@@ -9,7 +9,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Response
 
-from app.deps import ItemId, NavidromeDep
+from app.deps import ItemId, NavidromeDep, SessionDep, UserId
+from app.services.favorites import with_likes
 from app.schemas.library import (
     Playlist,
     PlaylistAddTracks,
@@ -32,8 +33,8 @@ async def create_playlist(body: PlaylistCreate, navidrome: NavidromeDep) -> Play
 
 
 @router.get("/playlists/{playlist_id}", response_model=Playlist)
-async def get_playlist(playlist_id: ItemId, navidrome: NavidromeDep) -> Playlist:
-    return await navidrome.get_playlist(playlist_id)
+async def get_playlist(playlist_id: ItemId, navidrome: NavidromeDep, db: SessionDep, user_id: UserId) -> Playlist:
+    return await with_likes(db, user_id, await navidrome.get_playlist(playlist_id))
 
 
 @router.patch("/playlists/{playlist_id}", response_model=Playlist)
@@ -49,9 +50,9 @@ async def delete_playlist(playlist_id: ItemId, navidrome: NavidromeDep) -> Respo
 
 
 @router.post("/playlists/{playlist_id}/tracks", response_model=Playlist)
-async def add_tracks(playlist_id: ItemId, body: PlaylistAddTracks, navidrome: NavidromeDep) -> Playlist:
+async def add_tracks(playlist_id: ItemId, body: PlaylistAddTracks, navidrome: NavidromeDep, db: SessionDep, user_id: UserId) -> Playlist:
     await navidrome.add_to_playlist(playlist_id, body.track_ids)
-    return await navidrome.get_playlist(playlist_id)
+    return await with_likes(db, user_id, await navidrome.get_playlist(playlist_id))
 
 
 @router.delete("/playlists/{playlist_id}/tracks/{index}", response_model=Playlist)
@@ -60,6 +61,13 @@ async def remove_track(
     index: Annotated[int, Path(ge=0, le=100_000)],
     track_id: Annotated[str, Query(min_length=1, max_length=200, description="Song expected at that position")],
     navidrome: NavidromeDep,
+    db: SessionDep,
+    user_id: UserId,
+    mix_index: Annotated[int | None, Query(ge=0, le=100_000, description="5.5.2: its position in the Panda Mix order, when removed from there")] = None,
 ) -> Playlist:
-    await navidrome.remove_from_playlist(playlist_id, index, track_id)
-    return await navidrome.get_playlist(playlist_id)
+    await navidrome.remove_from_playlist(playlist_id, index, track_id)  # by its position in the playlist itself
+    if mix_index is not None:
+        from app.services import mix_playlists
+
+        await mix_playlists.remove_occurrence(db, user_id, playlist_id, mix_index, track_id)
+    return await with_likes(db, user_id, await navidrome.get_playlist(playlist_id))

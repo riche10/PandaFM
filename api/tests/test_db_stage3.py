@@ -82,6 +82,7 @@ class Library:
         return (
             FakeNavidrome().handle("search3", self.search3).handle("scrobble", self.scrobble).handle("getSong", self.song)
             .json("star", OK).json("unstar", OK)
+            .json("getStarred2", {"subsonic-response": {"status": "ok", "starred2": {}}})  # 5.5.2: album/artist stars for /favorites
         )
 
 

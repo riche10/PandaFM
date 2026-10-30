@@ -46,6 +46,8 @@ export interface PlayerActions {
   clearQueue(which?: 'all' | 'manual'): void
   jumpTo(uid: string): void
   moveInQueue(uid: string, direction: -1 | 1): void
+  /** 5.5.2: a Panda Mix mode change or Remix while that playlist plays; resolves true if applied now. */
+  updateMix(playlistId: string, change: { mode?: string; order?: string[] }): Promise<boolean>
   toggleShuffle(): void
   cycleRepeat(): void
   togglePlay(): void
@@ -268,6 +270,16 @@ export function createPlayerStore({
       removeFromQueue: (uid) => update((q) => Q.remove(q, uid)),
       clearQueue: (which = 'all') => update((q) => Q.clearUpcoming(q, which)),
       moveInQueue: (uid, direction) => update((q) => Q.move(q, uid, direction)),
+
+      updateMix(playlistId, change) {
+        let applied = false
+        update((q) => {
+          const next = Q.updateMix(q, playlistId, change)
+          applied = next !== null
+          return next ?? q
+        })
+        return Promise.resolve(applied)
+      },
       toggleShuffle: () => update((q) => Q.setShuffle(q, !q.shuffle, random)),
       cycleRepeat: () => update(Q.cycleRepeat),
 

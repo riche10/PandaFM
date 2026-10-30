@@ -114,7 +114,7 @@ async def _project(db: AsyncSession, user_id: int, track_id: int, event: EventIn
             "last_skipped_at": at,
         }
     elif event.type in ("favorite", "unfavorite"):
-        values = {"liked": event.type == "favorite"}  # mirrors Navidrome's star
+        values = {"liked": event.type == "favorite"}  # 5.5.2: PandaFM's own like (the latest event wins)
     else:
         return  # pause / resume / seek are history, not statistics
 
@@ -160,7 +160,7 @@ async def _steer(db: AsyncSession, session_id: UUID, selection_id: int, event: E
 
 
 async def record_favorite(db: AsyncSession, user_id: int, track: TrackSnapshot, favorite: bool) -> None:
-    """Favorites are set in Navidrome; this records the signal and mirrors it for radio."""
+    """A like or unlike in PandaFM: the durable event and the liked state (committed). PandaFM owns likes."""
     from uuid import uuid4
 
     batch = EventBatch(
@@ -207,7 +207,8 @@ REBUILD_SQL = text(
 
 
 async def rebuild_preferences(db: AsyncSession, user_id: int) -> int:
-    """Recompute all statistics from the event history (liked is left to Navidrome sync)."""
+    """Recompute all statistics, and the liked state, from the event history (5.5.2: PandaFM owns likes;
+    the latest favorite/unfavorite event for a song wins)."""
     await db.execute(
         text(
             """UPDATE track_preferences SET play_count = 0, completed_count = 0, skip_count = 0, early_skip_count = 0,
@@ -217,5 +218,13 @@ async def rebuild_preferences(db: AsyncSession, user_id: int) -> int:
         {"user": user_id},
     )
     result = await db.execute(REBUILD_SQL, {"user": user_id})
+    await db.execute(text("""INSERT INTO track_preferences (user_id, track_id)
+                             SELECT DISTINCT :user, track_id FROM listening_events WHERE user_id = :user AND event_type IN ('favorite', 'unfavorite')
+                             ON CONFLICT (user_id, track_id) DO NOTHING"""), {"user": user_id})
+    await db.execute(text("""UPDATE track_preferences p SET liked = (x.event_type = 'favorite')
+                             FROM (SELECT DISTINCT ON (track_id) track_id, event_type FROM listening_events
+                                   WHERE user_id = :user AND event_type IN ('favorite', 'unfavorite')
+                                   ORDER BY track_id, occurred_at DESC, id DESC) x
+                             WHERE p.user_id = :user AND p.track_id = x.track_id"""), {"user": user_id})
     await db.commit()
     return result.rowcount

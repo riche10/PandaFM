@@ -2,7 +2,7 @@
 
 Navidrome stays authoritative. Songs are upserted by Navidrome id; songs no
 longer in Navidrome are flagged unavailable (never deleted, so history
-survives). Stars are mirrored into track_preferences.liked. Pages are
+survives). Stars may import likes (PandaFM owns them; see services/favorites.py). Pages are
 fetched with a short pause so Navidrome isn't hammered, and a run is
 idempotent: running it twice changes nothing the second time.
 """
@@ -91,6 +91,9 @@ class LibrarySyncer:
                         .values(is_available=False)
                     )
                 ).rowcount
+                from app.services.favorites import transfer_identities
+
+                await transfer_identities(db, user_id)  # a replaced backend's new ids keep the likes and history
                 await db.execute(
                     update(LibrarySync)
                     .where(LibrarySync.id == run_id)
@@ -213,17 +216,12 @@ async def upsert_tracks(db: AsyncSession, user_id: int, tracks: list[TrackOut]) 
     # New rows get last_synced_at too (the INSERT path doesn't run the SET clause).
     await db.execute(update(Track).where(Track.id.in_(list(ids.values())), Track.last_synced_at.is_(None)).values(last_synced_at=func.now()))
 
-    liked = [ids[t.id] for t in tracks if t.favorite and t.id in ids]
-    not_liked = [ids[t.id] for t in tracks if not t.favorite and t.id in ids]
-    if liked:
-        ins = pg_insert(TrackPreference).values([{"user_id": user_id, "track_id": tid, "liked": True} for tid in liked])
-        await db.execute(ins.on_conflict_do_update(index_elements=["user_id", "track_id"], set_={"liked": True}))
-    if not_liked:
-        await db.execute(
-            update(TrackPreference)
-            .where(TrackPreference.user_id == user_id, TrackPreference.track_id.in_(not_liked), TrackPreference.liked)
-            .values(liked=False)
-        )
+    # 5.5.2: PandaFM owns track likes. A star may import one (see services/favorites.py); a song without a
+    # star changes nothing. Before 5.5.2 an unstarred song was written liked=False, so a fresh music server
+    # (zero stars) erased every Liked Song.
+    from app.services.favorites import import_stars
+
+    await import_stars(db, user_id, [ids[t.id] for t in tracks if t.favorite and t.id in ids])
     return sum(1 for *_, inserted in rows if inserted)
 
 

@@ -1,3 +1,4 @@
+import { removalPlan } from '../library/playlistRemoval'
 import type { PlaylistSummary, Track } from '../api/library'
 import { openDialog } from '../dialogs/store'
 import { favoritesStore, playlists, toast, toggleFavorite } from '../library'
@@ -12,10 +13,13 @@ import { MenuButton, MenuItem } from './Menu'
 const songs = (n: number) => `${n} ${n === 1 ? 'song' : 'songs'}`
 
 /** What you can do with the selected songs (5.3). Each action is the one-song menu's own, applied to all of them. */
-export function SelectionBar({ selection, tracks, playlist, onClear, onSelectAll }: {
+export function SelectionBar({ selection, tracks, playlist, playlistIndexes, mixed, onRemoved, onClear, onSelectAll }: {
   selection: Selection
   tracks: Track[]
   playlist?: PlaylistSummary
+  playlistIndexes?: number[]
+  mixed?: boolean
+  onRemoved?: () => void
   onClear: () => void
   onSelectAll: () => void
 }) {
@@ -34,13 +38,16 @@ export function SelectionBar({ selection, tracks, playlist, onClear, onSelectAll
   }
   const removeFromPlaylist = async (p: PlaylistSummary) => {
     let failed = 0
-    for (const index of descending(selection)) { // highest first: the remaining positions stay valid
+    // highest playlist positions first (the rest stay valid); from the Panda Mix order, each row's own
+    // playlist position and its mixed position (5.5.2)
+    for (const r of removalPlan(descending(selection), tracks.map((t) => t.id), playlistIndexes, mixed)) {
       try {
-        await playlists().removeTrack(p.id, index, tracks[index].id)
+        await playlists().removeTrack(p.id, r.index, r.trackId, r.mixIndex)
       } catch {
         failed++
       }
     }
+    onRemoved?.()
     done(failed ? `Couldn’t remove ${songs(failed)} from ${p.name}` : `Removed ${songs(chosen.length)} from ${p.name}`)
   }
   const removeDownloads = async () => {

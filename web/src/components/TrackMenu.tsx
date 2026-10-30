@@ -13,6 +13,9 @@ import { MenuButton, MenuItem } from './Menu'
 export interface PlaylistContext {
   playlist: PlaylistSummary
   index: number
+  /** 5.5.2: its position in the Panda Mix order, when removed from there */
+  mixIndex?: number
+  onRemoved?: () => void
 }
 
 export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay: () => void; inPlaylist?: PlaylistContext }) {
@@ -22,7 +25,8 @@ export function TrackMenu({ track, onPlay, inPlaylist }: { track: Track; onPlay:
 
   const removeFromPlaylist = async (context: PlaylistContext) => {
     try {
-      await playlists().removeTrack(context.playlist.id, context.index, track.id)
+      await playlists().removeTrack(context.playlist.id, context.index, track.id, context.mixIndex)
+      context.onRemoved?.()
       toast(`Removed from ${context.playlist.name}`)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Couldn’t remove the song.', 'error')

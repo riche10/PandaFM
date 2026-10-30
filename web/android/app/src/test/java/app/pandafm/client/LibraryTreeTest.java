@@ -57,12 +57,12 @@ public class LibraryTreeTest {
         api.responses.put("/browse/tracks?genre=pop%20punk&order=artist&offset=0&limit=20", "{\"tracks\":[" + t("s9", "Misery Business", "Paramore", "Riot!") + "]}");
         api.responses.put("/collections", "[{\"id\":\"recent\",\"name\":\"Recently Added\"},{\"id\":\"unplayed\",\"name\":\"Unplayed\",\"count\":4},{\"id\":\"favorites\",\"name\":\"Favorites\"},{\"id\":\"hires\",\"name\":\"Hi-Res\"}]");
         api.responses.put("/collections/hires/tracks?offset=0&limit=20", "{\"tracks\":[" + t("s7", "Clear Water", "Lossless Band", "Lossless Sessions") + "]}");
-        api.responses.put("/search?q=daft%20punk&limit=20", "{\"tracks\":[" + t("s1", "One More Time", "Daft Punk", "Discovery") + "],\"albums\":[],\"artists\":[{\"id\":\"ar1\",\"name\":\"Daft Punk\"}],\"genres\":[]}");
-        api.responses.put("/search?q=random%20access%20memories&limit=20", "{\"tracks\":[],\"albums\":[{\"id\":\"a3\",\"name\":\"Random Access Memories\",\"artist\":\"Daft Punk\"}],\"artists\":[],\"genres\":[]}");
-        api.responses.put("/search?q=get%20lucky&limit=20", "{\"tracks\":[" + t("s3", "Lose Yourself to Dance", "Daft Punk", "RAM") + "," + t("s2", "Get Lucky", "Daft Punk", "RAM") + "],\"albums\":[],\"artists\":[],\"genres\":[]}");
-        api.responses.put("/search?q=pop%20punk&limit=20", "{\"tracks\":[],\"albums\":[],\"artists\":[],\"genres\":[{\"key\":\"pop punk\",\"name\":\"Pop Punk\"}]}");
-        api.responses.put("/search?q=zzz&limit=20", "{\"tracks\":[],\"albums\":[],\"artists\":[],\"genres\":[]}");
-        api.responses.put("/search?q=workout&limit=20", "{\"tracks\":[],\"albums\":[],\"artists\":[],\"genres\":[]}");
+        api.responses.put("/search?q=daft%20punk&limit=100", "{\"tracks\":[" + t("s1", "One More Time", "Daft Punk", "Discovery") + "],\"albums\":[],\"artists\":[{\"id\":\"ar1\",\"name\":\"Daft Punk\"}],\"genres\":[]}");
+        api.responses.put("/search?q=random%20access%20memories&limit=100", "{\"tracks\":[],\"albums\":[{\"id\":\"a3\",\"name\":\"Random Access Memories\",\"artist\":\"Daft Punk\"}],\"artists\":[],\"genres\":[]}");
+        api.responses.put("/search?q=get%20lucky&limit=100", "{\"tracks\":[" + t("s3", "Lose Yourself to Dance", "Daft Punk", "RAM") + "," + t("s2", "Get Lucky", "Daft Punk", "RAM") + "],\"albums\":[],\"artists\":[],\"genres\":[]}");
+        api.responses.put("/search?q=pop%20punk&limit=100", "{\"tracks\":[],\"albums\":[],\"artists\":[],\"genres\":[{\"key\":\"pop punk\",\"name\":\"Pop Punk\"}]}");
+        api.responses.put("/search?q=zzz&limit=100", "{\"tracks\":[],\"albums\":[],\"artists\":[],\"genres\":[]}");
+        api.responses.put("/search?q=workout&limit=100", "{\"tracks\":[],\"albums\":[],\"artists\":[],\"genres\":[]}");
     }
 
     List<String> ids(List<LibraryTree.Node> nodes) {
@@ -204,4 +204,61 @@ public class LibraryTreeTest {
         assertTrue(tree.resolveVoice("play", true, true).resume);
         assertNull(LibraryTree.slice(new ArrayList<String>(), 3, 10).isEmpty() ? null : "x");
     }
+
+    // ── 5.5.2: search pages through every song (it used to stop at 20) ──
+    static String songs(int from, int to) {
+        StringBuilder b = new StringBuilder();
+        for (int k = from; k < to; k++) b.append(k > from ? "," : "").append(t("cs" + k, "Cyber Space " + k, "Sonic Team", "Sonic Frontiers"));
+        return b.toString();
+    }
+
+    void pages(String encodedQuery, int total) {
+        for (int off = 0; off < total; off += LibraryTree.SEARCH_PAGE) {
+            int to = Math.min(total, off + LibraryTree.SEARCH_PAGE);
+            String extra = off == 0 ? ",\"albums\":[],\"artists\":[],\"genres\":[]" : "";
+            api.responses.put("/search?q=" + encodedQuery + "&limit=100" + (off > 0 ? "&offset=" + off : ""),
+                "{\"tracks\":[" + songs(off, to) + "],\"tracks_has_more\":" + (to < total) + extra + "}");
+        }
+        api.responses.put("/playlists", "{\"playlists\":[]}");
+        api.responses.put("/radio/stations", "[]");
+    }
+
+    void cyberSpace(int total) {
+        pages("cyber%20space", total);
+    }
+
+    @Test
+    public void searchHonoursPageAndSizeBeyondTheFirst20Songs() throws Exception {
+        cyberSpace(240);
+        List<String> found = ids(tree.search("cyber space", 1, 120, true, true));
+        assertEquals(120, found.size());
+        assertEquals("track:cs120", found.get(0)); // page 2 of 120: songs 120..239
+        assertEquals("track:cs239", found.get(119));
+        assertTrue(api.asked.contains("/search?q=cyber%20space&limit=100&offset=100"));
+        assertTrue(api.asked.contains("/search?q=cyber%20space&limit=100&offset=200"));
+    }
+
+    @Test
+    public void searchFetchesOnlyThePagesItNeeds() throws Exception {
+        cyberSpace(240);
+        assertEquals(28, tree.search("cyber space", 0, 28, true, true).size());
+        assertFalse(api.asked.stream().anyMatch(p -> p.contains("offset=")));
+    }
+
+    @Test
+    public void voiceFindsAnExactTitleBeyondTheFirstPage() throws Exception {
+        pages("cyber%20space%20150", 240); // the search lists 100 songs first; "Cyber Space 150" is on page 2
+        LibraryTree.Resolution r = tree.resolveVoice("play cyber space 150", true, true);
+        assertEquals("cs150", Json.str(r.tracks.get(r.start), "id"));
+        assertTrue(api.asked.contains("/search?q=cyber%20space%20150&limit=100&offset=100"));
+    }
+
+    @Test
+    public void voiceDoesNotFetchMoreOnceTheExactTitleIsFound() throws Exception {
+        pages("cyber%20space%205", 240);
+        LibraryTree.Resolution r = tree.resolveVoice("play cyber space 5", true, true);
+        assertEquals("cs5", Json.str(r.tracks.get(r.start), "id"));
+        assertFalse(api.asked.stream().anyMatch(p -> p.contains("offset=")));
+    }
+
 }

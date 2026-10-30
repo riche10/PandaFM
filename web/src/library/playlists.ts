@@ -14,7 +14,7 @@ export interface PlaylistsState {
   rename(id: string, name: string): Promise<Playlist>
   remove(id: string): Promise<void>
   addTracks(id: string, trackIds: string[]): Promise<Playlist>
-  removeTrack(id: string, index: number, trackId: string): Promise<Playlist>
+  removeTrack(id: string, index: number, trackId: string, mixIndex?: number): Promise<Playlist>
 }
 
 export interface PlaylistsDeps {
@@ -23,7 +23,7 @@ export interface PlaylistsDeps {
   rename: (id: string, name: string) => Promise<Playlist>
   remove: (id: string) => Promise<unknown>
   addTracks: (id: string, trackIds: string[]) => Promise<Playlist>
-  removeTrack: (id: string, index: number, trackId: string) => Promise<Playlist>
+  removeTrack: (id: string, index: number, trackId: string, mixIndex?: number) => Promise<Playlist>
 }
 
 function summary(playlist: Playlist): PlaylistSummary {
@@ -63,7 +63,7 @@ export function createPlaylistsStore(api: PlaylistsDeps): StoreApi<PlaylistsStat
       create: async (name, trackIds = []) => upsert(await api.create(name, trackIds)),
       rename: async (id, name) => upsert(await api.rename(id, name)),
       addTracks: async (id, trackIds) => upsert(await api.addTracks(id, trackIds)),
-      removeTrack: async (id, index, trackId) => upsert(await api.removeTrack(id, index, trackId)),
+      removeTrack: async (id, index, trackId, mixIndex) => upsert(await api.removeTrack(id, index, trackId, mixIndex)),
 
       async remove(id) {
         await api.remove(id)

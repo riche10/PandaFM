@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiGet, apiSend } from '../api/client'
+import { noteConnectionEvent } from '../api/connection'
+import { createLatest } from '../player/latest'
 import type { Playlist, Track } from '../api/library'
 import { openDialog } from '../dialogs/store'
 import { toast } from '../library'
 import { type MixMode, type MixPlan } from '../player/mixPlan'
-import { mixPlanner, player, usePlayer } from '../player'
+import { mixPlanner, player, playerStore, usePlayer } from '../player'
 import type { QueueSource } from '../player/queue'
 import { isNative, platform } from '../platform/state'
 import { Icon } from './Icon'
@@ -65,28 +67,20 @@ export function useMixPlaylist(playlistId: string) {
 }
 
 /** The playlist's tracks in Panda Mix order (songs the order doesn't know yet keep their place at the end). */
-export function inMixOrder(tracks: Track[], order: string[] | undefined): Track[] {
-  if (!order?.length) return tracks
-  // Preserve repeated playlist entries: consume matching original positions one at a time.
-  const positions = new Map<string, number[]>()
-  tracks.forEach((t, i) => {
-    const list = positions.get(t.id) ?? []
-    list.push(i)
-    positions.set(t.id, list)
-  })
-  const used = new Set<number>()
-  const out: Track[] = []
-  for (const id of order) {
-    const i = positions.get(id)?.shift()
-    if (i !== undefined) {
-      used.add(i)
-      out.push(tracks[i])
-    }
-  }
-  tracks.forEach((t, i) => {
-    if (!used.has(i)) out.push(t)
-  })
-  return out
+import { inMixOrder } from '../library/mixOrder'
+export { inMixOrder, mixEntries } from '../library/mixOrder'
+
+/**
+ * 5.5.2: apply a mode change or Remix to the playing queue if it is this playlist's Panda Mix:
+ * 'live' (the future follows now; the current song is untouched), 'next-time' (playing, but not applied
+ * now, e.g. shuffled: it applies next time) or 'not-playing'.
+ */
+export async function liveEdit(playlistId: string, change: { mode?: MixMode; order?: string[] }): Promise<'live' | 'next-time' | 'not-playing'> {
+  const q = playerStore.getState()
+  const mix = (q.source as (QueueSource & { mix?: { playlistId?: string } }) | null)?.mix
+  if (mix?.playlistId !== playlistId || q.items.length === 0) return 'not-playing'
+  noteConnectionEvent(`Panda Mix edit while playing: ${change.mode ? `mode ${change.mode}` : 'remix'}`)
+  return (await player.updateMix(playlistId, change)) ? 'live' : 'next-time'
 }
 
 /**
@@ -104,20 +98,39 @@ export function PandaMixControls({ playlist, source, mix, view, onView }: {
   const state = mix.state
   const play = (s: MixPlaylistState) =>
     player.playCollection(inMixOrder(playlist.tracks, s.order), { source: { ...source, mix: { mode: s.mode ?? 'auto', playlistId: playlist.id } }, shuffle: false })
+  // 5.5.2: the latest choice wins (rapid Auto → Flow → Energetic → Gentle, or Remix again): a slower,
+  // older response is ignored when it arrives.
+  const latest = useRef(createLatest()).current
+  const enabledBefore = !!state?.enabled
   const turnOn = async (mode: MixMode, andPlay: boolean) => {
+    const ticket = latest.begin()
     try {
       const s = await apiSend<MixPlaylistState>('PUT', `/mix/playlists/${encodeURIComponent(playlist.id)}`, { mode })
+      if (!latest.isLatest(ticket)) return
       mix.setState(s)
       onView('mixed')
       if (andPlay) play(s)
+      else if (enabledBefore) {
+        const label = MODES.find((m) => m.id === mode)?.label ?? mode
+        const r = await liveEdit(playlist.id, { mode })
+        if (!latest.isLatest(ticket)) return
+        if (r === 'live') toast(`Upcoming transitions use ${label}`)
+        else if (r === 'next-time') toast(`${label} applies the next time this mix plays`)
+      }
       if (s.status === 'preparing') toast('Panda is preparing this playlist’s mix. It plays right away and gets smarter as songs are analysed.')
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Couldn’t turn on Panda Mix', 'error')
+      if (latest.isLatest(ticket)) toast(err instanceof Error ? err.message : 'Couldn’t turn on Panda Mix', 'error')
     }
   }
   const remix = async () => {
+    const ticket = latest.begin()
     const s = await apiSend<MixPlaylistState>('POST', `/mix/playlists/${encodeURIComponent(playlist.id)}/remix`).catch(() => null)
-    if (s) { mix.setState(s); onView('mixed'); toast('Remixed: a new Panda Mix order') }
+    if (!s || !latest.isLatest(ticket)) return
+    mix.setState(s)
+    onView('mixed')
+    const r = await liveEdit(playlist.id, { order: s.order })
+    if (!latest.isLatest(ticket)) return
+    toast(r === 'live' ? 'Remixed: the upcoming songs follow the new order' : r === 'next-time' ? 'Remixed: the new order plays the next time this mix starts' : 'Remixed: a new Panda Mix order')
   }
   const turnOff = async () => {
     await apiSend('DELETE', `/mix/playlists/${encodeURIComponent(playlist.id)}`).catch(() => undefined)

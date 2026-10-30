@@ -148,6 +148,71 @@ final class QueueController implements PlaybackSink {
     }
 
     /** Tell the engine how the current song should become the next one (only during a Panda Mix). */
+    /**
+     * 5.5.2: a Panda Mix setting changed while its playlist plays. A new mode re-plans the transitions
+     * still to come (plans are cached per mode); a Remix reorders only the songs after the current one.
+     * The current song, its position and the intent to play are untouched: nothing is reloaded or
+     * seeked. A blend already under way keeps its next song. Returns false if the playing queue isn't
+     * this playlist's Panda Mix (the change then applies the next time it's played).
+     */
+    boolean updateMix(String playlistId, String mode, List<String> order) {
+        if (released || playlistId == null || !playlistId.equals(mixPlaylist()) || queue.index < 0) return false;
+        boolean changed = false;
+        if (mode != null && !mode.equals(mixMode())) {
+            Map<String, Object> source = new LinkedHashMap<>(queue.source);
+            Map<String, Object> mix = new LinkedHashMap<>(Json.map(source.get("mix")));
+            mix.put("mode", mode);
+            source.put("mix", mix);
+            queue.source = source;
+            changed = true;
+        }
+        if (order != null && !queue.shuffle) {
+            int keep = engine.inTransitionBeforeHandoff() ? 1 : 0;
+            List<QueueItem> next = reorderUpcoming(queue.items, queue.index, order, keep);
+            if (!next.equals(queue.items)) {
+                queue.items.clear();
+                queue.items.addAll(next);
+                changed = true;
+            }
+        }
+        if (changed) changed("queue");
+        return changed;
+    }
+
+    /**
+     * The queue with only its upcoming songs (after the current one, and after `keep` committed ones)
+     * following `order`. The new order is read from just after the current song and wraps around, so no
+     * upcoming song is lost; songs are matched as a multiset (each duplicate keeps its own item); songs
+     * the order doesn't mention (added by hand) keep their relative order after the mix. The same rule
+     * as web/src/player/queue.ts reorderUpcoming().
+     */
+    static List<QueueItem> reorderUpcoming(List<QueueItem> items, int index, List<String> order, int keep) {
+        int from = Math.min(items.size(), index + 1 + Math.max(0, keep));
+        List<QueueItem> out = new ArrayList<>(items.subList(0, from));
+        List<QueueItem> rest = new ArrayList<>(items.subList(from, items.size()));
+        Map<String, java.util.ArrayDeque<QueueItem>> byId = new LinkedHashMap<>();
+        for (QueueItem it : rest) byId.computeIfAbsent(it.trackId(), k -> new java.util.ArrayDeque<>()).add(it);
+        int pos = index >= 0 && index < items.size() ? order.indexOf(items.get(index).trackId()) : -1;
+        List<String> sequence = new ArrayList<>();
+        if (pos >= 0) {
+            sequence.addAll(order.subList(pos + 1, order.size()));
+            sequence.addAll(order.subList(0, pos + 1));
+        } else {
+            sequence.addAll(order);
+        }
+        java.util.Set<QueueItem> used = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (String id : sequence) {
+            java.util.ArrayDeque<QueueItem> d = byId.get(id);
+            if (d != null && !d.isEmpty()) {
+                QueueItem it = d.poll();
+                out.add(it);
+                used.add(it);
+            }
+        }
+        for (QueueItem it : rest) if (!used.contains(it)) out.add(it);
+        return out;
+    }
+
     void planNext() {
         if (released) return;
         String mode = mixMode();

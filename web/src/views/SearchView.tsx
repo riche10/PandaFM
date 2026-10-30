@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { searchLibrary } from '../api/library'
+import { loadAllSongs, searchLibrary, searchSongs, type Track } from '../api/library'
+import { toast } from '../library'
 import { AlbumCard, ArtistCard, CardGrid, QuickTile } from '../components/Cards'
 import { Icon } from '../components/Icon'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
@@ -101,6 +102,9 @@ function SearchStart() {
 function SearchResults({ query }: { query: string }) {
   const [resource, retry] = useApi(`search:${query}`, (signal) => searchLibrary(query, signal))
   const [allSongs, setAllSongs] = useState(false)
+  // 5.5.2: the songs beyond the first page, loaded by "Show all" (for this query only)
+  const [loaded, setLoaded] = useState<{ query: string; tracks: Track[]; complete: boolean } | null>(null)
+  const [loadingAll, setLoadingAll] = useState(false)
 
   if (resource.state === 'error') return <ErrorNotice error={resource.error} onRetry={retry} />
   const results = resource.state === 'ready' ? resource.data : resource.previous
@@ -115,7 +119,25 @@ function SearchResults({ query }: { query: string }) {
     )
   }
 
-  const songs = allSongs ? results.tracks : results.tracks.slice(0, SONGS_PREVIEW)
+  const mine = loaded?.query === query ? loaded : null
+  const all = mine ? mine.tracks : results.tracks // every song loaded so far: what's shown and what plays
+  const complete = mine ? mine.complete : !results.tracks_has_more
+  const showAll = async () => {
+    if (allSongs) return setAllSongs(false)
+    if (!complete) {
+      setLoadingAll(true)
+      try {
+        const r = await loadAllSongs(results, (offset) => searchSongs(query, offset))
+        setLoaded({ query, ...r })
+      } catch {
+        toast('Couldn’t load every song. Showing the ones found so far.', 'error')
+      } finally {
+        setLoadingAll(false)
+      }
+    }
+    setAllSongs(true)
+  }
+  const songs = allSongs ? all : all.slice(0, SONGS_PREVIEW)
   return (
     <div className="results" aria-busy={resource.state === 'loading'}>
       {(results.genres?.length ?? 0) > 0 && (
@@ -128,13 +150,13 @@ function SearchResults({ query }: { query: string }) {
         <section className="shelf" aria-label="Songs">
           <div className="section-head">
             <h2 className="section-title">Songs</h2>
-            {results.tracks.length > SONGS_PREVIEW && (
-              <button type="button" className="show-all" onClick={() => setAllSongs(!allSongs)}>
-                {allSongs ? 'Show fewer' : `Show all ${results.tracks.length}`}
+            {(all.length > SONGS_PREVIEW || !complete) && (
+              <button type="button" className="show-all" disabled={loadingAll} onClick={() => void showAll()}>
+                {allSongs ? 'Show fewer' : loadingAll ? 'Loading…' : complete ? `Show all ${all.length}` : 'Show all'}
               </button>
             )}
           </div>
-          <TrackList tracks={songs} onPlay={(i) => player.playCollection(results.tracks, { startIndex: i, source: { kind: 'search', name: `“${query}”` } })} header={false} />
+          <TrackList tracks={songs} onPlay={(i) => player.playCollection(all, { startIndex: i, source: { kind: 'search', name: `“${query}”` } })} header={false} />
         </section>
       )}
       {results.artists.length > 0 && (

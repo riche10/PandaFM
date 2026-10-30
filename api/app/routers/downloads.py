@@ -65,7 +65,7 @@ async def audio_info(track_id: ItemId, navidrome: NavidromeDep) -> AudioInfo:
 async def prepare(body: PrepareRequest, request: Request, navidrome: NavidromeDep, db: SessionDep, user_id: UserId) -> Manifest | JSONResponse:
     if body.profile not in PROFILES:
         return error_response(422, "unknown_profile", f"Unknown download quality “{body.profile}”.")
-    tracks, name = await _collection(body, navidrome)
+    tracks, name = await _collection(body, navidrome, db, user_id)
     cache = _cache(request)
 
     # Same album, same title? Add a short id so the files can't collide.
@@ -106,7 +106,7 @@ async def prepare(body: PrepareRequest, request: Request, navidrome: NavidromeDe
     )
 
 
-async def _collection(body: PrepareRequest, navidrome) -> tuple[list[Track], str]:
+async def _collection(body: PrepareRequest, navidrome, db=None, user_id: int | None = None) -> tuple[list[Track], str]:
     if body.kind == "album":
         album = await navidrome.get_album(body.id or "")
         return album.tracks, album.name
@@ -115,7 +115,9 @@ async def _collection(body: PrepareRequest, navidrome) -> tuple[list[Track], str
         unique = list({t.id: t for t in playlist.tracks}.values())  # a song listed twice is one file
         return unique, playlist.name
     if body.kind == "favorites":
-        return (await navidrome.get_favorites()).tracks, "Favorites"
+        from app.services.favorites import liked_tracks  # 5.5.2: Liked Songs are PandaFM's
+
+        return await liked_tracks(db, user_id), "Liked Songs"
     limit = asyncio.Semaphore(4)
 
     async def one(track_id: str) -> Track:

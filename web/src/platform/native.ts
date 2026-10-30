@@ -69,6 +69,11 @@ export interface PandaPlayerPlugin {
   migrate(options: { snapshot: string }): Promise<{ migrated: boolean }>
   /** Settings › Diagnostics (5.1): safe playback facts and recent playback events. */
   getDiagnostics(): Promise<{ diagnostics: string }>
+  /** 5.5.2: a Panda Mix mode change or Remix (order: JSON array of track ids) while that playlist plays. */
+  updateMix(options: { playlistId: string; mode?: string; order?: string }): Promise<{ applied: boolean }>
+  /** 5.5.2: "this app process already reached this server" (survives WebView/Activity recreation). */
+  markSessionUsable(options: { server: string }): Promise<void>
+  getSession(): Promise<{ usableServer: string | null; serviceRunning: boolean }>
   /** Panda Mix (5.2): analyse a downloaded playlist on the server and keep every plan for offline. */
   prepareMixOffline(options: { tracks: string; playlistId: string; mode: string }): Promise<void>
   addListener(event: 'queue', listener: (e: { snapshot: string; reason: string }) => void): Promise<{ remove: () => Promise<void> }>

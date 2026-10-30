@@ -168,7 +168,9 @@ def mixed_order(ids: list[str], meta: dict[str, dict], analyses: dict[str, dict]
     candidates = [canonical] + [_improve(_chain(n, m, rng.choice(starts), rng), m) for _ in range(tries)]
     scored = [(path_cost(c, m), c) for c in candidates]
     best = min(s for s, _ in scored)
-    strong = [c for s, c in scored if s <= best * (1 + REMIX_SLACK) + 0.05]  # never clearly worse than the best
+    # never clearly worse than the best. 5.5.2: the margin is relative to |best|: album runs make costs
+    # negative, and best * (1 + slack) is then *below* best, which rejected every candidate (Remix crashed)
+    strong = [c for s, c in scored if s <= best + abs(best) * REMIX_SLACK + 0.05]
     fresh = [c for c in strong if _difference([ids[k] for k in c], current) >= 0.3]
     pick = rng.choice(fresh or strong)
     return [ids[k] for k in pick]

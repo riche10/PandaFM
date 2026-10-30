@@ -84,6 +84,8 @@ export function createNativeQueueStore(plugin: PandaPlayerPlugin, initialVolume 
     clearQueue: (which = 'all') => send(plugin.clear({ which })),
     jumpTo: (uid) => send(plugin.jumpTo({ uid }), 'jump', true),
     moveInQueue: (uid, direction) => send(plugin.move({ uid, direction })),
+    updateMix: (playlistId, change) =>
+      plugin.updateMix({ playlistId, mode: change.mode, order: change.order ? JSON.stringify(change.order) : undefined }).then((r) => r.applied, () => false),
     toggleShuffle: () => send(plugin.toggleShuffle()),
     cycleRepeat: () => send(plugin.cycleRepeat()),
     togglePlay: () => send(get().status === 'playing' || get().status === 'loading' ? plugin.pause() : plugin.play(), 'play/pause', true),

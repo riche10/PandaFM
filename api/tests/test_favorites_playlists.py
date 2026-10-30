@@ -10,14 +10,7 @@ OK = {"subsonic-response": {"status": "ok", "version": "1.16.1"}}
 # ── Favorites ────────────────────────────────────────────────────────
 
 
-def test_favorites_are_grouped_and_flagged():
-    fake = FakeNavidrome().json("getStarred2", fixture("getStarred2"))
-    with api_client(fake) as client:
-        body = client.get("/api/favorites").json()
-
-    assert len(body["tracks"]) == 1 and body["tracks"][0]["favorite"] is True
-    assert len(body["albums"]) == 1 and body["albums"][0]["favorite"] is True
-    assert body["artists"] == []
+# 5.5.2: Liked Songs come from PandaFM's database: see tests/test_db_likes.py.
 
 
 def test_unstarred_items_are_not_favorites():
@@ -28,7 +21,7 @@ def test_unstarred_items_are_not_favorites():
 
 @pytest.mark.parametrize(
     ("collection", "param"),
-    [("tracks", "id"), ("albums", "albumId"), ("artists", "artistId")],
+    [("albums", "albumId"), ("artists", "artistId")],  # song likes are PandaFM's own (tests/test_db_likes.py)
 )
 def test_favorite_and_unfavorite_use_star_and_unstar(collection: str, param: str):
     fake = FakeNavidrome().json("star", OK).json("unstar", OK)
