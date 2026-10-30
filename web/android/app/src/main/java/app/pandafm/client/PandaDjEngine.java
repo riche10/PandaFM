@@ -41,6 +41,9 @@ final class PandaDjEngine implements QueueController.Engine {
     static final long WARM_AFTER_MS = 2_000; // let the current song settle before opening the next stream
 
     static final long PRELOAD_MS = 20_000, TICK_MS = 40, MIN_OVERLAP_MS = 1_500;
+    /** 5.5: a streamed incoming deck needs this much buffered (or the whole overlap, if shorter) to start a blend. */
+    static final long NEED_BUFFER_MS = 6_000, MIN_START_BUFFER_MS = 1_500;
+    static final int HISTORY = 20;
 
     private final EngineCore[] cores;
     private final EngineCore.PlayerPort[] ports;
@@ -59,6 +62,11 @@ final class PandaDjEngine implements QueueController.Engine {
     private boolean preloaded, running, handedOff, paused, ticking, released, followerHeld;
     private int outDeck, inDeck;
     private long effStart, effOverlap; // a late start (incoming not ready, or a seek into the blend) shortens the overlap
+    // 5.5: what actually happened, for tuning on a real device
+    private long plannedStart, plannedOverlap, bufferedAtStart, handoffAt;
+    private String degradation;
+    private Map<String, Object> current; // the running transition's record
+    private final java.util.ArrayDeque<Map<String, Object>> transitionLog = new java.util.ArrayDeque<>();
     private double progress;
     private int transitions;
     // 5.3 diagnostics: what actually happened, so a deliberately subtle transition can't be mistaken for a failure
@@ -271,7 +279,7 @@ final class PandaDjEngine implements QueueController.Engine {
         if (running || plan != null) return; // a Panda Mix preload owns the standby deck
         String uri = host.uriFor(next); // the source that would be used if Next were pressed now
         if (warmItem != null && warmItem.uid.equals(next.uid) && uri != null && uri.equals(warmUri) && !"failed".equals(warmState)) return;
-        invalidateWarm(warmItem == null ? null : "queue changed");
+        invalidateWarm(warmItem == null ? null : warmItem.uid.equals(next.uid) ? "source changed (quality or download)" : "queue changed");
         warmItem = next;
         warmGen = forGen;
         warmUri = uri;
@@ -389,10 +397,17 @@ final class PandaDjEngine implements QueueController.Engine {
             } else {
                 if (!preloaded && pos >= start - PRELOAD_MS) preload();
                 if (preloaded && pos >= start) {
-                    if (cores[other()].ready()) begin(pos);
-                    else if (pos > latest) { // A just plays to its end; the queue advances the ordinary way
+                    EngineCore in = cores[other()];
+                    long buffered = in.bufferedMs();
+                    long need = Math.min(overlap, NEED_BUFFER_MS);
+                    boolean enough = in.ready() && (!in.isRemote() || buffered >= need);
+                    if (enough) begin(pos, null);
+                    else if (in.ready() && pos >= latest - 250 && buffered >= MIN_START_BUFFER_MS) {
+                        begin(pos, "incoming buffer " + String.format(java.util.Locale.ROOT, "%.1f", buffered / 1000.0) + " s: blend shortened");
+                    } else if (pos > latest) { // A just plays to its end; the queue advances the ordinary way
                         notReady++;
-                        cancel("incoming deck not ready");
+                        recordHistory(null, in.ready() ? "incoming buffer insufficient: plain handoff" : "incoming deck not ready: plain handoff");
+                        cancel(in.ready() ? "incoming buffer insufficient" : "incoming deck not ready");
                     }
                 }
             }
@@ -416,8 +431,13 @@ final class PandaDjEngine implements QueueController.Engine {
         record("preload " + nextItem.trackId() + " (" + plan.get("type") + ")");
     }
 
-    private void begin(long pos) {
+    private void begin(long pos, String degraded) {
         running = true;
+        degradation = degraded;
+        plannedStart = num("outgoing_start_ms", 0);
+        plannedOverlap = num("overlap_ms", 0);
+        bufferedAtStart = cores[other()].isRemote() ? cores[other()].bufferedMs() : -1;
+        handoffAt = -1;
         handedOff = false;
         outDeck = primary;
         inDeck = other();
@@ -437,7 +457,18 @@ final class PandaDjEngine implements QueueController.Engine {
         transitions++;
         host.log("PandaDJ transition_start " + cores[outDeck].item().trackId() + "→" + nextItem.trackId() + " type=" + plan.get("type") + " source=" + source
             + " overlap=" + effOverlap + (effOverlap < overlap ? " (late, planned " + overlap + ")" : ""));
-        record("transition_start " + lastPlan + " overlap=" + effOverlap + "ms" + (effOverlap < overlap ? " (late start)" : ""));
+        record("transition_start " + lastPlan + " overlap=" + effOverlap + "ms" + (effOverlap < overlap ? " (late start)" : "")
+            + (degraded == null ? "" : " · " + degraded));
+        current = new LinkedHashMap<>();
+        current.put("from", cores[outDeck].item().trackId());
+        current.put("to", nextItem.trackId());
+        current.put("plan", String.valueOf(plan.get("summary")));
+        current.put("tier", plan.get("tier"));
+        current.put("confidence", plan.get("confidence"));
+        current.put("plannedMs", overlap);
+        current.put("effectiveMs", effOverlap);
+        current.put("lateMs", effStart - start);
+        current.put("bufferedAtStartMs", bufferedAtStart);
         automate();
     }
 
@@ -456,18 +487,51 @@ final class PandaDjEngine implements QueueController.Engine {
         if (!leadAudible) return; // the automation runs on the outgoing deck's clock: frozen while silent
         long pos = cores[outDeck].positionMs();
         progress = effOverlap <= 0 ? 1.0 : Math.max(0, Math.min(1, (pos - effStart) / (double) effOverlap));
-        float[] g = gains(progress, String.valueOf(plan.get("curve")));
+        float[] g = gains(progress, String.valueOf(plan.get("curve")), dbl("gain_out_db"), dbl("gain_in_db"));
         setVol(outDeck, userVolume * g[0]);
         setVol(inDeck, userVolume * g[1]);
         if (progress >= 0.5 && !handedOff) handoffNow();
         if (running && progress >= 1.0) finish();
     }
 
-    /** Equal-power (no dip at the midpoint) or linear gains for outgoing and incoming. */
     static float[] gains(double p, String curve) {
+        return gains(p, curve, 0, 0);
+    }
+
+    /**
+     * 5.5: the transition envelope, identical to the browser's (web/src/player/mixPlan.ts gains()):
+     * equal_power (no dip at the midpoint), linear, sharp (the change concentrated around the midpoint,
+     * so two low ends overlap only briefly), under_tail (A keeps its own level and rings out; B fades in).
+     * Levelling (attenuation only, never above unity): A eases down to outDb, B rises from inDb to 0 dB.
+     */
+    static float[] gains(double p, String curve, double outDb, double inDb) {
         p = Math.max(0, Math.min(1, p));
-        if ("linear".equals(curve)) return new float[] {(float) (1 - p), (float) p};
-        return new float[] {(float) Math.cos(p * Math.PI / 2), (float) Math.sin(p * Math.PI / 2)};
+        double out, in;
+        if ("linear".equals(curve)) {
+            out = 1 - p;
+            in = p;
+        } else if ("under_tail".equals(curve)) {
+            out = 1;
+            in = Math.sin(p * Math.PI / 2);
+        } else {
+            double q = "sharp".equals(curve) ? sharp(p) : p;
+            out = Math.cos(q * Math.PI / 2);
+            in = Math.sin(q * Math.PI / 2);
+        }
+        out *= Math.pow(10, Math.min(0, outDb) * p / 20);
+        in *= Math.pow(10, Math.min(0, inDb) * (1 - p) / 20);
+        return new float[] {(float) Math.max(0, Math.min(1, out)), (float) Math.max(0, Math.min(1, in))};
+    }
+
+    /** A logistic step through the midpoint, normalised to 0..1. */
+    static double sharp(double p) {
+        double lo = 1 / (1 + Math.exp(5)), hi = 1 / (1 + Math.exp(-5));
+        return (1 / (1 + Math.exp(-10 * (p - 0.5))) - lo) / (hi - lo);
+    }
+
+    private double dbl(String key) {
+        Object v = plan == null ? null : plan.get(key);
+        return v instanceof Number ? ((Number) v).doubleValue() : 0;
     }
 
     private void handoffNow() {
@@ -490,6 +554,8 @@ final class PandaDjEngine implements QueueController.Engine {
             cancel("queue changed");
             return;
         }
+        handoffAt = cores[outDeck].positionMs();
+        if (current != null) current.put("handoffAtMs", handoffAt);
         host.log("PandaDJ logical_handoff " + nextItem.trackId());
         record("logical_handoff " + nextItem.trackId());
     }
@@ -504,6 +570,11 @@ final class PandaDjEngine implements QueueController.Engine {
         handedOff = false;
         progress = 0;
         record("transition_complete");
+        if (current != null) {
+            current.put("completedMs", Math.max(0, cores[inDeck].positionMs() - num("incoming_start_ms", 0)));
+            recordHistory(current, degradation);
+            current = null;
+        }
         nextItem = null;
         plan = null;
         if (queuedNext != null) {
@@ -513,6 +584,44 @@ final class PandaDjEngine implements QueueController.Engine {
             queuedPlan = null;
             prepareNext(queuedGen, n, p);
         }
+    }
+
+    private void recordHistory(Map<String, Object> entry, String degraded) {
+        Map<String, Object> e = entry != null ? entry : new LinkedHashMap<>();
+        if (entry == null && plan != null && nextItem != null) {
+            e.put("to", nextItem.trackId());
+            e.put("plan", String.valueOf(plan.get("summary")));
+            e.put("tier", plan.get("tier"));
+            e.put("plannedMs", num("overlap_ms", 0));
+            e.put("effectiveMs", 0L);
+        }
+        e.put("outcome", entry != null ? "completed" : "plain handoff");
+        if (degraded != null) e.put("degraded", degraded);
+        transitionLog.addFirst(e);
+        while (transitionLog.size() > HISTORY) transitionLog.removeLast();
+    }
+
+    /** Recent transitions as readable lines (newest first). */
+    java.util.List<String> historyLines() {
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        for (Map<String, Object> e : transitionLog) {
+            StringBuilder b = new StringBuilder();
+            b.append(e.getOrDefault("from", "?")).append(" → ").append(e.getOrDefault("to", "?")).append(" · ").append(e.getOrDefault("plan", ""));
+            if (e.get("tier") != null) b.append(" · ").append(e.get("tier"));
+            b.append(String.format(java.util.Locale.ROOT, " · planned %.1f s", ((Number) e.getOrDefault("plannedMs", 0L)).longValue() / 1000.0));
+            if ("completed".equals(e.get("outcome"))) {
+                b.append(String.format(java.util.Locale.ROOT, " · actual %.1f s · start late %d ms",
+                    ((Number) e.getOrDefault("effectiveMs", 0L)).longValue() / 1000.0, ((Number) e.getOrDefault("lateMs", 0L)).longValue()));
+                Object buf = e.get("bufferedAtStartMs");
+                if (buf instanceof Number && ((Number) buf).longValue() >= 0) b.append(String.format(java.util.Locale.ROOT, " · buffered %.1f s", ((Number) buf).longValue() / 1000.0));
+                if (e.get("confidence") != null) b.append(" · confidence ").append(e.get("confidence"));
+            } else {
+                b.append(" · ").append(e.get("outcome"));
+            }
+            if (e.get("degraded") != null) b.append(" · ").append(e.get("degraded"));
+            lines.add(b.toString());
+        }
+        return lines;
     }
 
     /** Drop any pending or running transition: the logical deck plays alone at full volume. */
@@ -595,6 +704,22 @@ final class PandaDjEngine implements QueueController.Engine {
             m.put("transitionProgress", running ? Math.round(progress * 100) + "%" : preloaded ? "preloaded" : "planned");
         }
         m.put("lastTransition", lastPlan);
+        m.put("transitionHistory", historyLines());
+        if (plan != null) {
+            m.put("plannedTier", plan.get("tier"));
+            m.put("plannedConfidence", plan.get("confidence"));
+            m.put("plannedAlignment", plan.get("aligned"));
+            m.put("plannedGains", String.format(java.util.Locale.ROOT, "out %.1f dB · in %.1f dB", dbl("gain_out_db"), dbl("gain_in_db")));
+            Object facts = plan.get("facts");
+            if (facts instanceof Map) m.put("plannedFacts", String.valueOf(facts));
+            Object reasons = plan.get("reasons");
+            if (reasons != null) m.put("plannedReasons", String.valueOf(reasons));
+        }
+        if (running) {
+            m.put("transitionLateMs", effStart - plannedStart);
+            m.put("transitionBufferedAtStart", bufferedAtStart < 0 ? "downloaded" : String.format(java.util.Locale.ROOT, "%.1f s", bufferedAtStart / 1000.0));
+            m.put("transitionDegraded", degradation);
+        }
         m.put("lastReason", lastReason);
         m.put("transitionsDone", (long) transitions);
         m.put("warmupState", warmState);

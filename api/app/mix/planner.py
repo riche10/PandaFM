@@ -365,7 +365,7 @@ def validate_override(p: dict, a_duration_ms: int, b_duration_ms: int) -> dict:
     overlap = int(max(0, min(int(p.get("overlap_ms") or 0), 60000, a_duration_ms, b_duration_ms)))
     out_start = int(max(0, min(int(p.get("outgoing_start_ms") or 0), max(0, a_duration_ms - overlap))))
     in_start = int(max(0, min(int(p.get("incoming_start_ms") or 0), max(0, b_duration_ms - overlap))))
-    curve = p.get("curve") if p.get("curve") in ("equal_power", "linear") else "equal_power"
+    curve = p.get("curve") if p.get("curve") in ("equal_power", "linear", "sharp", "under_tail") else "equal_power"
     filt = p.get("filter") if p.get("filter") in (None, "bass_swap", "highpass_out", "lowpass_in") else None
     return {"type": kind, "label": TYPES[kind], "overlap_ms": 0 if kind == "gapless" else overlap, "outgoing_start_ms": out_start,
             "incoming_start_ms": in_start, "handoff_ms": overlap // 2, "curve": curve, "filter": filt, "manual": True, "source": "manual",

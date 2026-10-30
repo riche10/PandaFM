@@ -39,7 +39,7 @@ public class PlaybackFuzzTest {
 
         public void setVolume(float v) { volume = v; }
         public void setStandbyBuffering(boolean s) { standbyBuffering = s; }
-        public long bufferedMs() { return 0; }
+        public long bufferedMs() { return state == STATE_READY ? 30_000 : 0; }
         public void setMediaItem(String id, String u, long startMs, String t, String a, String al, String art) {
             uri = u;
             position = startMs;

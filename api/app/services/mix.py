@@ -222,6 +222,8 @@ async def prepare(db: AsyncSession, analyzer: MixAnalyzer | None, user_id: int, 
         p.setdefault("ready", True)
         if (a["id"], b["id"]) in manual:
             p = {**p, **manual[(a["id"], b["id"])], "ready": True}
+            # 5.5: re-checked against the songs' current lengths whenever served (a re-encoded file, a newer analysis)
+            p = {**p, **validate_override(p, int((a.get("duration_seconds") or 0) * 1000), int((b.get("duration_seconds") or 0) * 1000))}
         p["index"] = k
         transitions.append(p)
     states = [{"id": i, "status": status(i)} for i in ids[lo:hi]]

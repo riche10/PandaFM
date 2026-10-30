@@ -152,3 +152,13 @@ def test_every_plan_explains_itself(an):
         p = mix(an, a, b)
         assert p["reasons"] and p["explanation"] and p["tier"] in ("clean", "short", "moderate", "deep")
         assert {"tempo_diff_pct", "drift_budget_beats", "grid_confidence", "bars", "key_fit", "loudness_diff_lu"} <= set(p["facts"])
+
+
+def test_saved_overrides_stay_within_the_songs_and_keep_their_curve():
+    from app.mix.planner import validate_override
+
+    v = validate_override({"type": "smooth_blend", "overlap_ms": 90000, "outgoing_start_ms": 500000, "incoming_start_ms": 400000, "curve": "sharp"},
+                          200000, 180000)
+    assert v["overlap_ms"] <= 60000
+    assert v["outgoing_start_ms"] + v["overlap_ms"] <= 200000 and v["incoming_start_ms"] + v["overlap_ms"] <= 180000
+    assert v["curve"] == "sharp" and v["manual"] is True

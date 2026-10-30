@@ -29,6 +29,16 @@ export function loadQuality(storage: Pick<Storage, 'getItem'> | null): StreamQua
   }
 }
 
+/** Whether this device has a saved choice (an empty WebView storage must not count as "auto"). */
+export function hasSavedQuality(storage: Pick<Storage, 'getItem'> | null): boolean {
+  try {
+    const v = storage?.getItem(KEY)
+    return v != null && loadQuality(storage) === v
+  } catch {
+    return false
+  }
+}
+
 export function saveQuality(storage: Pick<Storage, 'setItem'> | null, q: StreamQuality): void {
   try {
     storage?.setItem(KEY, q)

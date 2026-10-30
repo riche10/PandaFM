@@ -1,5 +1,5 @@
 import { Deck, type DeckId } from './deck.ts'
-import { bassCurves, gainCurves, type MixPlan, timeline } from './mixPlan.ts'
+import { type MixPlan, scheduleTransition, timeline } from './mixPlan.ts'
 import type { EngineEvent, PlaybackEngine } from './types'
 
 /** The bits of Web Audio Panda Mix uses (an interface, so tests can provide a fake). */
@@ -270,18 +270,8 @@ export class AudioEngine implements PlaybackEngine {
     const inChain = this.chains[this.standby.id]!
     const when = ctx.currentTime
     const span = Math.max(0.01, t.overlap)
-    const curves = gainCurves(p.plan.curve)
     for (const param of [outChain.gain.gain, inChain.gain.gain]) param.cancelScheduledValues(when)
-    outChain.gain.gain.setValueCurveAtTime(curves.out, when, span)
-    inChain.gain.gain.setValueCurveAtTime(curves.in, when, span)
-    if (p.plan.filter === 'bass_swap') {
-      const bass = bassCurves()
-      outChain.shelf.gain.setValueCurveAtTime(bass.out, when, span)
-      inChain.shelf.gain.setValueCurveAtTime(bass.in, when, span)
-    } else if (p.plan.filter === 'highpass_out') {
-      const sweep = new Float32Array(32).map((_, i) => 10 + 790 * (i / 31) ** 2)
-      outChain.hp.frequency.setValueCurveAtTime(sweep, when, span)
-    }
+    scheduleTransition(outChain, inChain, p.plan, when, span) // the same envelope the Adjust Mix preview plays
     void this.standby.element.play().catch(() => this.cancelTransition())
     const half = Math.max(0, (t.overlap / 2) * 1000)
     this.timers.push(setTimeout(() => this.handoff(), half))

@@ -12,6 +12,9 @@ const LABELS: Record<string, string> = {
   positionMs: 'Position', durationMs: 'Duration', lastError: 'Last playback error',
   streamRequest: 'Stream request', streamAttempt: 'Attempt', nextRetry: 'Next retry', playbackIntent: 'Playback intent',
   lastRecovery: 'Last stream recovery', deckRole: 'Deck role',
+  transitionHistory: 'Recent transitions', plannedTier: 'Planned tier', plannedConfidence: 'Planner confidence', plannedAlignment: 'Alignment',
+  plannedGains: 'Levelling', plannedFacts: 'Planner facts', plannedReasons: 'Why this transition', transitionLateMs: 'Start late (ms)',
+  transitionBufferedAtStart: 'Buffered at start', transitionDegraded: 'Degraded',
   pandaMix: 'Panda Mix', mixPlaylist: 'Playlist', mixMode: 'Mix mode', currentPair: 'Current pair', transition: 'Plan', planSource: 'Plan source',
   transitionConfidence: 'Confidence', bpmOut: 'Outgoing BPM', bpmIn: 'Incoming BPM', transitionStartMs: 'Transition start', overlapMs: 'Overlap',
   logicalDeck: 'Current deck', deckA: 'Deck A', deckB: 'Deck B', standbyReady: 'Standby ready', transitionRunning: 'Transition running',
@@ -50,7 +53,7 @@ export function Diagnostics() {
     for (const [key, label] of Object.entries(LABELS)) {
       if (!(key in native)) continue
       const v = native[key]
-      rows.push([label, key === 'positionMs' || key === 'durationMs' || key === 'transitionStartMs' ? ms(v) : key === 'overlapMs' && typeof v === 'number' ? `${(v / 1000).toFixed(1)} s` : v === null || v === undefined ? '—' : String(v)])
+      rows.push([label, key === 'positionMs' || key === 'durationMs' || key === 'transitionStartMs' ? ms(v) : key === 'overlapMs' && typeof v === 'number' ? `${(v / 1000).toFixed(1)} s` : v === null || v === undefined ? '—' : Array.isArray(v) ? (v.length ? v.join('\n') : '—') : String(v)])
     }
   }
   const events = (native?.events as string[] | undefined) ?? []
@@ -65,7 +68,7 @@ export function Diagnostics() {
         {rows.map(([k, v]) => (
           <div key={k}>
             <dt>{k}</dt>
-            <dd>{v}</dd>
+            <dd style={{ whiteSpace: 'pre-line' }}>{v}</dd>
           </div>
         ))}
       </dl>
